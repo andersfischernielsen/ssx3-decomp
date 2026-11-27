@@ -10509,6 +10509,29 @@
 0x00372348    DmaChain_SplitAtRefTags
 0x003ff4a8    scePadInit
 0x00409940    sceMcInit
+# Phase 2 wave: oc1390, oc1391, oc1392, oc1393
+0x00404b78    libmpeg_AddPredAndStore
+0x003b11e8    MPEG2_Error
+0x003b2380    MPEG2_user_data
+0x00404050    libmpeg_FormPredictions
+0x004065d0    libmpeg_DecodeMacroblock
+0x00404758    libmpeg_SetupPredBlock
+0x00407f20    libmpeg_SetupRefFrames
+0x00405b70    libmpeg_WaitBdec
+0x00408278    libmpeg_CopyOutputRaw
+0x003b1270    MPEG2_Get_Bits1
+0x003b2360    MPEG2_marker_bit
+0x003b23a0    MPEG2_copyright_extension
+0x003b1cc0    MPEG2_sequence_display_extension
+0x003b1ee0    MPEG2_sequence_scalable_extension
+0x003b20b8    MPEG2_picture_coding_extension
+0x003b1878    MPEG2_slice_header
+0x003b17a8    MPEG2_picture_header
+0x003b13d8    MPEG2_Get_Hdr
+0x003b1498    MPEG2_next_start_code
+0x003b14f0    MPEG2_sequence_header
+0x003b1d58    MPEG2_quant_matrix_extension
+0x003b1988    MPEG2_extension_and_user_data
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

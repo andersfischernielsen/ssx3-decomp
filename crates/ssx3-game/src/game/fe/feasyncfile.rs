@@ -3973,16 +3973,6 @@ pub(crate) mod callee {
         f: ee::s09::f_002cc0b8,
     };
 
-    pub const MPEG2_GET_BITS_2: Callee = Callee {
-        addr: 0x003b_1300,
-        f: ee::s13::f_003b1300,
-    };
-
-    pub const MPEG2_MARKER_BIT_2: Callee = Callee {
-        addr: 0x003b_2360,
-        f: ee::s13::f_003b2360,
-    };
-
     pub const SND_LOAD_QUEUE_FLUSH: Callee = Callee {
         addr: 0x0028_a230,
         f: ee::s07::f_0028a230,

@@ -371,6 +371,45 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_4690, shp_clone, "SHP_Clone"),
     (0x003b_4708, shp_is_palette_format, "SHP_IsPaletteFormat"),
     (0x003b_3e40, shp_calc_pixel_offset, "SHP_CalcPixelOffset"),
+    (0x003b_11e8, mpeg2_error, "MPEG2_Error"),
+    (0x003b_1270, mpeg2_get_bits1, "MPEG2_Get_Bits1"),
+    (0x003b_13d8, mpeg2_get_hdr, "MPEG2_Get_Hdr"),
+    (0x003b_1498, mpeg2_next_start_code, "MPEG2_next_start_code"),
+    (0x003b_14f0, mpeg2_sequence_header, "MPEG2_sequence_header"),
+    (0x003b_17a8, mpeg2_picture_header, "MPEG2_picture_header"),
+    (0x003b_1878, mpeg2_slice_header, "MPEG2_slice_header"),
+    (
+        0x003b_1988,
+        mpeg2_extension_and_user_data,
+        "MPEG2_extension_and_user_data",
+    ),
+    (
+        0x003b_1cc0,
+        mpeg2_sequence_display_extension,
+        "MPEG2_sequence_display_extension",
+    ),
+    (
+        0x003b_1d58,
+        mpeg2_quant_matrix_extension,
+        "MPEG2_quant_matrix_extension",
+    ),
+    (
+        0x003b_1ee0,
+        mpeg2_sequence_scalable_extension,
+        "MPEG2_sequence_scalable_extension",
+    ),
+    (
+        0x003b_20b8,
+        mpeg2_picture_coding_extension,
+        "MPEG2_picture_coding_extension",
+    ),
+    (0x003b_2360, mpeg2_marker_bit, "MPEG2_marker_bit"),
+    (0x003b_2380, mpeg2_user_data, "MPEG2_user_data"),
+    (
+        0x003b_23a0,
+        mpeg2_copyright_extension,
+        "MPEG2_copyright_extension",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -400,9 +439,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::dirtysock::tagsunk::callee::OPERATOR_DELETE;
     pub(crate) use crate::game::dirtysock::tagsunk::callee::RCMP_DECODE_FRAME;
     pub(crate) use crate::game::dirtysock::tagsunk::callee::RCMP_FRAME_NUMBER;
-
-    pub(crate) use crate::game::fe::feasyncfile::callee::MPEG2_GET_BITS_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MPEG2_MARKER_BIT_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_NODE_DTOR;
 
@@ -776,6 +812,120 @@ pub(crate) mod callee {
     pub const SHP_GET_BPP: Callee = Callee {
         addr: 0x003b_39d8,
         f: ee::s13::SHP_GetBpp,
+    };
+
+    /// `MPEG2_next_start_code` (`0x003b_1498`).
+    pub(crate) const NEXT_START_CODE: Callee = Callee {
+        addr: 0x003b_1498,
+        f: ee::s13::MPEG2_next_start_code,
+    };
+
+    /// `libmpeg_Error` (`0x0040_34a8`).
+    pub(crate) const LIBMPEG_ERROR: Callee = Callee {
+        addr: 0x0040_34a8,
+        f: ee::s15::libmpeg_Error,
+    };
+
+    /// `MPEG2_Get_Bits32` (`0x003b_13a8`).
+    pub(crate) const GET_BITS32: Callee = Callee {
+        addr: 0x003b_13a8,
+        f: ee::s13::MPEG2_Get_Bits32,
+    };
+
+    /// `MPEG2_sequence_header` (`0x003b_14f0`).
+    pub(crate) const SEQUENCE_HEADER: Callee = Callee {
+        addr: 0x003b_14f0,
+        f: ee::s13::MPEG2_sequence_header,
+    };
+
+    /// `MPEG2_group_of_pictures_header` (`0x003b_16e0`).
+    pub(crate) const GROUP_OF_PICTURES_HEADER: Callee = Callee {
+        addr: 0x003b_16e0,
+        f: ee::s13::MPEG2_group_of_pictures_header,
+    };
+
+    /// `MPEG2_picture_header` (`0x003b_17a8`).
+    pub(crate) const PICTURE_HEADER: Callee = Callee {
+        addr: 0x003b_17a8,
+        f: ee::s13::MPEG2_picture_header,
+    };
+
+    /// `MPEG2_extension_and_user_data` (`0x003b_1988`).
+    pub(crate) const EXTENSION_AND_USER_DATA: Callee = Callee {
+        addr: 0x003b_1988,
+        f: ee::s13::MPEG2_extension_and_user_data,
+    };
+
+    /// `MPEG2_sequence_extension` (`0x003b_1ab0`).
+    pub(crate) const SEQUENCE_EXTENSION: Callee = Callee {
+        addr: 0x003b_1ab0,
+        f: ee::s13::MPEG2_sequence_extension,
+    };
+
+    /// `MPEG2_sequence_display_extension` (`0x003b_1cc0`).
+    pub(crate) const SEQUENCE_DISPLAY_EXTENSION: Callee = Callee {
+        addr: 0x003b_1cc0,
+        f: ee::s13::MPEG2_sequence_display_extension,
+    };
+
+    /// `MPEG2_quant_matrix_extension` (`0x003b_1d58`).
+    pub(crate) const QUANT_MATRIX_EXTENSION: Callee = Callee {
+        addr: 0x003b_1d58,
+        f: ee::s13::MPEG2_quant_matrix_extension,
+    };
+
+    /// `MPEG2_sequence_scalable_extension` (`0x003b_1ee0`).
+    pub(crate) const SEQUENCE_SCALABLE_EXTENSION: Callee = Callee {
+        addr: 0x003b_1ee0,
+        f: ee::s13::MPEG2_sequence_scalable_extension,
+    };
+
+    /// `MPEG2_picture_display_extension` (`0x003b_1fc8`).
+    pub(crate) const PICTURE_DISPLAY_EXTENSION: Callee = Callee {
+        addr: 0x003b_1fc8,
+        f: ee::s13::MPEG2_picture_display_extension,
+    };
+
+    /// `MPEG2_picture_coding_extension` (`0x003b_20b8`).
+    pub(crate) const PICTURE_CODING_EXTENSION: Callee = Callee {
+        addr: 0x003b_20b8,
+        f: ee::s13::MPEG2_picture_coding_extension,
+    };
+
+    /// `MPEG2_picture_spatial_scalable_extension` (`0x003b_2230`).
+    pub(crate) const PICTURE_SPATIAL_SCALABLE_EXTENSION: Callee = Callee {
+        addr: 0x003b_2230,
+        f: ee::s13::MPEG2_picture_spatial_scalable_extension,
+    };
+
+    /// `MPEG2_picture_temporal_scalable_extension` (`0x003b_22f8`).
+    pub(crate) const PICTURE_TEMPORAL_SCALABLE_EXTENSION: Callee = Callee {
+        addr: 0x003b_22f8,
+        f: ee::s13::MPEG2_picture_temporal_scalable_extension,
+    };
+
+    /// `MPEG2_extra_bit_information` (`0x003b_2318`).
+    pub(crate) const EXTRA_BIT_INFORMATION: Callee = Callee {
+        addr: 0x003b_2318,
+        f: ee::s13::MPEG2_extra_bit_information,
+    };
+
+    /// `MPEG2_user_data` (`0x003b_2380`).
+    pub(crate) const USER_DATA: Callee = Callee {
+        addr: 0x003b_2380,
+        f: ee::s13::MPEG2_user_data,
+    };
+
+    /// `MPEG2_copyright_extension` (`0x003b_23a0`).
+    pub(crate) const COPYRIGHT_EXTENSION: Callee = Callee {
+        addr: 0x003b_23a0,
+        f: ee::s13::MPEG2_copyright_extension,
+    };
+
+    /// `MPEG2_Update_Temporal_Reference_Tacking_Data` (`0x003b_2440`).
+    pub(crate) const UPDATE_TEMPORAL_REFERENCE_TACKING_DATA: Callee = Callee {
+        addr: 0x003b_2440,
+        f: ee::s13::MPEG2_Update_Temporal_Reference_Tacking_Data,
     };
 }
 
@@ -3698,94 +3848,6 @@ pub fn ps2_sony_codec_internal_get_picture(c: &mut Cpu) {
         frame.restore_ra(c, 0);
         Addr(c.g[S0][0] as u32).off(0x10).sw(c, c.g[V1][0]);
         frame.restore(c, S0, 0x20);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void MPEG2_sequence_display_extension(void)` (0x3b1cc0): read the display
-/// extension bit fields into the decoder's parameter block.
-pub fn mpeg2_sequence_display_extension(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 11;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 3;
-        callee::MPEG2_GET_BITS.call(c, 0x003b_1cd0)?;
-        c.g[V1][0] = 0x510000;
-        c.g[A0][0] = 1;
-        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ac8)).sw(c, c.g[V0][0]);
-        callee::MPEG2_GET_BITS.call(c, 0x003b_1ce0)?;
-        c.g[V1][0] = 0x510000;
-        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ac4)).sw(c, c.g[V0][0]);
-        if c.g[V0][0] != 0 {
-            c.cycles += 12;
-            c.g[A0][0] = 8;
-            callee::MPEG2_GET_BITS.call(c, 0x003b_1cf4)?;
-            c.g[V1][0] = 0x510000;
-            c.g[A0][0] = 8;
-            Addr((c.g[V1][0] as u32).wrapping_sub(0x6ac0)).sw(c, c.g[V0][0]);
-            callee::MPEG2_GET_BITS.call(c, 0x003b_1d04)?;
-            c.g[V1][0] = 0x510000;
-            c.g[A0][0] = 8;
-            Addr((c.g[V1][0] as u32).wrapping_sub(0x6abc)).sw(c, c.g[V0][0]);
-            callee::MPEG2_GET_BITS.call(c, 0x003b_1d14)?;
-            c.g[V1][0] = 0x510000;
-            Addr((c.g[V1][0] as u32).wrapping_sub(0x6ab8)).sw(c, c.g[V0][0]);
-        }
-        c.cycles += 14;
-        c.g[A0][0] = 0xe;
-        callee::MPEG2_GET_BITS.call(c, 0x003b_1d24)?;
-        c.g[V1][0] = 0x510000;
-        c.g[A0][0] = 0x490000;
-        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ab4)).sw(c, c.g[V0][0]);
-        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x54d0));
-        callee::MPEG2_MARKER_BIT.call(c, 0x003b_1d38)?;
-        c.g[A0][0] = 0xe;
-        callee::MPEG2_GET_BITS.call(c, 0x003b_1d40)?;
-        c.g[V1][0] = 0x510000;
-        frame.restore_ra(c, 0);
-        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ab0)).sw(c, c.g[V0][0]);
-        c.cycles += 2;
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void MPEG2_copyright_extension(void)` (0x3b23a0): parse the copyright
-/// extension's fields out of the current bitstream into the decoder globals.
-pub fn mpeg2_copyright_extension(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 40;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 1;
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_23b0)?;
-        c.g[A0][0] = 8;
-        Addr(0x0050_9610).sw(c, c.g[V0][0]);
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_23c0)?;
-        c.g[A0][0] = 1;
-        Addr(0x0050_9614).sw(c, c.g[V0][0]);
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_23d0)?;
-        c.g[A0][0] = 7;
-        Addr(0x0050_9618).sw(c, c.g[V0][0]);
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_23e0)?;
-        c.g[A0][0] = 0x0049_5630;
-        callee::MPEG2_MARKER_BIT_2.call(c, 0x003b_23ec)?;
-        c.g[A0][0] = 0x14;
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_23f4)?;
-        c.g[A0][0] = 0x0049_5658;
-        Addr(0x0050_961c).sw(c, c.g[V0][0]);
-        callee::MPEG2_MARKER_BIT_2.call(c, 0x003b_2408)?;
-        c.g[A0][0] = 0x16;
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_2410)?;
-        c.g[A0][0] = 0x0049_5688;
-        Addr(0x0050_9620).sw(c, c.g[V0][0]);
-        callee::MPEG2_MARKER_BIT_2.call(c, 0x003b_2424)?;
-        c.g[A0][0] = 0x16;
-        callee::MPEG2_GET_BITS_2.call(c, 0x003b_242c)?;
-        frame.restore_ra(c, 0);
-        Addr(0x0050_9624).sw(c, c.g[V0][0]);
         frame.close(c);
         Ok(())
     })
@@ -9135,6 +9197,1167 @@ pub fn shp_calc_pixel_offset(c: &mut Cpu) {
     })
 }
 
+/// `void MPEG2_Error(void)` (0x3b11e8): the error stub is a bare return;
+///
+/// callers report through their own paths.
+pub fn mpeg2_error(c: &mut Cpu) {
+    c.cycles += 2;
+    c.pc = c.g[RA][0] as u32;
+}
+
+/// `void MPEG2_user_data(void)` (0x3b2380): skip user data by scanning for
+/// the next start code.
+pub fn mpeg2_user_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::NEXT_START_CODE.call(c, 0x003b_2390)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 MPEG2_Get_Bits1(void)` (0x3b1270): one bit from the stream.
+pub fn mpeg2_get_bits1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1280)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 MPEG2_marker_bit(void)` (0x3b2360): one marker bit from the stream.
+pub fn mpeg2_marker_bit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_2370)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_copyright_extension(void)` (0x3b23a0): parse the copyright
+/// extension (flag, id, original/copy flags, reserved, number, marker
+/// triplets) into the decoder globals.
+pub fn mpeg2_copyright_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 40;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_23b0)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x8;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x69f0)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_23c0)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x69ec)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_23d0)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x7;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x69e8)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_23e0)?;
+        c.g[A0][0] = 0x49_0000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5630));
+        callee::MPEG2_MARKER_BIT.call(c, 0x003b_23ec)?;
+        c.g[A0][0] = 0x14;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_23f4)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x49_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x69e4)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5658));
+        callee::MPEG2_MARKER_BIT.call(c, 0x003b_2408)?;
+        c.g[A0][0] = 0x16;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_2410)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x49_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x69e0)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5688));
+        callee::MPEG2_MARKER_BIT.call(c, 0x003b_2424)?;
+        c.g[A0][0] = 0x16;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_242c)?;
+        c.g[V1][0] = 0x51_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x69dc)).sw(c, c.g[V0][0]);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_sequence_display_extension(void)` (0x3b1cc0): parse the
+/// sequence display extension (format, colour flag, display size triple or
+/// the plain tail, marker) into the decoder globals.
+pub fn mpeg2_sequence_display_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x3;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1cd0)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ac8)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1ce0)?;
+        c.g[V1][0] = 0x51_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ac4)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] != 0 {
+            c.cycles += 12;
+            c.g[A0][0] = 0x8;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1cf4)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x8;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6ac0)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1d04)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x8;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6abc)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1d14)?;
+            c.g[V1][0] = 0x51_0000;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6ab8)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 14;
+        c.g[A0][0] = 0xe;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1d24)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x49_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ab4)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x54d0));
+        callee::MPEG2_MARKER_BIT.call(c, 0x003b_1d38)?;
+        c.g[A0][0] = 0xe;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1d40)?;
+        c.g[V1][0] = 0x51_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ab0)).sw(c, c.g[V0][0]);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_sequence_scalable_extension(void)` (0x3b1ee0): parse the
+/// sequence scalable extension (layer selector, scalable mode nibble, …).
+/// When the scalable mode is not 2 the plain tail runs; mode 2 with a
+/// non-2 lower field reports through `MPEG2_Error`.
+pub fn mpeg2_sequence_scalable_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x20);
+        c.g[A0][0] = 0x2;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = 0x51_0000;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1ef8)?;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.g[A0][0] = 0x4;
+        Addr((c.g[V1][0] as u32).wrapping_add(0x424)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1f0c)?;
+        c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[V1][0] = 0x51_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a24)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = 0x2;
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x424)).lw(c);
+        if c.g[V0][0] != c.g[A0][0] {
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        } else {
+            c.cycles += 28;
+            c.g[A0][0] = 0xe;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1f30)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x49_0000;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a20)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x54f0));
+            callee::MPEG2_MARKER_BIT.call(c, 0x003b_1f44)?;
+            c.g[A0][0] = 0xe;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1f4c)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x5;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a1c)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1f5c)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x5;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a18)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1f6c)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x5;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a14)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1f7c)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x5;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a10)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1f8c)?;
+            c.g[V1][0] = 0x51_0000;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a0c)).sw(c, c.g[V0][0]);
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        }
+        c.cycles += 4;
+        c.g[A0][0] = 0x4;
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x424)).lw(c);
+        frame.restore(c, S0, 0x10);
+        if c.g[V1][0] != c.g[A0][0] {
+            c.cycles += 3;
+            frame.restore_ra(c, 0);
+            frame.close(c);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = 0x49_0000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5510));
+            callee::MPEG2_ERROR.call(c, 0x003b_1fb4)?;
+            frame.restore(c, S0, 0x10);
+            c.cycles += 3;
+            frame.restore_ra(c, 0);
+            frame.close(c);
+        }
+        Ok(())
+    })
+}
+
+/// `void MPEG2_picture_coding_extension(void)` (0x3b20b8): parse the
+/// picture coding extension (f-codes, intra/predictive vectors, divisibility
+/// flags, qscale type, intra-VLC, alternate scan) into the decoder globals.
+pub fn mpeg2_picture_coding_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 68;
+        let frame = Frame::open(c, 0x30);
+        c.g[A0][0] = 0x4;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = 0x51_0000;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_20d4)?;
+        c.g[S0][0] = 0x51_0000;
+        c.g[A0][0] = 0x4;
+        Addr((c.g[S0][0] as u32).wrapping_sub(0x6a90)).sw(c, c.g[V0][0]);
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x6a90));
+        callee::MPEG2_GET_BITS.call(c, 0x003b_20e8)?;
+        c.g[A0][0] = 0x4;
+        Addr((c.g[S0][0] as u32).wrapping_add(0x4)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_20f4)?;
+        c.g[A0][0] = 0x4;
+        Addr((c.g[S0][0] as u32).wrapping_add(0x8)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_2100)?;
+        c.g[A0][0] = 0x2;
+        Addr((c.g[S0][0] as u32).wrapping_add(0xc)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_210c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x2;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a80)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_211c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a7c)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_212c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a78)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_213c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a74)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_214c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a70)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_215c)?;
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_add(0x428)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_216c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a6c)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_217c)?;
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_add(0x42c)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_218c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a68)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_219c)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a64)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_21ac)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a60)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_21bc)?;
+        c.g[V1][0] = 0x51_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6a5c)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] != 0 {
+            c.cycles += 20;
+            c.g[A0][0] = 0x1;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_21d0)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x3;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a58)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_21e0)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x1;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a54)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_21f0)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x7;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a50)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_2200)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x8;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a4c)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_2210)?;
+            c.g[V1][0] = 0x51_0000;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a48)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_slice_header(void)` (0x3b1878): parse a slice header (slice
+/// row from the vertical position or the stream, quantiser scale, extra
+/// bit) and return the slice row in `v0`.
+pub fn mpeg2_slice_header(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x51_0000;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x420)).lw(c);
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 5;
+            c.g[V1][0] = 0x51_0000;
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_sub(0x6b08)).lw(c);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < 2801i64) as u64;
+            c.g[S1][0] = 0u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 4;
+                c.g[A0][0] = 0x3;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_18b8)?;
+                c.g[S1][0] = c.g[V0][0];
+            }
+        } else {
+            c.cycles += 1;
+            c.g[S1][0] = 0u64;
+        }
+        c.cycles += 5;
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[A0][0] = 0x1;
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x424)).lw(c);
+        if c.g[V1][0] == c.g[A0][0] {
+            c.cycles += 4;
+            c.g[A0][0] = 0x7;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_18e0)?;
+            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+            Addr((c.g[V1][0] as u32).wrapping_add(0x434)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 7;
+        c.g[A0][0] = 0x5;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_18f0)?;
+        c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[V1][0] = c.g[V0][0];
+        if Addr((c.g[A0][0] as u32).wrapping_add(0x420)).lw(c) != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x428)).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = sx((c.g[V1][0] as u32) << 1);
+            } else {
+                c.cycles += 4;
+                c.g[V0][0] = 0x45_0000;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x3d28));
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).lbu(c);
+            }
+        } else {
+            c.g[V0][0] = c.g[V1][0];
+        }
+        c.cycles += 5;
+        Addr((c.g[A0][0] as u32).wrapping_add(0x438)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1930)?;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+            c.cycles += 2;
+            Addr((c.g[V0][0] as u32).wrapping_add(0x43c)).sw(c, 0u64);
+            c.g[V0][0] = c.g[S1][0];
+        } else {
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+            c.cycles += 12;
+            c.g[A0][0] = 0x1;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1940)?;
+            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+            c.g[A0][0] = 0x1;
+            Addr((c.g[V1][0] as u32).wrapping_add(0x43c)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1950)?;
+            c.g[A0][0] = 0x6;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1958)?;
+            callee::EXTRA_BIT_INFORMATION.call(c, 0x003b_1960)?;
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_picture_header(void)` (0x3b17a8): parse a picture header
+/// (temporal reference, type, VBV delay, full-pel/vector flags for
+/// predictive pictures) then run the extra-bit, extension and temporal
+/// tails.
+pub fn mpeg2_picture_header(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x51_0000;
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[A0][0] = 0xa;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = 0x51_0000;
+        Addr((c.g[V1][0] as u32).wrapping_add(0x430)).sw(c, 0u64);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_17cc)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x3;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6aac)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_17dc)?;
+        c.g[A0][0] = 0x10;
+        Addr((c.g[S0][0] as u32).wrapping_sub(0x6aa8)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_17e8)?;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x6aa8)).lw(c);
+        c.g[A0][0] = 0x51_0000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2));
+        c.g[V1][0] = (c.g[V1][0] < 0x2u64) as u64;
+        Addr((c.g[A0][0] as u32).wrapping_sub(0x6aa4)).sw(c, c.g[V0][0]);
+        if c.g[V1][0] != 0 {
+            c.cycles += 8;
+            c.g[A0][0] = 0x1;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1808)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x3;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6aa0)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1818)?;
+            c.g[V1][0] = 0x51_0000;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a9c)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 4;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x6aa8)).lw(c);
+        c.g[V0][0] = 0x3;
+        if c.g[V1][0] == c.g[V0][0] {
+            c.cycles += 8;
+            c.g[A0][0] = 0x1;
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1838)?;
+            c.g[V1][0] = 0x51_0000;
+            c.g[A0][0] = 0x3;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a98)).sw(c, c.g[V0][0]);
+            callee::MPEG2_GET_BITS.call(c, 0x003b_1848)?;
+            c.g[V1][0] = 0x51_0000;
+            Addr((c.g[V1][0] as u32).wrapping_sub(0x6a94)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 10;
+        callee::EXTRA_BIT_INFORMATION.call(c, 0x003b_1858)?;
+        callee::EXTENSION_AND_USER_DATA.call(c, 0x003b_1860)?;
+        callee::UPDATE_TEMPORAL_REFERENCE_TACKING_DATA.call(c, 0x003b_1868)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_sequence_header(void)` (0x3b14f0): parse the sequence header
+/// (size, aspect, rate, bitrate, VBV, constrained and quant-matrix flags)
+/// into the decoder state, install the default matrices for any table not
+/// loaded from the stream, then run the extension/user-data tail.
+pub fn mpeg2_sequence_header(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 43;
+        let frame = Frame::open(c, 0x40);
+        c.g[A0][0] = 0xc;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = 0x51_0000;
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[S0][0];
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1514)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0xc;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6b0c)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1524)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x4;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6b08)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1534)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x4;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6af4)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1544)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x12;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6af0)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1554)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x49_0000;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6aec)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5450));
+        callee::MPEG2_MARKER_BIT.call(c, 0x003b_1568)?;
+        c.g[A0][0] = 0xa;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1570)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ae8)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1580)?;
+        c.g[V1][0] = 0x51_0000;
+        c.g[A0][0] = 0x1;
+        Addr((c.g[V1][0] as u32).wrapping_sub(0x6ae4)).sw(c, c.g[V0][0]);
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1590)?;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x410)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] == 0 {
+            // No intra matrix in the stream: fill the default table.
+            c.cycles += 5;
+            c.g[V0][0] = 0x45_0000;
+            c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+            c.g[A1][0] = sx(0x45_0000 - 0x3d68);
+            c.g[S0][0] = 0u64;
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                Addr(c.g[A0][0] as u32).sw(c, c.g[V1][0]);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_15f0);
+                }
+            }
+        } else {
+            // Intra matrix present: stream 64 bytes through the zigzag.
+            c.cycles += 3;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S0][0] = 0u64;
+            c.g[S1][0] = sx(0x45_0000 - 0x3de8);
+            loop {
+                c.cycles += 11;
+                c.g[A0][0] = 0x8;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_15b0)?;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[A1][0] = Addr((c.g[S2][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[A0][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[A1][0] as u32).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+                if c.g[A0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_15a8);
+                }
+            }
+            c.cycles += 2;
+        }
+        c.cycles += 5;
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1614)?;
+        c.g[V1][0] = Addr((c.g[S2][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x414)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] == 0 {
+            // No non-intra matrix: fill the default 0x10 table.
+            c.cycles += 3;
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x110));
+            c.g[S0][0] = 0x3fu64;
+            c.g[V1][0] = 0x10;
+            loop {
+                c.cycles += 7;
+                Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                if (c.g[S0][0] as i64) < 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1670);
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = 0x51_0000;
+        } else {
+            // Non-intra matrix present: stream it, then fall out.
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S0][0] = 0u64;
+            c.g[S1][0] = sx(0x45_0000 - 0x3de8);
+            loop {
+                c.cycles += 11;
+                c.g[A0][0] = 0x8;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_1638)?;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                c.g[A1][0] = Addr((c.g[S2][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[A0][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[A1][0] as u32).wrapping_add(0x110)).sw(c, c.g[V0][0]);
+                if c.g[A0][0] == 0 {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0x51_0000;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1630);
+                }
+            }
+        }
+        // Rotate the four 64-word matrix windows, then the tail.
+        c.cycles += 4;
+        c.g[S0][0] = 0x3fu64;
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x310));
+        loop {
+            c.cycles += 7;
+            c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_sub(0x300)).lw(c);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_sub(0x200)).lw(c);
+            Addr((c.g[A0][0] as u32).wrapping_sub(0x100)).sw(c, c.g[V1][0]);
+            Addr(c.g[A0][0] as u32).sw(c, c.g[V0][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if (c.g[S0][0] as i64) < 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_16a0);
+            }
+        }
+        c.cycles += 8;
+        callee::EXTENSION_AND_USER_DATA.call(c, 0x003b_16c4)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 MPEG2_Get_Hdr(void)` (0x3b13d8): scan for the next start code and
+/// dispatch: sequence headers and pictures return through their parsers, a
+/// group-of-pictures header continues the scan, `0x1b7` ends it with 0 and a
+/// picture header ends it with 1.
+pub fn mpeg2_get_hdr(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = 0x1b8;
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0x1b7;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = 0x100;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = 0x1b3;
+        loop {
+            c.cycles += 7;
+            callee::NEXT_START_CODE.call(c, 0x003b_1408)?;
+            callee::GET_BITS32.call(c, 0x003b_1410)?;
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 436i64) as u64;
+            if c.g[V1][0] == c.g[S3][0] {
+                // Sequence header code: parse it, keep scanning.
+                c.cycles += 4;
+                callee::SEQUENCE_HEADER.call(c, 0x003b_1454)?;
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1400);
+                }
+                continue;
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                // Below the extension range: picture code or keep scanning.
+                c.cycles += 2;
+                if c.g[V1][0] == c.g[S2][0] {
+                    c.cycles += 3;
+                    callee::PICTURE_HEADER.call(c, 0x003b_1474)?;
+                    c.g[V0][0] = 0x1;
+                    break;
+                }
+                c.cycles += 2;
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1400);
+                }
+                continue;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] == c.g[S1][0] {
+                // Sequence end: done, 0.
+                c.g[V0][0] = 0u64;
+                break;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != c.g[S0][0] {
+                c.cycles += 2;
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1400);
+                }
+                continue;
+            }
+            // Group-of-pictures header: parse it, keep scanning.
+            c.cycles += 4;
+            callee::GROUP_OF_PICTURES_HEADER.call(c, 0x003b_1464)?;
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_1400);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_quant_matrix_extension(void)` (0x3b1d58): parse the quant
+/// matrix extension: four load flags, each followed by 64 streamed bytes
+/// for the intra, non-intra and chroma tables when set.
+pub fn mpeg2_quant_matrix_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        c.g[A0][0] = 0x1;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = 0x51_0000;
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[S0][0];
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1d7c)?;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x410)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] == 0 {
+            // No intra matrix: fall through to the non-intra flag below.
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S0][0] = 0u64;
+            c.g[S2][0] = sx(0x45_0000 - 0x3de8);
+            loop {
+                c.cycles += 13;
+                c.g[A0][0] = 0x8;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_1da0)?;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[A2][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A1][0] = c.g[A0][0];
+                Addr((c.g[A0][0] as u32).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+                Addr((c.g[A1][0] as u32).wrapping_add(0x210)).sw(c, c.g[V0][0]);
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1d98);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1dd4)?;
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x414)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] == 0 {
+            // No non-intra matrix.
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S0][0] = 0u64;
+            c.g[S2][0] = sx(0x45_0000 - 0x3de8);
+            loop {
+                c.cycles += 13;
+                c.g[A0][0] = 0x8;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_1df8)?;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[A2][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[A1][0] = c.g[A0][0];
+                Addr((c.g[A0][0] as u32).wrapping_add(0x110)).sw(c, c.g[V0][0]);
+                Addr((c.g[A1][0] as u32).wrapping_add(0x310)).sw(c, c.g[V0][0]);
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1df0);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1e2c)?;
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x418)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] == 0 {
+            // No chroma intra matrix.
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S0][0] = 0u64;
+            c.g[S2][0] = sx(0x45_0000 - 0x3de8);
+            loop {
+                c.cycles += 11;
+                c.g[A0][0] = 0x8;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_1e50)?;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[A0][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[A1][0] as u32).wrapping_add(0x210)).sw(c, c.g[V0][0]);
+                if c.g[A0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1e48);
+                }
+            }
+        }
+        c.cycles += 5;
+        c.g[A0][0] = 0x1;
+        callee::MPEG2_GET_BITS.call(c, 0x003b_1e7c)?;
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+        Addr((c.g[V1][0] as u32).wrapping_add(0x41c)).sw(c, c.g[V0][0]);
+        if c.g[V0][0] == 0 {
+            // No chroma non-intra matrix.
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            c.g[S0][0] = 0u64;
+            c.g[S2][0] = sx(0x45_0000 - 0x3de8);
+            loop {
+                c.cycles += 11;
+                c.g[A0][0] = 0x8;
+                callee::MPEG2_GET_BITS.call(c, 0x003b_1ea0)?;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lbu(c);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                c.g[A0][0] = ((c.g[S0][0] as i64) < 64i64) as u64;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                Addr((c.g[A1][0] as u32).wrapping_add(0x310)).sw(c, c.g[V0][0]);
+                if c.g[A0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_1e98);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MPEG2_next_start_code(void)` (0x3b1498): byte-align the stream
+/// and flush bytes until the 24-bit prefix `0x000001` shows, looping
+/// through the dispatcher heads on events.
+pub fn mpeg2_next_start_code(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003b_1498 => {
+                    c.cycles += 11;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[V0][0] = 0x51_0000;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S0][0] = 0x1;
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_sub(0x5f78)).lw(c);
+                    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lw(c);
+                    c.g[A0][0] &= 0x7;
+                    callee::MPEG2_FLUSH_BUFFER.call(c, 0x003b_14bc)?;
+                    pc = 0x003b_14d0;
+                    continue;
+                }
+                0x003b_14c4 => {
+                    c.cycles += 1;
+                    pc = 0x003b_14c8;
+                    continue;
+                }
+                0x003b_14c8 => {
+                    c.cycles += 2;
+                    callee::MPEG2_FLUSH_BUFFER.call(c, 0x003b_14d0)?;
+                    pc = 0x003b_14d0;
+                    continue;
+                }
+                0x003b_14d0 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = 0x18;
+                    callee::MPEG2_SHOW_BITS.call(c, 0x003b_14d8)?;
+                    c.g[A0][0] = 0x8;
+                    if c.g[V0][0] != c.g[S0][0] {
+                        if back_edge_unwinds(c, 0x003b_14c8) {
+                            return Ok(());
+                        }
+                        pc = 0x003b_14c8;
+                        continue;
+                    }
+                    pc = 0x003b_14e0;
+                    continue;
+                }
+                0x003b_14e0 => {
+                    c.cycles += 4;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.pc = c.g[RA][0] as u32;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003b_1498, 0x003b_14f0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `void MPEG2_extension_and_user_data(void)` (0x3b1988): scan for the next
+/// start code and dispatch extension ids 1..10 through the extension table
+/// (other ids rescan); user data and anything else ends the scan.
+pub fn mpeg2_extension_and_user_data(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003b_1988 => {
+                    c.cycles += 2;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1990 => {
+                    c.cycles += 4;
+                    callee::NEXT_START_CODE.call(c, 0x003b_1998)?;
+                    pc = 0x003b_1a84;
+                    continue;
+                }
+                0x003b_19a0 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x1b5;
+                    if c.g[V1][0] == c.g[V0][0] {
+                        pc = 0x003b_19ac;
+                        continue;
+                    }
+                    pc = 0x003b_1a74;
+                    continue;
+                }
+                0x003b_19ac => {
+                    c.cycles += 8;
+                    callee::MPEG2_FLUSH_BUFFER32.call(c, 0x003b_19b4)?;
+                    c.g[A0][0] = 0x4;
+                    callee::MPEG2_GET_BITS.call(c, 0x003b_19bc)?;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    c.g[V0][0] = (c.g[V1][0] < 0xau64) as u64;
+                    c.g[V0][0] = 0x49_0000;
+                    if c.g[V1][0] >= 0xau64 {
+                        if back_edge_unwinds(c, 0x003b_1990) {
+                            return Ok(());
+                        }
+                        pc = 0x003b_1990;
+                        continue;
+                    }
+                    pc = 0x003b_19cc;
+                    continue;
+                }
+                0x003b_19cc => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5490));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                    pc = c.g[A0][0] as u32;
+                    continue;
+                }
+                0x003b_19e4 => {
+                    c.cycles += 4;
+                    callee::SEQUENCE_EXTENSION.call(c, 0x003b_19ec)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_19f4 => {
+                    c.cycles += 4;
+                    callee::SEQUENCE_DISPLAY_EXTENSION.call(c, 0x003b_19fc)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a04 => {
+                    c.cycles += 4;
+                    callee::QUANT_MATRIX_EXTENSION.call(c, 0x003b_1a0c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a14 => {
+                    c.cycles += 4;
+                    callee::SEQUENCE_SCALABLE_EXTENSION.call(c, 0x003b_1a1c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a24 => {
+                    c.cycles += 4;
+                    callee::PICTURE_DISPLAY_EXTENSION.call(c, 0x003b_1a2c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a34 => {
+                    c.cycles += 4;
+                    callee::PICTURE_CODING_EXTENSION.call(c, 0x003b_1a3c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a44 => {
+                    c.cycles += 4;
+                    callee::PICTURE_SPATIAL_SCALABLE_EXTENSION.call(c, 0x003b_1a4c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a54 => {
+                    c.cycles += 4;
+                    callee::PICTURE_TEMPORAL_SCALABLE_EXTENSION.call(c, 0x003b_1a5c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a64 => {
+                    c.cycles += 4;
+                    callee::COPYRIGHT_EXTENSION.call(c, 0x003b_1a6c)?;
+                    if back_edge_unwinds(c, 0x003b_1990) {
+                        return Ok(());
+                    }
+                    pc = 0x003b_1990;
+                    continue;
+                }
+                0x003b_1a74 => {
+                    c.cycles += 4;
+                    callee::MPEG2_FLUSH_BUFFER32.call(c, 0x003b_1a7c)?;
+                    callee::USER_DATA.call(c, 0x003b_1a84)?;
+                    pc = 0x003b_1a84;
+                    continue;
+                }
+                0x003b_1a84 => {
+                    c.cycles += 6;
+                    c.g[A0][0] = 0x20;
+                    callee::MPEG2_SHOW_BITS.call(c, 0x003b_1a8c)?;
+                    c.g[V1][0] = c.g[V0][0];
+                    c.g[V0][0] = 0x1b5;
+                    c.g[V0][0] = 0x1b2;
+                    if c.g[V1][0] == 0x1b5 {
+                        if back_edge_unwinds(c, 0x003b_19ac) {
+                            return Ok(());
+                        }
+                        pc = 0x003b_19ac;
+                        continue;
+                    }
+                    pc = 0x003b_1a9c;
+                    continue;
+                }
+                0x003b_1a9c => {
+                    c.cycles += 2;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        if back_edge_unwinds(c, 0x003b_19a0) {
+                            return Ok(());
+                        }
+                        pc = 0x003b_19a0;
+                        continue;
+                    }
+                    pc = 0x003b_1aa4;
+                    continue;
+                }
+                0x003b_1aa4 => {
+                    c.cycles += 2;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.pc = c.g[RA][0] as u32;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003b_1988, 0x003b_1aac);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -13582,5 +14805,901 @@ pub(crate) mod tests {
                 0x003b_3e40,
             )
         });
+    }
+    use crate::difftest::require_paths;
+
+    #[test]
+    fn mpeg2_error_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = Rng(0x003b_11e8 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+            scramble(c, &mut r);
+        };
+        check(ee::s13::f_003b11e8__generated, mpeg2_error, 200, setup);
+        require_paths(ee::s13::f_003b11e8__generated, 200, &[2], setup);
+    }
+
+    #[test]
+    fn mpeg2_user_data_matches() {
+        let stream: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = Rng(0x003b_2380 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+            scramble(c, &mut r);
+            c.bus.write32(DATA + 0x1000, DATA + 0x2000);
+            c.bus.write32(DATA + 0x1004, 0x0000_0000);
+            c.bus.write32(DATA + 0x1008, 32);
+            for (i, b) in stream.iter().enumerate().skip(4) {
+                c.bus.write8(DATA + 0x2000 + (i - 4) as u32, *b);
+            }
+            let mut w = 0u32;
+            for i in 0..4 {
+                w = (w << 8) | stream[i] as u32;
+            }
+            c.bus.write32(DATA + 0x1004, w);
+            c.bus.write32(0x51_0000 - 0x5f78, DATA + 0x1000);
+            c.pc = 0x003b_2380;
+        };
+        check(ee::s13::f_003b2380__generated, mpeg2_user_data, 200, setup);
+        require_paths(ee::s13::f_003b2380__generated, 200, &[84], setup);
+    }
+
+    /// Bitstream fixture shared by the MPEG2 header/extension ports: the
+    /// hardware bit-buffer struct lives at `DATA + 0x1000` (byte pointer to
+    /// `DATA + 0x2000`, buffered word + valid-bit count planted by the
+    /// caller), the globals the parsers store to (`0x509400..0x510000`) and
+    /// the quant-table bytes they load (`0x44c200..0x44c300`) are prefilled
+    /// with distinctive non-zero patterns.
+    pub(crate) fn mpeg2_bitstream_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x003b_0000 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        let mut w = 0x509400u32;
+        while w < 0x510000 {
+            c.bus.write32(w, 0xa5a5_0000 | (w & 0xffff));
+            w += 4;
+        }
+        let mut b = 0x44c200u32;
+        let mut k = seed.wrapping_mul(0x85eb_ca6b).wrapping_add(0xc2b2_ae35);
+        while b < 0x44c300 {
+            k = k.wrapping_mul(0x85eb_ca6b).wrapping_add(0xc2b2_ae35);
+            c.bus.write8(b, ((k >> 13) as u8) | 0x11);
+            b += 1;
+        }
+        c.bus.write32(DATA + 0x1000, DATA + 0x2000);
+        c.bus
+            .write32(DATA + 0x1004, 0x1234_5678 ^ seed.wrapping_mul(0x1f3b_52d5));
+        c.bus.write32(DATA + 0x1008, 0x100);
+        c.bus.write32(0x51_0000 - 0x5f78, DATA + 0x1000);
+        get_bits_spy_on(c);
+    }
+
+    /// Gate word of the `MPEG2_Get_Bits` spy ([`get_bits_spy_on`]); the
+    /// call count follows it, the log starts at `+0x10`.
+    pub(crate) const GET_BITS_SPY: u32 = 0x0098_0000;
+    const GET_BITS_SPY_MAGIC: u32 = 0x5350_5931;
+    static GET_BITS_SPY_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    fn get_bits_spy(c: &mut Cpu) {
+        if c.bus.read32(GET_BITS_SPY) == GET_BITS_SPY_MAGIC {
+            let n = c.bus.read32(GET_BITS_SPY + 4);
+            let p = GET_BITS_SPY + 0x10 + (n % 0x1000) * 0x18;
+            for (i, r) in [S0, S1, S2, SP, RA, A0].into_iter().enumerate() {
+                c.bus.write32(p + 4 * i as u32, c.g[r][0] as u32);
+            }
+            c.bus.write32(GET_BITS_SPY + 4, n + 1);
+        }
+        fakes::fall_back(c, &GET_BITS_SPY_PREV, ee::s13::f_003b1300__generated)
+    }
+
+    /// Log `s0`-`s2`, `sp`, `ra` and `a0` at every `MPEG2_Get_Bits` entry
+    /// (then run the real body), so a register the callee saves on its
+    /// stack is compared at each call even when a later call overwrites
+    /// that stack word with the same value on both sides.
+    pub(crate) fn get_bits_spy_on(c: &mut Cpu) {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B1300),
+            get_bits_spy,
+            &GET_BITS_SPY_PREV,
+        );
+        c.bus.write32(GET_BITS_SPY, GET_BITS_SPY_MAGIC);
+    }
+
+    /// Stream-driven fixture: the whole stream is the byte list (MSB-first),
+    /// with the first 4 bytes preloaded as the buffered word and the valid
+    /// count at 32, so the first start-code scan starts byte-aligned. The
+    /// decoder struct past the bit buffer (the matrices at `+0x10..+0x410`
+    /// and the flags after them) is prefilled distinctive non-zero, and the
+    /// game image supplies the zigzag and default-matrix tables.
+    pub(crate) fn mpeg2_stream_setup(c: &mut Cpu, seed: u32, bytes: &[u8]) {
+        mpeg2_bitstream_setup(c, seed);
+        assert!(bytes.len() >= 4);
+        let mut w = 0u32;
+        for i in 0..4 {
+            w = (w << 8) | bytes[i] as u32;
+        }
+        c.bus.write32(DATA + 0x1004, w);
+        c.bus.write32(DATA + 0x1008, 32);
+        for (i, b) in bytes.iter().enumerate().skip(4) {
+            c.bus.write8(DATA + 0x2000 + (i - 4) as u32, *b);
+        }
+        let mut o = 0x1010u32;
+        while o < 0x1800 {
+            c.bus.write32(DATA + o, 0x5a5a_0000 | o);
+            o += 4;
+        }
+        mpeg2_game_tables(c);
+    }
+
+    /// MSB-first bit packer for stream fixtures: `(width, value)` fields,
+    /// zero-padded to a byte, then `tail` (a start code the parser's
+    /// extension scan stops at) and 16 zero bytes of slack.
+    pub(crate) fn mpeg2_bits(fields: &[(u32, u32)], tail: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let (mut acc, mut n) = (0u64, 0u32);
+        for &(w, v) in fields {
+            acc = acc << w | (v as u64 & ((1u64 << w) - 1));
+            n += w;
+            while n >= 8 {
+                out.push((acc >> (n - 8)) as u8);
+                n -= 8;
+            }
+        }
+        if n > 0 {
+            out.push((acc << (8 - n)) as u8);
+        }
+        out.extend_from_slice(tail);
+        out.extend_from_slice(&[0; 16]);
+        out
+    }
+
+    /// The real game tables the header parsers read (zigzag scan at
+    /// `0x44c218`, default intra matrix at `0x44c298`), over the
+    /// distinctive fill of [`mpeg2_bitstream_setup`].
+    pub(crate) fn mpeg2_game_tables(c: &mut Cpu) {
+        let keep: Vec<u32> = (0x509400u32..0x510000)
+            .step_by(4)
+            .map(|w| c.bus.read32(w))
+            .collect();
+        elf_image(c);
+        for (i, w) in (0x509400u32..0x510000).step_by(4).enumerate() {
+            c.bus.write32(w, keep[i]);
+        }
+    }
+
+    /// Refill rows for the header leaves: a seed-hashed stream (MSB first)
+    /// with `count` valid bits in the buffered word and the bits past them
+    /// zero, so `MPEG2_Flush_Buffer` refills inside the leaf and leaves the
+    /// buffered word in `A0`. `fill` replaces every stream byte when given
+    /// (`0x00`/`0xff` steer the leaves' flag arms).
+    pub(crate) fn mpeg2_refill_setup(c: &mut Cpu, seed: u32, count: u32, fill: Option<u8>) {
+        assert!((25..=32).contains(&count));
+        let mut r = Rng((0x003b_1290 ^ (seed as u64).wrapping_mul(0x9e37_79b9)) | 1);
+        let bytes: Vec<u8> = (0..48)
+            .map(|_| fill.unwrap_or_else(|| r.next_u32() as u8))
+            .collect();
+        mpeg2_stream_setup(c, seed, &bytes);
+        let w = c.bus.read32(DATA + 0x1004);
+        c.bus
+            .write32(DATA + 0x1004, w & (u64::MAX << (32 - count)) as u32);
+        c.bus.write32(DATA + 0x1008, count);
+    }
+
+    /// Every row of `setup` refills in `generated`: the byte pointer at
+    /// `DATA + 0x1000` ends past the stream start.
+    pub(crate) fn require_refill(
+        generated: ssx3_ee_rt::funcs::GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
+        for seed in 0..seeds {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, generated);
+            assert!(
+                c.bus.read32(DATA + 0x1000) > DATA + 0x2000,
+                "seed {seed}: no refill"
+            );
+        }
+    }
+
+    #[test]
+    fn mpeg2_get_bits1_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            // Top bit steered by seed: 1 on even seeds, 0 on odd.
+            c.bus.write32(
+                DATA + 0x1004,
+                if seed % 2 == 0 {
+                    0x8000_0001
+                } else {
+                    0x7fff_fffe
+                },
+            );
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(ee::s13::f_003b1270__generated, mpeg2_get_bits1, 200, setup);
+        require_paths(ee::s13::f_003b1270__generated, 200, &[41], setup);
+        // Refill rows: a 1-bit read with the count at 25 refills, so the
+        // buffered word comes from the stream; top bit steered by seed.
+        let refill: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_refill_setup(c, seed, 25, Some(if seed % 2 == 0 { 0x80 } else { 0x7f }));
+        };
+        check(ee::s13::f_003b1270__generated, mpeg2_get_bits1, 64, refill);
+        require_paths(ee::s13::f_003b1270__generated, 64, &[55], refill);
+        require_refill(ee::s13::f_003b1270__generated, 64, refill);
+    }
+
+    #[test]
+    fn mpeg2_marker_bit_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            c.bus.write32(
+                DATA + 0x1004,
+                if seed % 2 == 0 {
+                    0x8000_0000
+                } else {
+                    0x0000_0000
+                },
+            );
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(ee::s13::f_003b2360__generated, mpeg2_marker_bit, 200, setup);
+        require_paths(ee::s13::f_003b2360__generated, 200, &[41], setup);
+        // Refill rows: a 1-bit read with the count at 25 refills, so the
+        // buffered word comes from the stream; top bit steered by seed.
+        let refill: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_refill_setup(c, seed, 25, Some(if seed % 2 == 0 { 0x80 } else { 0x00 }));
+        };
+        check(ee::s13::f_003b2360__generated, mpeg2_marker_bit, 64, refill);
+        require_paths(ee::s13::f_003b2360__generated, 64, &[55], refill);
+        require_refill(ee::s13::f_003b2360__generated, 64, refill);
+    }
+
+    #[test]
+    fn mpeg2_copyright_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            // All-zero vs all-one stream: every stored field flips.
+            let fill = if seed % 2 == 0 {
+                0x0000_0000
+            } else {
+                0xffff_ffff
+            };
+            c.bus.write32(DATA + 0x1004, fill);
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(
+            ee::s13::f_003b23a0__generated,
+            mpeg2_copyright_extension,
+            200,
+            setup,
+        );
+        require_paths(ee::s13::f_003b23a0__generated, 200, &[401], setup);
+        // Refill rows: real stream, count 25-32 from the seed, all-zero,
+        // all-one or hashed bytes (`seed % 4`), so the reads refill.
+        let refill: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let fill = [Some(0x00), Some(0xff), None, None][(seed % 4) as usize];
+            mpeg2_refill_setup(c, seed, 25 + seed / 4 % 8, fill);
+        };
+        check(
+            ee::s13::f_003b23a0__generated,
+            mpeg2_copyright_extension,
+            64,
+            refill,
+        );
+        require_paths(
+            ee::s13::f_003b23a0__generated,
+            64,
+            &[531, 533, 543, 545],
+            refill,
+        );
+        require_refill(ee::s13::f_003b23a0__generated, 64, refill);
+    }
+
+    #[test]
+    fn mpeg2_sequence_display_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            // Colour-description flag is the first bit read after the
+            // 3-bit format: all-zero skips the size triple, all-one runs it.
+            let fill = if seed % 2 == 0 {
+                0x0000_0000
+            } else {
+                0xffff_ffff
+            };
+            c.bus.write32(DATA + 0x1004, fill);
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(
+            ee::s13::f_003b1cc0__generated,
+            mpeg2_sequence_display_extension,
+            200,
+            setup,
+        );
+        require_paths(ee::s13::f_003b1cc0__generated, 200, &[202, 316], setup);
+        // Refill rows: real stream, count 25-32 from the seed, all-zero,
+        // all-one or hashed bytes (`seed % 4`), so the reads refill.
+        let refill: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let fill = [Some(0x00), Some(0xff), None, None][(seed % 4) as usize];
+            mpeg2_refill_setup(c, seed, 25 + seed / 4 % 8, fill);
+        };
+        check(
+            ee::s13::f_003b1cc0__generated,
+            mpeg2_sequence_display_extension,
+            64,
+            refill,
+        );
+        require_paths(
+            ee::s13::f_003b1cc0__generated,
+            64,
+            &[254, 256, 258, 268, 410, 412, 414, 424],
+            refill,
+        );
+        require_refill(ee::s13::f_003b1cc0__generated, 64, refill);
+    }
+
+    #[test]
+    fn mpeg2_sequence_scalable_extension_matches() {
+        // A real stream with the valid count at 32: the reads are 2, 4, 14,
+        // marker, 14 and four 5-bit fields, so the 14-bit reads and the
+        // first and third 5-bit reads refill, and the fourth 5-bit call
+        // follows a refill (its `A0` load matters). Scalable mode in the
+        // first 2 bits, steered by seed: mode 1 (+1 stored) takes the long
+        // tail, 0 and 2 take the plain tail, and 3 reports through
+        // MPEG2_Error.
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let h = seed.wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
+            let mode = [1u32, 0, 3, 2][(seed % 4) as usize];
+            let f = [
+                (2, mode),
+                (4, h),
+                (14, h >> 4),
+                (1, 1),
+                (14, h >> 18),
+                (5, h >> 7),
+                (5, h >> 12),
+                (5, h >> 17),
+                (5, h >> 22),
+                (16, h.rotate_left(11)),
+                (16, h.rotate_left(23)),
+            ];
+            mpeg2_stream_setup(c, seed, &mpeg2_bits(&f, &[]));
+        };
+        check(
+            ee::s13::f_003b1ee0__generated,
+            mpeg2_sequence_scalable_extension,
+            200,
+            setup,
+        );
+        require_paths(ee::s13::f_003b1ee0__generated, 200, &[93, 99, 446], setup);
+        // The plain tail and the error arm read 6 bits and never refill;
+        // every long-tail row (seed % 4 == 0) does.
+        require_refill(ee::s13::f_003b1ee0__generated, 50, &|c, seed| {
+            setup(c, seed * 4)
+        });
+    }
+
+    #[test]
+    fn mpeg2_picture_coding_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            // The composite-display flag is the last bit read: all-zero
+            // skips the extra block, all-one runs it.
+            let fill = if seed % 2 == 0 {
+                0x0000_0000
+            } else {
+                0xffff_ffff
+            };
+            c.bus.write32(DATA + 0x1004, fill);
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(
+            ee::s13::f_003b20b8__generated,
+            mpeg2_picture_coding_extension,
+            200,
+            setup,
+        );
+        require_paths(ee::s13::f_003b20b8__generated, 200, &[617, 807], setup);
+        // Refill rows: real stream, count 25-32 from the seed, all-zero,
+        // all-one or hashed bytes (`seed % 4`), so the reads refill.
+        let refill: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let fill = [Some(0x00), Some(0xff), None, None][(seed % 4) as usize];
+            mpeg2_refill_setup(c, seed, 25 + seed / 4 % 8, fill);
+        };
+        check(
+            ee::s13::f_003b20b8__generated,
+            mpeg2_picture_coding_extension,
+            64,
+            refill,
+        );
+        require_paths(
+            ee::s13::f_003b20b8__generated,
+            64,
+            &[659, 673, 891, 905],
+            refill,
+        );
+        require_refill(ee::s13::f_003b20b8__generated, 64, refill);
+    }
+
+    #[test]
+    fn mpeg2_slice_header_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            let state = DATA + 0x1000;
+            // Matrix-present flag, width class, quant-matrix-valid flag and
+            // the second flag word, each steered by its own seed digit.
+            c.bus
+                .write32(state + 0x420, if seed % 2 == 0 { 0 } else { 0xabcd_1234 });
+            c.bus
+                .write32(0x51_0000 - 0x6b08, if seed / 2 % 2 == 0 { 0 } else { 3000 });
+            c.bus
+                .write32(state + 0x424, if seed / 4 % 2 == 0 { 0 } else { 1 });
+            c.bus.write32(
+                state + 0x428,
+                if seed / 8 % 2 == 0 { 0 } else { 0x1234_abcd },
+            );
+            let fill = if seed / 16 % 2 == 0 {
+                0x0000_0000
+            } else {
+                0xffff_ffff
+            };
+            c.bus.write32(DATA + 0x1004, fill);
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(
+            ee::s13::f_003b1878__generated,
+            mpeg2_slice_header,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s13::f_003b1878__generated,
+            64,
+            &[
+                102, 110, 113, 140, 148, 151, 186, 189, 389, 397, 400, 413, 416, 427, 435, 438,
+            ],
+            setup,
+        );
+        // Refill rows: the same flag digits on a real stream (count 25-32,
+        // zero/one/hashed bytes by `seed / 16`), so the reads refill.
+        let refill: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let state = DATA + 0x1000;
+            let fill = [Some(0x00), Some(0xff), None, None][(seed / 16 % 4) as usize];
+            mpeg2_refill_setup(c, seed, 25 + seed.wrapping_mul(5) % 8, fill);
+            c.bus
+                .write32(state + 0x420, if seed % 2 == 0 { 0 } else { 0xabcd_1234 });
+            c.bus
+                .write32(0x51_0000 - 0x6b08, if seed / 2 % 2 == 0 { 0 } else { 3000 });
+            c.bus
+                .write32(state + 0x424, if seed / 4 % 2 == 0 { 0 } else { 1 });
+            c.bus.write32(
+                state + 0x428,
+                if seed / 8 % 2 == 0 { 0 } else { 0x1234_abcd },
+            );
+        };
+        check(
+            ee::s13::f_003b1878__generated,
+            mpeg2_slice_header,
+            64,
+            refill,
+        );
+        require_paths(
+            ee::s13::f_003b1878__generated,
+            64,
+            &[
+                116, 124, 127, 154, 162, 165, 168, 176, 179, 214, 217, 297, 305, 343, 349, 371,
+                395, 491, 508, 519, 527, 571, 642, 667, 856, 3379, 3387, 3390, 3401, 3409, 3412,
+                3425, 3428, 3447, 3450, 3453,
+            ],
+            refill,
+        );
+        require_refill(ee::s13::f_003b1878__generated, 64, refill);
+    }
+
+    #[test]
+    fn mpeg2_picture_header_matches() {
+        // Temporal/vbv layouts: field bits, extra stop bit, zero pad, then
+        // a byte-placed 00 00 01 00 tail the extension scan finds.
+        let streams: [&[u8]; 3] = [
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+            &[
+                0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+            &[
+                0x00, 0x00, 0x00, 0x1c, 0x40, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+        ];
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_stream_setup(c, seed, streams[(seed % 3) as usize]);
+        };
+        check(
+            ee::s13::f_003b17a8__generated,
+            mpeg2_picture_header,
+            60,
+            setup,
+        );
+        require_paths(ee::s13::f_003b17a8__generated, 60, &[354, 428], setup);
+    }
+
+    #[test]
+    fn mpeg2_next_start_code_matches() {
+        // Pad variants: the marker sits 8/16/24 bits out, so the scan takes
+        // 1/2/3 iterations.
+        let streams: [&[u8]; 3] = [
+            &[
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+            &[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00,
+            ],
+        ];
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_stream_setup(c, seed, streams[(seed % 3) as usize]);
+            c.pc = 0x003b_1498;
+        };
+        check(
+            ee::s13::f_003b1498__generated,
+            mpeg2_next_start_code,
+            60,
+            setup,
+        );
+        require_paths(ee::s13::f_003b1498__generated, 60, &[77, 116, 155], setup);
+    }
+
+    #[test]
+    fn mpeg2_get_hdr_matches() {
+        // Four header sequences: SEQ->GOP->PIC (returns 1), GOP->PIC
+        // (returns 1), PIC directly (returns 1), sequence end (returns 0).
+        let seq_gop_pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0xb3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let gop_pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00,
+        ];
+        let pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let end: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0xb7];
+        let streams: [&[u8]; 4] = [seq_gop_pic, gop_pic, pic, end];
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_stream_setup(c, seed, streams[(seed % 4) as usize]);
+        };
+        check(ee::s13::f_003b13d8__generated, mpeg2_get_hdr, 60, setup);
+        require_paths(
+            ee::s13::f_003b13d8__generated,
+            60,
+            &[184, 502, 1151, 3285],
+            setup,
+        );
+    }
+
+    /// A sequence header after its start code: size, aspect, rate,
+    /// bitrate, marker, VBV and constrained fields from seed hashes, the
+    /// load-intra flag at bit 62 and the load-non-intra flag after it
+    /// steered by `seed % 4`, each loaded matrix 64 non-zero bytes, then a
+    /// picture start code the extension scan stops at.
+    pub(crate) fn mpeg2_seq_header_stream(seed: u32) -> Vec<u8> {
+        let (intra, non_intra) = (seed & 1, seed >> 1 & 1);
+        let h = seed.wrapping_mul(0x9e37_79b9) | 0x0101_0101;
+        let mut f = vec![
+            (12, h >> 4),
+            (12, h >> 12),
+            (4, h >> 24),
+            (4, h >> 28),
+            (18, h.rotate_left(7)),
+            (1, 1),
+            (10, h >> 9),
+            (1, h >> 3),
+            (1, intra),
+        ];
+        let mut k = 0u32;
+        while k < 64 * intra {
+            f.push((8, (seed.wrapping_mul(0x85eb_ca6b) >> k % 24) | 0x11 | k));
+            k += 1;
+        }
+        f.push((1, non_intra));
+        let mut k = 0u32;
+        while k < 64 * non_intra {
+            f.push((
+                8,
+                (seed.wrapping_mul(0xc2b2_ae35) >> k % 24) | 0x21 | k << 1,
+            ));
+            k += 1;
+        }
+        mpeg2_bits(&f, &[0x00, 0x00, 0x01, 0x00])
+    }
+
+    /// The four matrix arms (default/streamed intra x default/streamed
+    /// non-intra).
+    #[test]
+    fn mpeg2_sequence_header_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_stream_setup(c, seed, &mpeg2_seq_header_stream(seed));
+        };
+        check(
+            ee::s13::f_003b14f0__generated,
+            mpeg2_sequence_header,
+            60,
+            setup,
+        );
+        require_paths(
+            ee::s13::f_003b14f0__generated,
+            60,
+            &[1928, 5256, 5258, 8586],
+            setup,
+        );
+    }
+
+    /// A quant-matrix extension after its id nibble: the four load flags
+    /// (intra, non-intra, chroma intra, chroma non-intra) from the low four
+    /// seed bits, each loaded matrix 64 distinct non-zero bytes (the 64th,
+    /// stored in the loop's exit delay slot, included), then a picture
+    /// start code.
+    pub(crate) fn mpeg2_quant_stream(seed: u32) -> Vec<u8> {
+        let mut f = Vec::new();
+        let mut m = 0u32;
+        while m < 4 {
+            let on = seed >> m & 1;
+            f.push((1, on));
+            let mut k = 0u32;
+            while k < 64 * on {
+                f.push((
+                    8,
+                    (seed.wrapping_mul(0x27d4_eb2f) >> (k + m) % 24) | 0x41 | k << 1,
+                ));
+                k += 1;
+            }
+            m += 1;
+        }
+        mpeg2_bits(&f, &[0x00, 0x00, 0x01, 0x00])
+    }
+
+    /// All 16 load-flag combinations.
+    #[test]
+    fn mpeg2_quant_matrix_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_stream_setup(c, seed, &mpeg2_quant_stream(seed));
+        };
+        check(
+            ee::s13::f_003b1d58__generated,
+            mpeg2_quant_matrix_extension,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s13::f_003b1d58__generated,
+            64,
+            &[169, 3949, 4077, 7729, 7857, 7985, 11637, 11765, 15545],
+            setup,
+        );
+    }
+
+    #[test]
+    fn mpeg2_extension_and_user_data_matches() {
+        // Extension id in the top nibble after the B5 prefix (`seed % 11`):
+        // 0 and 6 skip, 1-5 and 7-10 call their parser; every variant then
+        // runs the B2 user-data arm and stops at the 00 00 01 00 tail. The
+        // per-id totals below show each id took its own arm.
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let id = (seed % 11) as u8;
+            let mut bytes = [0u8; 94];
+            bytes[1] = 0x00;
+            bytes[2] = 0x00;
+            bytes[3] = 0x01;
+            bytes[4] = 0xb5;
+            bytes[5] = id << 4;
+            bytes[70] = 0x00;
+            bytes[71] = 0x00;
+            bytes[72] = 0x01;
+            bytes[73] = 0xb2;
+            bytes[82] = 0x00;
+            bytes[83] = 0x00;
+            bytes[84] = 0x01;
+            bytes[85] = 0x00;
+            mpeg2_stream_setup(c, seed, &bytes);
+            c.pc = 0x003b_1988;
+        };
+        check(
+            ee::s13::f_003b1988__generated,
+            mpeg2_extension_and_user_data,
+            66,
+            setup,
+        );
+        let mut per_id = std::collections::BTreeMap::new();
+        for id in 0..11u32 {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, id);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s13::f_003b1988__generated);
+            per_id.insert(id, c.cycles - before);
+        }
+        let arms: std::collections::BTreeSet<u64> = per_id.values().copied().collect();
+        assert_eq!(arms.len(), 11, "per-id totals {per_id:?}");
+        require_paths(
+            ee::s13::f_003b1988__generated,
+            66,
+            &[
+                3205, 3591, 3315, 3384, 3354, 3283, 3211, 3406, 3732, 3392, 3225,
+            ],
+            setup,
+        );
+    }
+
+    /// [`schedule`] the entry with the event deadline
+    /// `step * (seed / 3 / variants % steps)` cycles into the run, so the
+    /// event seeds walk the deadline across every loop of the body. With
+    /// `unwind` false the unwind seeds only deliver: `drive` re-enters one
+    /// call level, and these bodies' callees loop two levels down (the bit
+    /// reader's refill under `Get_Bits`).
+    fn mpeg2_events_at(
+        c: &mut Cpu,
+        seed: u32,
+        entry: u32,
+        (variants, step, steps): (u32, u64, u32),
+        unwind: bool,
+    ) -> Events {
+        let mut r = Rng(0x003b_e000 ^ seed as u64);
+        let mut mode = schedule(c, &mut r, seed, entry);
+        if mode == Events::Unwind && !unwind {
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
+            mode = Events::Deliver;
+        }
+        if mode != Events::Off {
+            c.next_event = c.cycles + step * (seed / 3 / variants % steps) as u64;
+        }
+        mode
+    }
+
+    driven!(gen_mpeg2_sequence_header, ee::s13::f_003b14f0__generated);
+    driven!(hand_mpeg2_sequence_header, mpeg2_sequence_header);
+
+    /// Live events in the two matrix loops of each kind and the window
+    /// rotation (loop heads 0x3b15a8, 0x3b15f0, 0x3b1630, 0x3b1670,
+    /// 0x3b16a0) and in the bit reader's refill loops.
+    #[test]
+    fn mpeg2_sequence_header_events() {
+        check_events(
+            gen_mpeg2_sequence_header,
+            hand_mpeg2_sequence_header,
+            192,
+            &|c, seed| {
+                mpeg2_stream_setup(c, seed, &mpeg2_seq_header_stream(seed / 3));
+                mpeg2_events_at(c, seed, 0x003b_14f0, (4, 500, 16), false)
+            },
+        );
+    }
+
+    driven!(
+        gen_mpeg2_quant_matrix_extension,
+        ee::s13::f_003b1d58__generated
+    );
+    driven!(
+        hand_mpeg2_quant_matrix_extension,
+        mpeg2_quant_matrix_extension
+    );
+
+    /// Live events in the four matrix loops (heads 0x3b1d98, 0x3b1df0,
+    /// 0x3b1e48, 0x3b1e98).
+    #[test]
+    fn mpeg2_quant_matrix_extension_events() {
+        check_events(
+            gen_mpeg2_quant_matrix_extension,
+            hand_mpeg2_quant_matrix_extension,
+            384,
+            &|c, seed| {
+                mpeg2_stream_setup(c, seed, &mpeg2_quant_stream(seed / 3));
+                mpeg2_events_at(c, seed, 0x003b_1d58, (16, 1000, 8), false)
+            },
+        );
+    }
+
+    driven!(gen_mpeg2_next_start_code, ee::s13::f_003b1498__generated);
+    driven!(hand_mpeg2_next_start_code, mpeg2_next_start_code);
+
+    /// Live events in the byte scan: 4-11 zero bytes before the marker.
+    #[test]
+    fn mpeg2_next_start_code_events() {
+        check_events(
+            gen_mpeg2_next_start_code,
+            hand_mpeg2_next_start_code,
+            192,
+            &|c, seed| {
+                let mut bytes = vec![0u8; 4 + (seed / 3 % 8) as usize];
+                bytes.extend_from_slice(&[0x00, 0x00, 0x01, 0xb5]);
+                bytes.extend_from_slice(&[0; 16]);
+                mpeg2_stream_setup(c, seed, &bytes);
+                mpeg2_events_at(c, seed, 0x003b_1498, (8, 40, 8), true)
+            },
+        );
+    }
+
+    /// The `MPEG2_Get_Hdr` header sequences of [`mpeg2_get_hdr_matches`].
+    fn mpeg2_get_hdr_stream(k: u32) -> Vec<u8> {
+        let seq_gop_pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0xb3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let gop_pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00,
+        ];
+        let pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let end: &[u8] = &[0x00, 0x00, 0x00, 0x01, 0xb7];
+        [seq_gop_pic, gop_pic, pic, end][(k % 4) as usize].to_vec()
+    }
+
+    driven!(gen_mpeg2_get_hdr, ee::s13::f_003b13d8__generated);
+    driven!(hand_mpeg2_get_hdr, mpeg2_get_hdr);
+
+    /// Live events in the header scan and the parsers it calls.
+    #[test]
+    fn mpeg2_get_hdr_events() {
+        check_events(gen_mpeg2_get_hdr, hand_mpeg2_get_hdr, 192, &|c, seed| {
+            mpeg2_stream_setup(c, seed, &mpeg2_get_hdr_stream(seed / 3));
+            mpeg2_events_at(c, seed, 0x003b_13d8, (4, 200, 16), false)
+        });
+    }
+
+    /// The `MPEG2_extension_and_user_data` stream of
+    /// [`mpeg2_extension_and_user_data_matches`] for extension `id`.
+    fn mpeg2_extension_stream(id: u32) -> [u8; 94] {
+        let mut bytes = [0u8; 94];
+        bytes[3] = 0x01;
+        bytes[4] = 0xb5;
+        bytes[5] = (id as u8) << 4;
+        bytes[72] = 0x01;
+        bytes[73] = 0xb2;
+        bytes[84] = 0x01;
+        bytes
+    }
+
+    driven!(
+        gen_mpeg2_extension_and_user_data,
+        ee::s13::f_003b1988__generated
+    );
+    driven!(
+        hand_mpeg2_extension_and_user_data,
+        mpeg2_extension_and_user_data
+    );
+
+    /// Live events in the extension/user-data loop (heads 0x3b1990,
+    /// 0x3b19a0, 0x3b19ac) for every extension id.
+    #[test]
+    fn mpeg2_extension_and_user_data_events() {
+        check_events(
+            gen_mpeg2_extension_and_user_data,
+            hand_mpeg2_extension_and_user_data,
+            264,
+            &|c, seed| {
+                mpeg2_stream_setup(c, seed, &mpeg2_extension_stream(seed / 3 % 11));
+                mpeg2_events_at(c, seed, 0x003b_1988, (11, 400, 8), false)
+            },
+        );
     }
 }
