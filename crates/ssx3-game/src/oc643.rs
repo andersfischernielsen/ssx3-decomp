@@ -158,22 +158,6 @@ fn boot_cfg_tail(c: &mut Cpu, src: usize, reg: usize) {
     c.sdr(reg, d);
 }
 
-/// `cSSXApp_initload(SSXApp* self)` (0x2282d0, `SSXApp_BootLoad`): the game's
-/// one-time load. Starts the net modules (`initOnline`), opens the big files
-/// that exist, the scripts, the 11 character textures and `rwrdps2.big`,
-/// creates the ScriptEngine, loads `input.map` and `input2.map` into the
-/// input maps and gives both players a cInput on the first map, loads the
-/// fonts, applies the display options and the locale, builds the animation
-/// data, starts the audio with the saved volumes, inits the world triggers
-/// and copies a non-empty command-line track.
-///
-/// `Cfg_82D0()` by value is the inline copy of the BE option struct, five
-/// times: each `cSSXAudio_*` argument is read from the stack copy.
-#[allow(dead_code)]
-pub fn ssxapp_boot_load(c: &mut Cpu) {
-    guest(c, ssxapp_boot_load_body);
-}
-
 #[allow(dead_code)]
 fn ssxapp_boot_load_body(c: &mut Cpu) -> Flow {
     ssx3_ee_rt::prof::enter(c, 0x0022_82d0);

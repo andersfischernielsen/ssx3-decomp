@@ -789,6 +789,17 @@ pub fn ovscreen_trophy_on_widget_action(c: &mut Cpu) {
 /// charge, the scratch registers it leaves, the `.lit4` reads through
 /// `gp`), with the calls through the call protocol and the loop back edges'
 /// event checks through [`event_due`]/[`deliver_event_here`].
+/// Slides the float register `r` (an x of the meter's layout, in the HUD's
+/// virtual screen) with the race HUD's edge (`ui::hud_slide_x`): the meter
+/// draws outside the HUD element system, so `HUD_GetElemPos` never sees it.
+fn slide_meter_x(c: &mut Cpu, r: usize) {
+    let x = f32::from_bits(c.f[r]);
+    let y = crate::ui::hud_slide_x(c, x);
+    if y != x {
+        c.f[r] = y.to_bits();
+    }
+}
+
 pub fn c_ov_state_hud1p_draw_progress_meter(c: &mut Cpu) {
     guest(c, |c| {
         'b_20faf8: {
@@ -1552,6 +1563,7 @@ pub fn c_ov_state_hud1p_draw_progress_meter(c: &mut Cpu) {
                                                                 c.g[V0][0],
                                                             );
                                                             c.lwc1(12, c.g[S1][0] as u32);
+                                                            slide_meter_x(c, 12);
                                                             c.lwc1(
                                                                 13,
                                                                 (c.g[S1][0] as u32)
@@ -2033,6 +2045,7 @@ pub fn c_ov_state_hud1p_draw_progress_meter(c: &mut Cpu) {
                                                             2,
                                                             (c.g[S1][0] as u32).wrapping_add(0x10),
                                                         );
+                                                        slide_meter_x(c, 2);
                                                         c.g[A1][0] = 0x4;
                                                         c.swc1(0, c.g[SP][0] as u32);
                                                         c.g[A2][0] = c.g[SP][0];
@@ -2208,6 +2221,7 @@ pub fn c_ov_state_hud1p_draw_progress_meter(c: &mut Cpu) {
                                                             2,
                                                             (c.g[S1][0] as u32).wrapping_add(0x10),
                                                         );
+                                                        slide_meter_x(c, 2);
                                                         c.sub_s(1, 22, 21);
                                                         c.lwc1(
                                                             0,
@@ -2476,6 +2490,7 @@ c.lwc1(2, (c.g[S1][0] as u32).wrapping_add(0x1c));
 c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x18));
 c.g[T1][0] = 0xc;
 c.lwc1(20, (c.g[S1][0] as u32).wrapping_add(0x10));
+slide_meter_x(c, 20);
 c.g[V0][0] = 0x1;
 c.mul_s(0, 0, 2);
 c.mov_s(4, 1);

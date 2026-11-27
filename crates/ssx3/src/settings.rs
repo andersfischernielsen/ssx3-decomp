@@ -62,7 +62,14 @@ pub const ITEMS: &[Item] = &[
             ("", "Fill window"),
             ("16:9", "16:9"),
             ("4:3", "4:3 (original)"),
+            ("cover", "Cover (menus fill)"),
         ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_HUD_EDGE",
+        label: "Race HUD at screen edges",
+        choices: &[("", "On"), ("0", "Off (centred, 4:3)")],
         live: true,
     },
     Item {

@@ -116,6 +116,67 @@ fn lw(c: &mut Cpu, a: u32) -> u64 {
 #[derive(Clone, Copy)]
 pub struct HudElem(pub Addr);
 
+/// The width of the HUD's virtual screen: the orthographic projection the
+/// game sets for 2D (`SetOrtho(0, 0, 640, 480, ...)`, float bits).
+const HUD_ORTHO_W: u32 = 0x4420_0000;
+
+/// `SSX3_HUD_EDGE` ("Race HUD at screen edges" in F10): how far the race
+/// HUD's anchored elements slide toward the frame's edges, in pixels of the
+/// HUD's virtual screen (positions only, the elements keep their size and
+/// their spacing: one delta per side). Elements in the left third slide
+/// left, in the right third right, the middle stays.
+///
+/// The renderer squeezes the HUD space around its centre by the window's
+/// squeeze (`ssx3_core::view::hud_squeeze`, from the window's size), so the
+/// delta that puts an element where it sat relative to the window's edge in
+/// the authored frame is half the width times `1 / squeeze - 1`: it follows
+/// the window as it is resized, and is 0 when the layer fills it (4:3,
+/// headless, tests). Unset (the default) is that delta; `0` is the HUD as
+/// authored (inset); a number is a fixed delta.
+fn auto_edge(squeeze: f32, width: f32) -> f32 {
+    if squeeze > 0.0 && squeeze < 1.0 {
+        width / 2.0 * (1.0 / squeeze - 1.0)
+    } else {
+        0.0
+    }
+}
+
+fn hud_edge(width: f32) -> f32 {
+    let auto = auto_edge(ssx3_core::view::hud_squeeze(), width);
+    match ssx3_core::config::var("SSX3_HUD_EDGE") {
+        None => auto,
+        Some(v) if v.is_empty() => auto,
+        Some(v) => v
+            .parse::<f32>()
+            .ok()
+            .filter(|d| (0.0..=width / 2.0).contains(d))
+            .unwrap_or(auto),
+    }
+}
+
+/// `x` (in the HUD's virtual screen) slid toward the frame's edge by the race
+/// HUD's edge delta (`hud_edge`): the left third slides left, the right third
+/// right, the middle stays; `x` itself outside a race (and when the delta is
+/// 0). Used by every race HUD element, in `HUD_GetElemPos` and by the ones
+/// that draw outside the element system (the progress meter).
+pub(crate) fn hud_slide_x(c: &Cpu, x: f32) -> f32 {
+    let width = f32::from_bits(HUD_ORTHO_W);
+    let edge = hud_edge(width);
+    if edge <= 0.5
+        || ssx3_core::view::screen(|a| c.bus.ram_u32(a), c.g[GP][0] as u32)
+            != ssx3_core::view::Screen::Race
+    {
+        return x;
+    }
+    if x < width / 3.0 {
+        x - edge
+    } else if x > width * 2.0 / 3.0 {
+        x + edge
+    } else {
+        x
+    }
+}
+
 impl HudElem {
     /// `short x, y`.
     pub fn pos(self, i: u32) -> Addr {
@@ -170,7 +231,15 @@ pub fn hud_get_elem_pos(c: &mut Cpu) {
     for i in 0..2 {
         let v = e.pos(i).lh(c);
         c.g[V0][0] = v;
-        let f = FpuF32::from_i32(v as i32);
+        let mut f = FpuF32::from_i32(v as i32);
+        if i == 0 {
+            // The edge slide on x (positions are whole pixels here).
+            let xf = f32::from_bits(f.0);
+            let shifted = hud_slide_x(c, xf);
+            if shifted != xf {
+                f = FpuF32::from_i32(shifted as i32);
+            }
+        }
         c.f[0] = f.0;
         out.off(4 * i).write_fpu(c, f);
     }
@@ -1253,7 +1322,7 @@ pub fn ui_engine_render(c: &mut Cpu) {
         c.g[A1][0] = 0;
         c.f[13] = 0;
         for (f, bits) in [
-            (14, 0x4420_0000u32),
+            (14, HUD_ORTHO_W),
             (15, 0x43f0_0000),
             (16, 0xbf80_0000),
             (17, 0x3f80_0000),
@@ -2205,6 +2274,22 @@ pub fn font_measure_text(c: &mut Cpu) {
 
 #[cfg(test)]
 mod tests {
+    /// The automatic HUD edge delta undoes the renderer's squeeze: an element
+    /// at the left edge lands on it again at any window shape.
+    #[test]
+    fn hud_auto_edge_undoes_the_squeeze() {
+        let w = f32::from_bits(super::HUD_ORTHO_W);
+        assert_eq!(super::auto_edge(1.0, w), 0.0);
+        assert_eq!(super::auto_edge(0.0, w), 0.0);
+        for aspect in [960.0f32 / 672.0, 16.0 / 9.0, 21.0 / 9.0, 32.0 / 9.0] {
+            let squeeze = ((4.0f32 / 3.0) / aspect).min(1.0);
+            let edge = super::auto_edge(squeeze, w);
+            // x = 0 slid left by `edge`, then squeezed around the centre.
+            let on_screen = w / 2.0 + (0.0 - edge - w / 2.0) * squeeze;
+            assert!(on_screen.abs() < 1e-3, "aspect {aspect}: {on_screen}");
+        }
+    }
+
     use crate::difftest::events::{check_events, schedule};
     use crate::difftest::{check_paths, check_paths_lohi, fill, scramble, Rng, DATA};
     use ssx3_ee_rt::cpu::reg::*;

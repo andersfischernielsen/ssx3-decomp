@@ -21,6 +21,7 @@ pub mod memory_map;
 pub mod pack;
 pub mod platform_paths;
 pub mod syscall;
+pub mod view;
 
 pub use devices::Devices;
 pub use elf::Elf;

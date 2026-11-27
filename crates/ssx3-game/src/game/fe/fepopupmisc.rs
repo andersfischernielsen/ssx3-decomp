@@ -1061,6 +1061,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         message_center_get_entry,
         "MessageCenter_GetEntry",
     ),
+    (
+        0x001e_3d58,
+        ov_screen_message_center_init_2,
+        "OVScreenMessageCenter_Init",
+    ),
+    (
+        0x001e_4458,
+        ov_screen_message_center_update_button_text_2,
+        "OVScreenMessageCenter_UpdateButtonText",
+    ),
+    (
+        0x001e_4658,
+        ov_screen_message_center_update_scroll_arrows_2,
+        "OVScreenMessageCenter_UpdateScrollArrows",
+    ),
+    (
+        0x001e_64a8,
+        ov_screen_freestyle_standings_update_2,
+        "OVScreenFreestyleStandings_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -21671,6 +21691,467 @@ pub fn message_center_get_entry(c: &mut Cpu) {
     })
 }
 
+/// `OVScreenMessageCenter_Init` (0x001e3d58): builds the message-center screen: adds it to the UI engine by its hash name, plays it, and refreshes the list, count, button and arrow widgets.
+/// The body keeps the generated block structure: every register, cycle and call is as generated.
+pub fn ov_screen_message_center_init_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1e3da8: {
+            c.cycles += 16;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S1][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[A0][0] = 0x470000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2078));
+            c.g[RA][0] = sx(0x001e3d7c);
+            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+            call_ptr(c, 0x00317670, 0x001e3d7c)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            c.g[RA][0] = sx(0x001e3d90);
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00397cc0, 0x001e3d90)?;
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S1][0] as u32).wrapping_add(0x17c), c.g[V0][0]);
+            if t {
+                break 'b_1e3da8;
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x001e3da8);
+                c.g[A2][0] = 0u64;
+                call_ptr(c, 0x0039c870, 0x001e3da8)?;
+                break 'b_1e3da8;
+            }
+        }
+        'b_1e3dcc: {
+            'b_1e3dc4: {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x001e3db0);
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x0020a380, 0x001e3db0)?;
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+                let t = c.g[V1][0] == 0u64;
+                c.g[V0][0] = 0x1;
+                if t {
+                    break 'b_1e3dc4;
+                } else {
+                    c.cycles += 2;
+                    let t = c.g[V1][0] != c.g[V0][0];
+
+                    if t {
+                        break 'b_1e3dcc;
+                    } else {
+                        break 'b_1e3dc4;
+                    }
+                }
+            }
+            c.cycles += 2;
+            call_ptr(c, 0x0020d110, 0x001e3dcc)?;
+            break 'b_1e3dcc;
+        }
+        c.cycles += 25;
+        c.g[RA][0] = sx(0x001e3dd4);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x174), 0u64);
+        Callee {
+            addr: 0x001e33e8,
+            f: ee::s04::MessageCenter_GetMessageCount,
+        }
+        .call(c, 0x001e3dd4)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = 0x4;
+        c.g[RA][0] = sx(0x001e3de4);
+        c.g[A1][0] = 0x1;
+        Callee {
+            addr: 0x001e2bb8,
+            f: ee::s04::MessageCenter_CountGroupMessages,
+        }
+        .call(c, 0x001e3de4)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x144));
+        c.g[RA][0] = sx(0x001e3df4);
+        c.g[A1][0] = c.g[S0][0] & 0xff;
+        call_ptr(c, 0x0039b760, 0x001e3df4)?;
+        c.g[RA][0] = sx(0x001e3dfc);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x001e48b0,
+            f: ee::s04::OVScreenMessageCenter_RefreshList,
+        }
+        .call(c, 0x001e3dfc)?;
+        c.g[RA][0] = sx(0x001e3e04);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x001e4758,
+            f: ee::s04::OVScreenMessageCenter_UpdateCountText,
+        }
+        .call(c, 0x001e3e04)?;
+        c.g[RA][0] = sx(0x001e3e0c);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x001e4458,
+            f: ee::s04::OVScreenMessageCenter_UpdateButtonText,
+        }
+        .call(c, 0x001e3e0c)?;
+        c.g[RA][0] = sx(0x001e3e14);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x001e4658,
+            f: ee::s04::OVScreenMessageCenter_UpdateScrollArrows,
+        }
+        .call(c, 0x001e3e14)?;
+        c.g[V0][0] = 0x1;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x1030), c.g[V0][0]);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `OVScreenMessageCenter_UpdateButtonText` (0x001e4458): shows or hides the message-center buttons from the message count and the first row.
+/// The body keeps the generated block structure: every register, cycle and call is as generated.
+pub fn ov_screen_message_center_update_button_text_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1e4568: {
+            'b_1e4564: {
+                'b_1e4550: {
+                    'b_1e4534: {
+                        'b_1e44b0: {
+                            c.cycles += 12;
+                            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            c.g[S1][0] = c.g[A0][0];
+                            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x144));
+                            c.g[RA][0] = sx(0x001e4478);
+                            c.g[S0][0] = c.lbu((c.g[V0][0] as u32).wrapping_add(0x95));
+                            Callee {
+                                addr: 0x001e33e8,
+                                f: ee::s04::MessageCenter_GetMessageCount,
+                            }
+                            .call(c, 0x001e4478)?;
+                            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            let t = (c.g[V0][0] as i64) < 0;
+                            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14c));
+                            if t {
+                                break 'b_1e44b0;
+                            } else {
+                                c.cycles += 8;
+                                c.g[RA][0] = sx(0x001e4490);
+                                c.g[A0][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x001e4878,
+                                    f: ee::s04::OVScreenMessageCenter_ShowWidget,
+                                }
+                                .call(c, 0x001e4490)?;
+                                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x150));
+                                c.g[RA][0] = sx(0x001e449c);
+                                c.g[A0][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x001e4878,
+                                    f: ee::s04::OVScreenMessageCenter_ShowWidget,
+                                }
+                                .call(c, 0x001e449c)?;
+                                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x158));
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[A0][0] = 0x470000;
+                                if t {
+                                    break 'b_1e4564;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = true;
+                                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1fa0));
+                                    if t {
+                                        break 'b_1e4534;
+                                    } else {
+                                        break 'b_1e44b0;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 8;
+                        c.g[RA][0] = sx(0x001e44b8);
+                        c.g[A0][0] = c.g[S1][0];
+                        Callee {
+                            addr: 0x001e4840,
+                            f: ee::s04::OVScreenMessageCenter_HideWidget,
+                        }
+                        .call(c, 0x001e44b8)?;
+                        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x150));
+                        c.g[RA][0] = sx(0x001e44c4);
+                        c.g[A0][0] = c.g[S1][0];
+                        Callee {
+                            addr: 0x001e4840,
+                            f: ee::s04::OVScreenMessageCenter_HideWidget,
+                        }
+                        .call(c, 0x001e44c4)?;
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x158));
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[A0][0] = 0x4;
+                        if t {
+                            break 'b_1e4564;
+                        } else {
+                            c.cycles += 17;
+                            c.g[A1][0] = sx(0u32.wrapping_sub(c.g[S0][0] as u32));
+                            c.g[RA][0] = sx(0x001e44dc);
+                            c.g[A2][0] = 0x1;
+                            Callee {
+                                addr: 0x001e2c80,
+                                f: ee::s04::MessageCenter_GetGroupMessageId,
+                            }
+                            .call(c, 0x001e44dc)?;
+                            c.g[A2][0] = 0x18;
+                            c.g[V1][0] = 0x4c0000;
+                            c.mult(0, 6, 2, 6);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6c08));
+                            c.g[A0][0] = 0x14;
+                            c.g[A1][0] = 0x440000;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1630));
+                            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.g[A2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                            c.mult(0, 4, 6, 4);
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+                            let t = c.g[V0][0] != c.g[V1][0];
+                            c.g[A0][0] = 0x470000;
+                            if t {
+                                break 'b_1e4550;
+                            } else {
+                                'b_1e452c: {
+                                    c.cycles += 4;
+                                    c.g[RA][0] = sx(0x001e451c);
+                                    c.g[A0][0] = c.g[A2][0];
+                                    Callee {
+                                        addr: 0x001e3a30,
+                                        f: ee::s04::MessageCenter_IsFlagSet,
+                                    }
+                                    .call(c, 0x001e451c)?;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[A0][0] = 0x470000;
+                                    if t {
+                                        break 'b_1e452c;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1f90));
+                                        if t {
+                                            break 'b_1e4534;
+                                        } else {
+                                            break 'b_1e452c;
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                c.g[A0][0] = 0x470000;
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1f80));
+                                break 'b_1e4534;
+                            }
+                        }
+                    }
+                    c.cycles += 7;
+                    call_ptr(c, 0x00317670, 0x001e453c)?;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x158));
+                    c.g[RA][0] = sx(0x001e4548);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x003a1000, 0x001e4548)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    if t {
+                        break 'b_1e4568;
+                    } else {
+                        break 'b_1e4550;
+                    }
+                }
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x001e4558);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1fa0));
+                call_ptr(c, 0x00317670, 0x001e4558)?;
+                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x158));
+                c.g[RA][0] = sx(0x001e4564);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x003a1000, 0x001e4564)?;
+                break 'b_1e4564;
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_1e4568;
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `OVScreenMessageCenter_UpdateScrollArrows` (0x001e4658): shows the scroll arrows from the list position, through the arrow widget's vtable.
+/// The body keeps the generated block structure: every register, cycle and call is as generated.
+pub fn ov_screen_message_center_update_scroll_arrows_2(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1e46b4: {
+            'b_1e4698: {
+                c.cycles += 8;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[S1][0] = c.g[A0][0];
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x174));
+                let t = c.g[V0][0] != 0u64;
+                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x15c));
+                if t {
+                    break 'b_1e4698;
+                } else {
+                    c.cycles += 8;
+                    c.g[A1][0] = 0u64;
+                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                    let t = c.g[V1][0] as u32;
+                    c.g[RA][0] = sx(0x001e4690);
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x001e4690)?;
+                    let t = true;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x102c));
+                    if t {
+                        break 'b_1e46b4;
+                    } else {
+                        break 'b_1e4698;
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.g[A1][0] = 0x1;
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x001e46b0);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x001e46b0)?;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x102c));
+            break 'b_1e46b4;
+        }
+        'b_1e46e8: {
+            'b_1e46d4: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+
+                if t {
+                    break 'b_1e46d4;
+                } else {
+                    c.cycles += 6;
+                    Callee {
+                        addr: 0x001e33e8,
+                        f: ee::s04::MessageCenter_GetMessageCount,
+                    }
+                    .call(c, 0x001e46c4)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = 0x4;
+                    let t = true;
+                    c.g[A1][0] = 0x1;
+                    if t {
+                        break 'b_1e46e8;
+                    } else {
+                        break 'b_1e46d4;
+                    }
+                }
+            }
+            c.cycles += 5;
+            Callee {
+                addr: 0x001e33e8,
+                f: ee::s04::MessageCenter_GetMessageCount,
+            }
+            .call(c, 0x001e46dc)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = 0x4;
+            c.g[A1][0] = 0u64;
+            break 'b_1e46e8;
+        }
+        'b_1e4744: {
+            'b_1e4728: {
+                c.cycles += 8;
+                Callee {
+                    addr: 0x001e2bb8,
+                    f: ee::s04::MessageCenter_CountGroupMessages,
+                }
+                .call(c, 0x001e46f0)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x174));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S0][0] as i64)) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x160));
+                if t {
+                    break 'b_1e4728;
+                } else {
+                    c.cycles += 8;
+                    c.g[A1][0] = 0u64;
+                    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                    let t = c.g[V1][0] as u32;
+                    c.g[RA][0] = sx(0x001e4720);
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x001e4720)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    if t {
+                        break 'b_1e4744;
+                    } else {
+                        break 'b_1e4728;
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.g[A1][0] = 0x1;
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+            let t = c.g[V1][0] as u32;
+            c.g[RA][0] = sx(0x001e4740);
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x001e4740)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_1e4744;
+        }
+        c.cycles += 4;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// `OVScreenFreestyleStandings_Update` (0x001e64a8): one call to the standings update.
+/// The body keeps the generated block structure: every register, cycle and call is as generated.
+pub fn ov_screen_freestyle_standings_update_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        call_ptr(c, 0x0020e900, 0x001e64b8)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -30180,6 +30661,339 @@ pub(crate) mod tests {
             SEEDS_13,
             PATHS,
             &|c, seed| entry_fixture(c, seed, 0x001e_35f0),
+        );
+    }
+
+    /// Gate word of this module's callee fakes (in each machine's own RAM);
+    /// per-fake call counters and result mailboxes sit behind it.
+    pub(crate) const OC973_CTRL: u32 = DATA + 0x2d_0000;
+
+    pub(crate) const OC973_MAGIC: u32 = 0x0973_0973;
+
+    pub(crate) const OC973_SELF: u32 = DATA + 0x1000;
+
+    pub(crate) const OC973_SUB: u32 = DATA + 0x3000;
+
+    pub(crate) const OC973_WIDGET: u32 = DATA + 0x5000;
+
+    pub(crate) const OC973_VT: u32 = DATA + 0x6000;
+
+    // Fake indexes (counter and mailbox of each faked callee).
+    pub(crate) const OK_MSG_COUNT: u32 = 0;
+
+    pub(crate) const OK_COUNT_GROUP: u32 = 1;
+
+    pub(crate) const OK_GROUP_MSG_ID: u32 = 6;
+
+    pub(crate) const OK_IS_FLAG: u32 = 7;
+
+    pub(crate) const OK_CREATE_SCREEN: u32 = 10;
+
+    /// A fake callee: logs the call like `fakes::fake`, then (unless it
+    /// unwound) returns `mail - 1` when the fixture put `mail` (non-zero) in
+    /// the mailbox of this fake for this call number (16 calls, then wraps).
+    pub(crate) fn oc973_fake_call(c: &mut Cpu, addr: u32, idx: u32) {
+        let ra = c.g[RA][0] as u32;
+        let n = c.bus.read32(OC973_CTRL + 0x20 + 4 * idx);
+        c.bus.write32(OC973_CTRL + 0x20 + 4 * idx, n + 1);
+        let mail = c.bus.read32(OC973_CTRL + 0x100 + 0x40 * idx + 4 * (n & 15));
+        fakes::fake(c, addr, ra);
+        if c.pc == ra && mail != 0 {
+            c.g[V0][0] = (mail - 1) as u64;
+        }
+    }
+
+    macro_rules! oc973_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr, $idx:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC973_CTRL) != OC973_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc973_fake_call(c, $addr, $idx);
+                }
+            )*
+            pub(crate) fn oc973_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc973_fakes!(
+        (
+            oc973_fake_msg_count,
+            OC973_PREV_MSG_COUNT,
+            ee::s04::OVERRIDE_001E33E8,
+            ee::s04::f_001e33e8__generated,
+            0x001e33e8,
+            0
+        ),
+        (
+            oc973_fake_count_group,
+            OC973_PREV_COUNT_GROUP,
+            ee::s04::OVERRIDE_001E2BB8,
+            ee::s04::f_001e2bb8__generated,
+            0x001e2bb8,
+            1
+        ),
+        (
+            oc973_fake_refresh_list,
+            OC973_PREV_REFRESH_LIST,
+            ee::s04::OVERRIDE_001E48B0,
+            ee::s04::f_001e48b0__generated,
+            0x001e48b0,
+            2
+        ),
+        (
+            oc973_fake_update_count,
+            OC973_PREV_UPDATE_COUNT,
+            ee::s04::OVERRIDE_001E4758,
+            ee::s04::f_001e4758__generated,
+            0x001e4758,
+            3
+        ),
+        (
+            oc973_fake_show_widget,
+            OC973_PREV_SHOW_WIDGET,
+            ee::s04::OVERRIDE_001E4878,
+            ee::s04::f_001e4878__generated,
+            0x001e4878,
+            4
+        ),
+        (
+            oc973_fake_hide_widget,
+            OC973_PREV_HIDE_WIDGET,
+            ee::s04::OVERRIDE_001E4840,
+            ee::s04::f_001e4840__generated,
+            0x001e4840,
+            5
+        ),
+        (
+            oc973_fake_group_msg_id,
+            OC973_PREV_GROUP_MSG_ID,
+            ee::s04::OVERRIDE_001E2C80,
+            ee::s04::f_001e2c80__generated,
+            0x001e2c80,
+            6
+        ),
+        (
+            oc973_fake_is_flag,
+            OC973_PREV_IS_FLAG,
+            ee::s04::OVERRIDE_001E3A30,
+            ee::s04::f_001e3a30__generated,
+            0x001e3a30,
+            7
+        ),
+        (
+            oc973_fake_hash,
+            OC973_PREV_HASH,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x00317670,
+            8
+        ),
+        (
+            oc973_fake_set_text,
+            OC973_PREV_SET_TEXT,
+            ee::s13::OVERRIDE_003A1000,
+            ee::s13::f_003a1000__generated,
+            0x003a1000,
+            9
+        ),
+        (
+            oc973_fake_create_screen,
+            OC973_PREV_CREATE_SCREEN,
+            ee::s13::OVERRIDE_00397CC0,
+            ee::s13::f_00397cc0__generated,
+            0x00397cc0,
+            10
+        ),
+        (
+            oc973_fake_start_thread,
+            OC973_PREV_START_THREAD,
+            ee::s13::OVERRIDE_0039C870,
+            ee::s13::f_0039c870__generated,
+            0x0039c870,
+            11
+        ),
+        (
+            oc973_fake_overlay_init,
+            OC973_PREV_OVERLAY_INIT,
+            ee::s05::OVERRIDE_0020A380,
+            ee::s05::f_0020a380__generated,
+            0x0020a380,
+            12
+        ),
+        (
+            oc973_fake_pda_open,
+            OC973_PREV_PDA_OPEN,
+            ee::s05::OVERRIDE_0020D110,
+            ee::s05::f_0020d110__generated,
+            0x0020d110,
+            13
+        ),
+        (
+            oc973_fake_reset_scroll,
+            OC973_PREV_RESET_SCROLL,
+            ee::s13::OVERRIDE_0039B760,
+            ee::s13::f_0039b760__generated,
+            0x0039b760,
+            14
+        ),
+        (
+            oc973_fake_overlay_update,
+            OC973_PREV_OVERLAY_UPDATE,
+            ee::s05::OVERRIDE_0020E900,
+            ee::s05::f_0020e900__generated,
+            0x0020e900,
+            15
+        ),
+        (
+            oc973_fake_button_text,
+            OC973_PREV_BUTTON_TEXT,
+            ee::s04::OVERRIDE_001E4458,
+            ee::s04::f_001e4458__generated,
+            0x001e4458,
+            16
+        ),
+        (
+            oc973_fake_scroll_arrows,
+            OC973_PREV_SCROLL_ARROWS,
+            ee::s04::OVERRIDE_001E4658,
+            ee::s04::f_001e4658__generated,
+            0x001e4658,
+            17
+        ),
+    );
+
+    /// Mailbox word of fake `idx` for call number `n`: the fake returns `value`.
+    pub(crate) fn oc973_mail(c: &mut Cpu, idx: u32, n: u32, value: u32) {
+        c.bus
+            .write32(OC973_CTRL + 0x100 + 0x40 * idx + 4 * n, value + 1);
+    }
+
+    /// A machine with the game image and this module's fakes switched on.
+    pub(crate) fn oc973_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc973_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        elf_image(c);
+        c.bus.write32(OC973_CTRL, OC973_MAGIC);
+        r
+    }
+
+    /// `OVScreenMessageCenter::Init(self)`: adds the screen by its hash name
+    /// (playing it when created), the overlay init, the PDA template for mode 0
+    /// or 1, then refreshes list, count, button text and arrows and sets the
+    /// "initialised" global.
+    #[test]
+    fn ov_screen_message_center_init_matches() {
+        fakes::covered(
+            ee::s04::f_001e3d58__generated,
+            ov_screen_message_center_init_2,
+            96,
+            &|c, seed| {
+                let _ = oc973_machine(c, seed, 0x1e3d58, 12);
+                let s = OC973_SELF;
+                c.bus.write32(s + 0x10, DATA + 0x8000);
+                c.bus.write32(s + 0x18, seed % 3);
+                c.bus.write32(s + 0x144, OC973_SUB);
+                oc973_mail(
+                    c,
+                    OK_CREATE_SCREEN,
+                    0,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x3800 },
+                );
+                oc973_mail(c, OK_MSG_COUNT, 0, seed % 7);
+                oc973_mail(c, OK_COUNT_GROUP, 0, seed % 3);
+                c.pc = 0x001e_3d58;
+                c.g[A0][0] = sx(s);
+            },
+        );
+    }
+
+    /// `OVScreenMessageCenter::UpdateButtonText(self)`: from the message count
+    /// minus the first-row offset (`sub+0x95`), shows the buttons with the
+    /// "view" text, or hides them and picks "collapse" / "expand" / "view" for the
+    /// row's group (flag set or not, the group's first message or not).
+    #[test]
+    fn ov_screen_message_center_update_button_text_matches() {
+        fakes::covered(
+            ee::s04::f_001e4458__generated,
+            ov_screen_message_center_update_button_text_2,
+            192,
+            &|c, seed| {
+                let mut r = oc973_machine(c, seed, 0x1e4458, 7);
+                let s = OC973_SELF;
+                c.bus.write32(s + 0x144, OC973_SUB);
+                c.bus.write8(OC973_SUB + 0x95, (seed % 4) as u8);
+                c.bus.write32(s + 0x14c, OC973_WIDGET);
+                c.bus.write32(s + 0x150, OC973_WIDGET + 0x100);
+                c.bus.write32(
+                    s + 0x158,
+                    if seed % 5 == 0 {
+                        0
+                    } else {
+                        OC973_WIDGET + 0x200
+                    },
+                );
+                let id = (seed / 3) % 6;
+                let group = id % 3;
+                // The message table entry's group and the group entry's first message.
+                c.bus.write32(0x004c_6c08 + 0x18 * id + 4, group);
+                let first = if (seed / 7) % 2 == 0 { id } else { id + 1 };
+                c.bus.write32(0x0044_1630 + 0x14 * group + 4, first);
+                oc973_mail(c, OK_MSG_COUNT, 0, r.next_u32() % 7);
+                oc973_mail(c, OK_GROUP_MSG_ID, 0, id);
+                oc973_mail(c, OK_IS_FLAG, 0, (seed / 2) % 2);
+                c.pc = 0x001e_4458;
+                c.g[A0][0] = sx(s);
+            },
+        );
+    }
+
+    /// `OVScreenMessageCenter::UpdateScrollArrows(self)`: the up arrow (vtable
+    /// slot `+0x4c`, this adjusted by the halfword at `+0x48`) is shown when the
+    /// list is scrolled, the down arrow when more than eight rows remain
+    /// (message count plus the group messages, if the global flag allows).
+    #[test]
+    fn ov_screen_message_center_update_scroll_arrows_matches() {
+        fakes::covered(
+            ee::s04::f_001e4658__generated,
+            ov_screen_message_center_update_scroll_arrows_2,
+            192,
+            &|c, seed| {
+                let _ = oc973_machine(c, seed, 0x1e4658, 4);
+                let s = OC973_SELF;
+                c.bus
+                    .write32(s + 0x174, if seed % 3 == 0 { 0 } else { seed % 5 });
+                c.bus.write32(s + 0x15c, OC973_WIDGET);
+                c.bus.write32(s + 0x160, OC973_WIDGET + 0x100);
+                c.bus.write32(OC973_WIDGET + 8, OC973_VT);
+                c.bus.write32(OC973_WIDGET + 0x108, OC973_VT);
+                c.bus.write16(OC973_VT + 0x48, (4 * (seed % 3)) as u16);
+                c.bus.write32(OC973_VT + 0x4c, FAKE);
+                c.bus.write32(GAME_GP.wrapping_sub(0x102c), (seed / 3) % 2);
+                oc973_mail(c, OK_MSG_COUNT, 0, (seed / 2) % 14);
+                oc973_mail(c, OK_COUNT_GROUP, 0, (seed / 5) % 3);
+                c.pc = 0x001e_4658;
+                c.g[A0][0] = sx(s);
+            },
+        );
+    }
+
+    /// `OVScreenFreestyleStandings::Update(self)`: one call to the overlay update.
+    #[test]
+    fn ov_screen_freestyle_standings_update_matches() {
+        fakes::covered(
+            ee::s04::f_001e64a8__generated,
+            ov_screen_freestyle_standings_update_2,
+            24,
+            &|c, seed| {
+                let _ = oc973_machine(c, seed, 0x1e64a8, 1);
+                c.pc = 0x001e_64a8;
+                c.g[A0][0] = sx(OC973_SELF);
+            },
         );
     }
 }

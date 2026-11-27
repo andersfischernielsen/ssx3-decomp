@@ -5426,68 +5426,6 @@ pub fn input_sync_empty_hook(c: &mut Cpu) {
     ret(c);
 }
 
-/// `void InputSync_SendSample(InputSync* self (a0), const void* src (a1))`
-/// (0x237a98): packs `src` into a local buffer (`InputSync_PackSample`),
-/// unpacks it into `self` (`InputSync_UnpackSample`), then, when the link is
-/// up (`mSyncInput` set, `mError` 0, `mConnected` non-zero), sends the packed
-/// bytes with `cGameComm_SendPacket`. The game comm is at `gp-0x204`.
-/// Not installed: the test runs the real `cGameComm_SendPacket` away on fixture data.
-#[allow(dead_code)]
-pub fn input_sync_send_sample_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 18;
-        let frame = Frame::open(c, 0x60);
-        frame.save(c, S0, 0x50);
-        c.g[A2][0] = c.g[SP][0];
-        frame.save(c, S1, 0x40);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save(c, S2, 0x30);
-        frame.save_ra(c, 0x20);
-        c.g[RA][0] = sx(0x00237abc);
-        c.g[S1][0] = c.g[A1][0];
-        call_ptr(c, 0x00237b28, 0x00237abc)?; // InputSync_PackSample
-        c.g[S2][0] = c.g[V0][0];
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A1][0] = c.g[S1][0];
-        c.g[RA][0] = sx(0x00237ad0);
-        c.g[A2][0] = c.g[SP][0];
-        call_ptr(c, 0x00237be8, 0x00237ad0)?; // InputSync_UnpackSample
-                                              // The link state: mSyncInput (+0x40), mError (+0x4), mConnected (+0).
-        c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x204)).lw(c);
-        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x40)).lw(c);
-        let no_sync = c.g[V0][0] == 0;
-        c.g[A0][0] = 0;
-        if !no_sync {
-            c.cycles += 3;
-            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4)).lw(c);
-            let error = c.g[V0][0] != 0;
-            if !error {
-                c.cycles += 2;
-                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
-                c.g[A0][0] = (0u64 < c.g[V0][0]) as u64; // mConnected != 0
-            }
-        }
-        c.cycles += 2;
-        let link_down = c.g[A0][0] == 0;
-        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x204)).lw(c);
-        if !link_down {
-            c.cycles += 4;
-            c.g[A3][0] = c.g[S2][0];
-            c.g[A1][0] = 0;
-            c.g[RA][0] = sx(0x00237b0c);
-            c.g[A2][0] = c.g[SP][0];
-            call_ptr(c, 0x00257e98, 0x00237b0c)?; // cGameComm_SendPacket
-        }
-        c.cycles += 6;
-        frame.restore(c, S0, 0x50);
-        frame.restore(c, S1, 0x40);
-        frame.restore(c, S2, 0x30);
-        frame.restore_ra(c, 0x20);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void InputSync_AddLocalPad(InputSync* self, const void* src)` (0x237140):
 /// appends a local pad record to the table at `+0x14` (0x18-byte records, the
 /// count at `+0x10`). The record holds a zeroed buffer of `count * 0x64`

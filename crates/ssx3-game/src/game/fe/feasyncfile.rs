@@ -2021,11 +2021,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2_SONY_CODEC_INTERNAL_InitFrame",
     ),
     (
-        0x001b_4018,
-        fe_state_net_config_dtor,
-        "cFEStateNetConfig_dtor",
-    ),
-    (
         0x001b_40d0,
         cfe_state_net_config_init,
         "cFEStateNetConfig_Init",
@@ -4179,9 +4174,6 @@ pub(crate) mod callee {
     /// `cMemMan_free`.
     pub const FREE: u32 = 0x0031_7e50;
 
-    /// `cMemMan_free2` (the second form used by the FE states).
-    pub const FREE2: u32 = 0x0031_7e98;
-
     pub const VEC3_MAX_COMPONENT: Callee = Callee {
         addr: 0x0017_31c0,
         f: ee::s02::Vec3_MaxComponent,
@@ -4195,11 +4187,6 @@ pub(crate) mod callee {
     pub const NET_FE_STATE_CTOR_12: Callee = Callee {
         addr: 0x001a_8500,
         f: ee::s03::f_001a8500,
-    };
-
-    pub const NET_FE_STATE_DTOR_4: Callee = Callee {
-        addr: 0x001a_85d0,
-        f: ee::s03::NetFEState_dtor,
     };
 
     pub const NET_FE_STATE_INIT_3: Callee = Callee {
@@ -14359,92 +14346,6 @@ pub fn fe_state_chat_room_select_player_by_name(c: &mut Cpu) {
         frame.restore(c, 18, 0x30);
         frame.restore(c, 19, 0x20);
         frame.restore(c, 20, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-// ---------------------------------------------------------------------------
-// FE state: network config teardown.
-
-/// `void cFEStateNetConfig_dtor(cFEStateNetConfig* s, int free)` (0x1b4018):
-/// release the four optional sub-objects, then the net state itself.
-pub fn fe_state_net_config_dtor(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 11;
-        let frame = Frame::open(c, 0x30);
-        c.g[V0][0] = sx(0x0046_8b00);
-        frame.save(c, S0, 0x20);
-        let this = r(c, A0);
-        frame.save(c, S1, 0x10);
-        c.g[S0][0] = sx(this);
-        frame.save_ra(c, 0);
-        Addr(p(this, 8)).sw(c, c.g[V0][0]);
-        c.g[A0][0] = Addr(p(this, 0x710)).lw(c);
-        let absent = c.g[A0][0] == 0;
-        c.g[S1][0] = c.g[A1][0];
-        if !absent {
-            c.cycles += 3;
-            c.g[RA][0] = sx(0x001b_404c);
-            call_ptr(c, callee::FREE2, 0x001b_404c)?;
-            Addr(p(r(c, S0), 0x710)).sw(c, 0);
-        }
-        'first: {
-            c.cycles += 3;
-            c.g[A0][0] = Addr(p(r(c, S0), 0x714)).lw(c);
-            if c.g[A0][0] == 0 {
-                c.g[A0][0] = Addr(p(r(c, S0), 0x718)).lw(c);
-                break 'first;
-            }
-            c.cycles += 4;
-            c.g[RA][0] = sx(0x001b_4064);
-            call_ptr(c, callee::FREE2, 0x001b_4064)?;
-            Addr(p(r(c, S0), 0x714)).sw(c, 0);
-            c.g[A0][0] = Addr(p(r(c, S0), 0x718)).lw(c);
-        }
-        'second: {
-            c.cycles += 2;
-            if c.g[A0][0] == 0 {
-                c.g[A0][0] = Addr(p(r(c, S0), 0x704)).lw(c);
-                break 'second;
-            }
-            c.cycles += 4;
-            c.g[RA][0] = sx(0x001b_407c);
-            call_ptr(c, callee::FREE2, 0x001b_407c)?;
-            Addr(p(r(c, S0), 0x718)).sw(c, 0);
-            c.g[A0][0] = Addr(p(r(c, S0), 0x704)).lw(c);
-        }
-        'third: {
-            c.cycles += 2;
-            if c.g[A0][0] == 0 {
-                c.g[A0][0] = Addr(gp(c, -0x1578)).lw(c);
-                break 'third;
-            }
-            c.cycles += 4;
-            c.g[RA][0] = sx(0x001b_4094);
-            call_ptr(c, callee::FREE2, 0x001b_4094)?;
-            Addr(p(r(c, S0), 0x704)).sw(c, 0);
-            c.g[A0][0] = Addr(gp(c, -0x1578)).lw(c);
-        }
-        'fourth: {
-            c.cycles += 2;
-            if c.g[A0][0] == 0 {
-                c.g[A0][0] = c.g[S0][0];
-                break 'fourth;
-            }
-            c.cycles += 4;
-            c.g[RA][0] = sx(0x001b_40ac);
-            call_ptr(c, 0x002c_2300, 0x001b_40ac)?;
-            Addr(gp(c, -0x1578)).sw(c, 0);
-            c.g[A0][0] = c.g[S0][0];
-        }
-        c.cycles += 7;
-        c.g[RA][0] = sx(0x001b_40bc);
-        c.g[A1][0] = c.g[S1][0];
-        callee::NET_FE_STATE_DTOR_4.call(c, 0x001b_40bc)?;
-        frame.restore(c, 16, 0x20);
-        frame.restore(c, 17, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -85849,39 +85750,6 @@ pub(crate) mod tests {
             0x0026_36f0
         ),
     );
-
-    #[test]
-    fn fe_state_net_config_dtor_matches() {
-        check(
-            ee::s03::f_001b4018,
-            fe_state_net_config_dtor,
-            160,
-            &|c, seed| {
-                fa_install_fakes();
-                let mut r = machine(c, seed, 0x001b_4018, 6);
-                c.bus.write32(FA_CTRL, FA_MAGIC);
-                let this = DATA + 0x100;
-                // Each optional sub-object is present or absent.
-                for (i, off) in [0x704u32, 0x710, 0x714, 0x718].into_iter().enumerate() {
-                    let v = if (seed >> i) & 1 != 0 {
-                        DATA + 0x2000 + off
-                    } else {
-                        0
-                    };
-                    c.bus.write32(this + off, v);
-                }
-                let card = if (seed >> 4) & 1 != 0 {
-                    DATA + 0x3000
-                } else {
-                    0
-                };
-                c.bus.write32(GAME_GP.wrapping_sub(0x1578), card);
-                c.g[A0][0] = sx(this);
-                c.g[A1][0] = r.next_u32() as u64;
-                c.pc = 0x001b_4018;
-            },
-        );
-    }
 
     #[test]
     fn cfe_state_net_config_init_matches() {

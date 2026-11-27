@@ -2892,14 +2892,14 @@ s03	001c8758	001c88c4	o	cFEPopupConfirm_LayoutMenu
 s03	001c88c8	001c892c	o	cFEPopupConfirm_PositionButtons
 s03	001c8930	001c8a34	o	cFEPopupConfirm_SetWidgetAlign
 s03	001c8a38	001c8ef0	o	cFEPopupConfirm_ResetLayout
-s03	001c8ef0	001c9038	-	cFEPopupConfirm_MeasureDescBox
+s03	001c8ef0	001c9038	o	cFEPopupConfirm_MeasureDescBox
 s03	001c9038	001c920c	o	cFEPopupConfirm_GetTextBoxSizeW
 s03	001c9210	001c93b0	o	cFEPopupConfirm_GetTextBoxSize
-s03	001c93b0	001c94ac	-	cFEPopupConfirm_GetDescLineWrapSize
-s03	001c94b0	001c9648	-	cFEPopupConfirm_GetMessageLineWrapSizeW
-s03	001c9648	001c97e0	-	cFEPopupConfirm_GetMessageLineWrapSize
-s03	001c97e0	001c9934	-	cFEPopupConfirm_SetWrappedText
-s03	001c9938	001c9b28	-	cFEPopupConfirm_WordWrapW
+s03	001c93b0	001c94ac	o	cFEPopupConfirm_GetDescLineWrapSize
+s03	001c94b0	001c9648	o	cFEPopupConfirm_GetMessageLineWrapSizeW
+s03	001c9648	001c97e0	o	cFEPopupConfirm_GetMessageLineWrapSize
+s03	001c97e0	001c9934	o	cFEPopupConfirm_SetWrappedText
+s03	001c9938	001c9b28	o	cFEPopupConfirm_WordWrapW
 s03	001c9b28	001c9b64	o	cFEPopupConfirm_SetTextMeasured
 s03	001c9b68	001c9b94	o	cFEPopupConfirm_AccumulateSize
 s03	001c9b98	001c9ccc	o	cFEPopupConfirm_OpenConfirmPopup
@@ -3175,7 +3175,7 @@ s04	001d9db8	001d9e1c	o	cFEStateNetHelpPopup_Init
 s04	001d9e20	001d9e68	o	cFEStateNetHelpPopup_v24
 s04	001d9e68	001d9f2c	o	cFEStateNetHelpPopup_Update
 s04	001d9f30	001d9f38	-	cFEStateNetHelpPopup_HandleInput
-s04	001d9f38	001da110	-	cFEStateNetHelpPopup_OnWidgetCreated
+s04	001d9f38	001da110	o	cFEStateNetHelpPopup_OnWidgetCreated
 s04	001da110	001da234	o	cFEStateNetHelpPopup_BuildBodyText
 s04	001da238	001da474	o	cFEStateNetHelpPopup_TransitionIn
 s04	001da478	001da4a4	o	cFEStateNetHelpPopup_OnWidgetAction
@@ -3636,7 +3636,7 @@ s04	001e39f8	001e3a2c	o	MessageCenter_GetInbox
 s04	001e3a30	001e3a74	o	MessageCenter_IsFlagSet
 s04	001e3a78	001e3ac8	o	MessageCenter_SetFlag
 s04	001e3c00	001e3d58	o	OVScreenMessageCenter_ctor
-s04	001e3d58	001e3e30	-	OVScreenMessageCenter_Init
+s04	001e3d58	001e3e30	o	OVScreenMessageCenter_Init
 s04	001e3e30	001e3ec0	o	OVScreenMessageCenter_Shutdown
 s04	001e3ec0	001e4164	o	OVScreenMessageCenter_OnWidgetCreated
 s04	001e4168	001e41fc	o	OVScreenMessageCenter_OnActivate
@@ -3668,7 +3668,7 @@ s04	001e58e0	001e5a14	-	cOVState_ViewPopup_ShowNext
 s04	001e5a18	001e5aa0	o	cOVState_ViewPopup_OnWidgetNotify
 s04	001e5aa0	001e5b80	o	cOVState_ViewPopup_GetGroupVariant
 s04	001e5b80	001e64a8	o	OVScreenFreestyleStandings_Init
-s04	001e64a8	001e64c4	-	OVScreenFreestyleStandings_Update
+s04	001e64a8	001e64c4	o	OVScreenFreestyleStandings_Update
 s04	001e64c8	001e65b8	o	OVScreenFreestyleStandings_OnActivate
 s04	001e65b8	001e662c	o	OVScreenFreestyleStandings_HandleInput
 s04	001e6630	001e6640	o	OVScreenFreestyleStandings_OnWidgetNotify

@@ -64,7 +64,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_4950, disable_dmac_wrapper, "DisableDmac"),
     (0x0042_49b8, enable_dmac_wrapper, "EnableDmac"),
     (0x0042_4c50, i_wakeup_thread_signal, "iWakeupThread"),
-    (0x0042_7a90, sce_fs_init, "sceFsInit"),
 ];
 
 /// Direct-call targets of this module (address, generated function).

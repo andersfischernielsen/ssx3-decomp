@@ -2180,44 +2180,6 @@ pub fn boost_modifier_base_ctor_2(c: &mut Cpu) {
     })
 }
 
-/// `AnimDelta* AnimDelta_ctor_2(AnimDelta* self, int, AnimCombo* combo?)`
-/// (0x359270): builds the `AnimObject` base (0x341c80), installs the
-/// `AnimDelta` vtable (0x48ea70) at `self+0x3c` and calls the second
-/// argument's hook (receiver adjusted by the halfword at its vtable +0x10)
-/// with `self+0x6c` as the argument; returns `self`.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn anim_delta_ctor_2_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 23;
-        let frame = Frame::open(c, 0x30);
-        frame.save(c, S0, 0x20);
-        frame.save(c, S1, 0x10);
-        c.g[S0][0] = c.g[A0][0];
-        frame.save_ra(c, 0);
-        c.g[S1][0] = c.g[A2][0];
-        call_ptr(c, 0x0034_1c80, 0x0035_928c)?;
-        c.g[V1][0] = 0x0049_0000;
-        c.g[A1][0] = sx(r32(c, S0).wrapping_add(0x6c));
-        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0x1590));
-        c.g[A2][0] = 4;
-        let vtable = c.g[V1][0];
-        Addr(r32(c, S0).wrapping_add(0x3c)).sw(c, vtable);
-        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
-        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x10)).lh(c);
-        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x14)).lw(c);
-        let target = r32(c, V1);
-        c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
-        call_ptr(c, target, 0x0035_92b4)?;
-        c.g[V0][0] = c.g[S0][0];
-        frame.restore(c, S1, 0x10);
-        frame.restore(c, S0, 0x20);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `cRailManNode::ActiveNode`: the global rail manager pointer, at gp+0xf50.
 pub(crate) const RAIL_ACTIVE_NODE_GP: u32 = 0xf50;
 
@@ -3038,11 +3000,6 @@ pub(crate) const ANIMD_OBJECT_CTOR: Callee = Callee {
     f: ee::s11::f_00341c80,
 };
 
-pub(crate) const ANIMD_OBJECT_V15: Callee = Callee {
-    addr: 0x0034_1d48,
-    f: ee::s11::f_00341d48,
-};
-
 /// `cAnimDeltaNode *cAnimDeltaNode_cAnimDeltaNode(self, int bucket, Stream *stream)`
 /// (0x359270): the anim object base, the delta-node vtable, then the float
 /// delta (+0x6c) read from the stream. Frame 0x30. Returns self.
@@ -3070,136 +3027,6 @@ pub fn anim_delta_ctor_2_3(c: &mut Cpu) {
         c.g[V0][0] = c.g[S0][0];
         frame.restore(c, 17, 0x10);
         frame.restore(c, 16, 0x20);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// Flags path of the update: `flags |= 1`, then return 1 (the tail's `+1`).
-pub(crate) fn oc664_set_flag_return(c: &mut Cpu, this: u32) -> u64 {
-    c.cycles += 2;
-    let flags = Addr(this + 0x42).lhu(c) | 1;
-    Addr(this + 0x42).sh(c, flags);
-    c.cycles += 1;
-    1
-}
-
-/// The update of a node that is not complete (`AnimComplete == 0`): returns
-/// v0 for the epilogue and charges the cycles of the path it takes.
-pub(crate) fn oc664_anim_update(c: &mut Cpu, this: u32) -> Result<u64, Unwound> {
-    // Frame-end marker is already stored. f1 = Delta, f2 = 0.0, fcc = 0 < Delta.
-    c.cycles += 6;
-    let delta = Addr(this + 0x6c).read_fpu(c);
-    abi::set_fpr(c, 1, delta);
-    abi::set_fpr(c, 2, FpuF32(0));
-    let positive = abi::c_lt_s(c, FpuF32(0), delta);
-    c.g[V0][0] = Addr(this + 0xc).lw(c);
-    if !positive {
-        // Idle node: the countdown steps down, then the flag path.
-        c.cycles += 2;
-        let delay = c.g[V0][0] as i64;
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
-        if delay > 0 {
-            c.cycles += 1;
-            let left = c.g[V0][0];
-            Addr(this + 0xc).sw(c, left);
-        }
-        c.cycles += 3;
-        c.g[A2][0] = sx(this.wrapping_add(0x30));
-        c.g[V0][0] = Addr(this + 8).lw(c);
-        if c.g[V0][0] == 0 {
-            c.cycles += 1;
-            c.g[V0][0] = Addr(this + 0x42).lhu(c);
-            return Ok(oc664_set_flag_return(c, this));
-        }
-        // AnimComplete changed (unreachable here: nothing wrote it): the vtable call.
-        c.cycles += 8;
-        c.g[V1][0] = Addr(this + 0x3c).lw(c);
-        c.g[A1][0] = 1;
-        let table = c.g[V1][0] as u32;
-        c.g[A0][0] = Addr(table + 0x110).lh(c);
-        c.g[V0][0] = Addr(table + 0x114).lw(c);
-        let target = c.g[V0][0] as u32;
-        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, target, 0x0035_93a4)?;
-        return Ok(0);
-    }
-
-    // Moving node: countdown >= 0 is required for an update.
-    let delay = c.g[V0][0] as i64;
-    c.cycles += 2;
-    if delay < 0 {
-        // Countdown negative: the flag path.
-        return Ok(oc664_set_flag_return(c, this));
-    }
-    if delay == 0 {
-        c.cycles += 2;
-        if c.fcc() {
-            // Delta still running: step it by the speed (never below zero).
-            c.cycles += 7;
-            let speed = Addr(this + 0x10).read_fpu(c);
-            abi::set_fpr(c, 0, speed.abs());
-            let stepped = FpuF32(c.f[1]) - FpuF32(c.f[0]);
-            abi::set_fpr(c, 0, stepped);
-            let below_zero = abi::c_lt_s(c, stepped, FpuF32(c.f[2]));
-            Addr(this + 0x6c).write_fpu(c, stepped);
-            if below_zero {
-                c.cycles += 1;
-                Addr(this + 0x6c).write_fpu(c, FpuF32(c.f[2]));
-            }
-        }
-    }
-
-    // The update: the object's per-frame method, then AnimActive from the new Delta.
-    c.cycles += 8;
-    c.g[A0][0] = c.g[S0][0];
-    ANIMD_OBJECT_V15.call(c, 0x0035_934c)?;
-    let after = Addr(this + 0x6c).read_fpu(c);
-    abi::set_fpr(c, 1, after);
-    abi::set_fpr(c, 0, FpuF32(0));
-    let moving = abi::c_lt_s(c, FpuF32(0), after);
-    c.g[V0][0] = 1;
-    let one = c.g[V0][0];
-    if moving {
-        c.cycles += 2;
-        Addr(this + 4).sw(c, one);
-        return Ok(1);
-    }
-    c.cycles += 2;
-    Addr(this + 4).sw(c, 0);
-    c.cycles += 1;
-    Ok(1)
-}
-
-/// `void cAnimDeltaNode_updateNode(cAnimDeltaNode *self)` (0x3592d0), returns
-/// int: a complete node returns 1 at once; otherwise the frame ends are set to
-/// 1e10, the countdown and delta step, and the object updates. Frame 0x20.
-/// Not installed: no passing test (see the wave notes).
-#[allow(dead_code)]
-pub fn anim_delta_v15_2(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 9;
-        let frame = Frame::open(c, 0x20);
-        let no_frame = Addr((c.g[GP][0] as u32).wrapping_sub(0x2a6c)).read_fpu(c);
-        abi::set_fpr(c, 0, no_frame);
-        frame.save(c, 16, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        let this = c.g[S0][0] as u32;
-        Addr(this + 0x28).write_fpu(c, no_frame);
-        c.g[V0][0] = Addr(this + 8).lw(c);
-        let live = c.g[V0][0] == 0;
-        Addr(this + 0x24).write_fpu(c, no_frame);
-        let v0 = if live {
-            oc664_anim_update(c, this)?
-        } else {
-            c.cycles += 1;
-            1
-        };
-        c.g[V0][0] = v0;
-        c.cycles += 4;
-        frame.restore(c, 16, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
