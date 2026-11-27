@@ -8742,28 +8742,25 @@ pub fn rtti_class(c: &mut Cpu) {
 pub fn si_type_info_dcast(c: &mut Cpu) {
     call::guest(c, |c| {
         let frame = Frame::open(c, 0x70);
-        'b_414ce0: {
-            c.cycles += 17;
-            c.sd(frame.at(c, 0x10), c.g[S1][0]);
-            c.sd(frame.at(c, 0), c.g[S0][0]);
-            c.g[S1][0] = c.g[A1][0];
-            c.sd(frame.at(c, 0x50), c.g[S5][0]);
-            c.g[S0][0] = c.g[A0][0];
-            c.sd(frame.at(c, 0x40), c.g[S4][0]);
-            c.g[S5][0] = c.g[T1][0];
-            c.sd(frame.at(c, 0x30), c.g[S3][0]);
-            c.g[S4][0] = c.g[T0][0];
-            c.sd(frame.at(c, 0x20), c.g[S2][0]);
-            c.g[S3][0] = c.g[A2][0];
-            frame.save_ra(c, 0x60);
-            c.g[RA][0] = sx(0x0041_4cac);
-            c.g[S2][0] = c.g[A3][0];
-            callee::TYPE_INFO_EQ.call(c, 0x0041_4cac)?;
-            let t = c.g[V0][0] != 0;
-            c.g[V0][0] = c.g[S2][0];
-            if t {
-                break 'b_414ce0;
-            }
+        c.cycles += 17;
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[S1][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0x50), c.g[S5][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0x40), c.g[S4][0]);
+        c.g[S5][0] = c.g[T1][0];
+        c.sd(frame.at(c, 0x30), c.g[S3][0]);
+        c.g[S4][0] = c.g[T0][0];
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_ra(c, 0x60);
+        c.g[RA][0] = sx(0x0041_4cac);
+        c.g[S2][0] = c.g[A3][0];
+        callee::TYPE_INFO_EQ.call(c, 0x0041_4cac)?;
+        let t = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[S2][0];
+        if !t {
             c.cycles += 11;
             c.g[T2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
             c.g[A1][0] = c.g[S1][0];
@@ -8778,7 +8775,6 @@ pub fn si_type_info_dcast(c: &mut Cpu) {
             c.g[RA][0] = sx(0x0041_4ce0);
             c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
             call::call_ptr(c, target, 0x0041_4ce0)?;
-            break 'b_414ce0;
         }
         c.cycles += 9;
         c.g[RA][0] = c.ld(frame.at(c, 0x60));

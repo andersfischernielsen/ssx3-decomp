@@ -10509,6 +10509,29 @@
 0x00372348    DmaChain_SplitAtRefTags
 0x003ff4a8    scePadInit
 0x00409940    sceMcInit
+# Phase 2 wave: oc1390, oc1391, oc1392, oc1393
+0x00404b78    libmpeg_AddPredAndStore
+0x003b11e8    MPEG2_Error
+0x003b2380    MPEG2_user_data
+0x00404050    libmpeg_FormPredictions
+0x004065d0    libmpeg_DecodeMacroblock
+0x00404758    libmpeg_SetupPredBlock
+0x00407f20    libmpeg_SetupRefFrames
+0x00405b70    libmpeg_WaitBdec
+0x00408278    libmpeg_CopyOutputRaw
+0x003b1270    MPEG2_Get_Bits1
+0x003b2360    MPEG2_marker_bit
+0x003b23a0    MPEG2_copyright_extension
+0x003b1cc0    MPEG2_sequence_display_extension
+0x003b1ee0    MPEG2_sequence_scalable_extension
+0x003b20b8    MPEG2_picture_coding_extension
+0x003b1878    MPEG2_slice_header
+0x003b17a8    MPEG2_picture_header
+0x003b13d8    MPEG2_Get_Hdr
+0x003b1498    MPEG2_next_start_code
+0x003b14f0    MPEG2_sequence_header
+0x003b1d58    MPEG2_quant_matrix_extension
+0x003b1988    MPEG2_extension_and_user_data
 # Phase 2 wave: oc971, oc972, oc973
 # Phase 2 wave: oc971, oc972, oc973
 # Phase 2 wave: oc974, oc977, oc978, oc980, oc981, oc982, oc983, oc984, oc985, oc986, oc987, oc990, oc994, oc995
@@ -10532,6 +10555,35 @@
 # Phase 2 wave: oc1120, oc1121, oc1122, oc1123
 # Phase 2 wave: oc1120, oc1121, oc1122, oc1123
 # Phase 2 wave: oc1123
+# Phase 2 wave: oc1400, oc1401, oc1402, oc1403
+0x003b03a8    AV_SubtitleSetX
+0x003b03b0    AV_SubtitleSetY
+0x003b03b8    AV_SubtitleSetWidth
+0x003b03c0    AV_SubtitleSetHeight
+0x003b03c8    AV_SubtitleSetStringId
+0x003b03d0    AV_SubtitleSetFrame
+0x003b03d8    AV_SubtitleSetJustifyX
+0x003b03e0    AV_SubtitleSetJustifyY
+0x003b03e8    AV_SubtitleSetShape
+0x003b03f0    AV_SubtitleSetColor0
+0x003b03f8    AV_SubtitleSetColor1
+0x003b0400    AV_SubtitleSetColor2
+0x003b0408    AV_SubtitleSetColor3
+0x003addc0    AV_Player_ctor
+0x003ade58    AV_Player_ctor_3
+0x003ade90    AV_Player_ctor_4
+0x003aecb8    AV_Player_GetChunkCallback
+0x003af560    AV_ParseIntField
+0x003af428    AV_ParseJustify
+0x003af670    AV_FindToken
+0x003ae780    AV_Player_IsFrameDue
+0x003ae9a0    AV_Player_GetTimeMs
+0x003af0c8    AV_CreateSubtitles
+0x003ae300    AV_Player_Shutdown
+0x003ae450    AV_Player_Start
+0x003aead0    AV_Player_OnChunk
+0x003adec8    AV_Player_Init
+0x003af7f0    AV_ParseSubtitles
 # Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1129, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
 # Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1129, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
 # Phase 2 wave: oc1128, oc1130
@@ -11798,11 +11850,7 @@
 0x00403ce0    libmpeg_SequenceDisplayExtension
 0x00403dd8    libmpeg_RestartDmaCallback
 0x00403e00    libmpeg_SetupMacroblock
-0x00404050    libmpeg_FormPredictions
-0x00404758    libmpeg_SetupPredBlock
-0x00404b78    libmpeg_AddPredAndStore
 0x00405b48    libmpeg_SetIpuMpeg1Bit
-0x00405b70    libmpeg_WaitBdec
 0x00405e10    libmpeg_DecodeDmVector
 0x00405e30    libmpeg_DualPrimeArithmetic
 0x00405fb8    libmpeg_MacroblockAddressIncrement
@@ -11813,7 +11861,6 @@
 0x00407520    libmpeg_GetHeader
 0x00407dc0    libmpeg_DecodePictureSlices
 0x00407e90    libmpeg_OutputPicture
-0x00407f20    libmpeg_SetupRefFrames
 0x004086c0    libmpeg_OutputFrame
 0x004087d0    libmpeg_OutputFieldPair
 0x00406df0    libmpeg_IpuCommand
@@ -11827,7 +11874,6 @@
 0x004060c8    libmpeg_DecodeSlices
 0x00406318    libmpeg_DecodeSlice
 0x00406510    libmpeg_SkippedMacroblock
-0x004065d0    libmpeg_DecodeMacroblock
 0x00406a78    libmpeg_DecodeMotionVector
 0x00406b00    libmpeg_MotionVectors
 0x00406ca0    libmpeg_MotionVector
@@ -11842,7 +11888,6 @@
 0x00407c38    libmpeg_PictureDisplayExtension
 0x00407d30    libmpeg_CopyrightExtension
 0x004081d8    libmpeg_CheckOutputBuffer
-0x00408278    libmpeg_CopyOutputRaw
 0x00408530    libmpeg_ComputePts
 0x00408af8    libmpeg_IpuFromDmaStart
 0x00408b80    libmpeg_IpuCsc
@@ -12060,3 +12105,127 @@
 0x003cfb68    SND_ISqrt
 0x003cfb98    SND_NextPrimeDelay
 0x00402bb0    libmpeg_ClearFrameFlags
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+0x00256998    cDSockChannel_Disconnect
+0x00256698    cDSockChannel_ctor
+0x00256a58    cDSockChannel_UpdateConnecting
+0x002566e8    cDSockChannel_dtor
+0x00242d50    MCManager_DebugPrintfStub
+0x004245a0    libc_EioStub_45a0
+0x004245c8    libc_EioStub_45c8
+0x0031ff38    EACoreGlobal_dtor
+0x00320b28    EACore_GlobalCtors
+0x00320b48    EACore_GlobalDtors
+0x0031ff20    EACoreGlobal_ctor
+0x002c4758    cPS2MemCard_DeferState18
+0x002c4890    cPS2MemCard_DeferState1E
+0x00244860    MCManager_NullCallback
+0x00244868    MCManager_NullCallbackRet0
+0x00244870    MCManager_NullCallbackRet1
+0x00244878    MCManager_NullChunkCallback
+0x00256ba8    cDSockChannel_v05
+0x00267dc8    cDSockChannel_BaseUpdate
+0x00267dd0    cDSockChannel_BaseIsConnected
+0x00267de8    cDSockChannel_Base_v06
+0x00267df0    cDSockChannel_BaseRecv
+0x00267df8    cDSockChannel_BaseSend
+0x00267e10    cDSockChannel_v06
+0x002c4400    cPS2MemCard_Get490
+0x002c4408    cPS2MemCard_Set24
+0x002c5520    cPS2MemCard_v46
+0x002c6700    cPS2MemCard_v57
+0x002c6708    cPS2MemCard_v58
+0x002c6710    cPS2MemCard_v61
+0x002c6748    cPS2MemCard_GetBlockSize
+0x002c6750    cPS2MemCard_v21
+0x002c67a8    cPS2MemCard_v50
+0x002c67e0    cPS2MemCard_v25
+0x002d37d8    cPS2MemCard_GetCurrentPort
+0x002d3920    cPS2MemCard_v59
+0x002d3928    cPS2MemCard_v60
+0x002d3970    cPS2MemCard_Get14
+0x002d3978    cPS2MemCard_v69
+0x002d39a8    cPS2MemCard_v72
+0x002d39b0    cPS2MemCard_IsSyncDone
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453
+0x00256a00    cDSockChannel_Update
+0x00256aa8    cDSockChannel_UpdateConnected
+0x00256730    cDSockChannel_Recv
+0x002568f8    cDSockChannel_Connect
+0x00256860    cDSockChannel_Listen
+0x002567e0    cDSockChannel_Send
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1453
+# Phase 2 wave: oc1413, oc1414, oc1415, oc1416, oc1417, oc1418, oc1419
+# Phase 2 wave: oc1410, oc1411, oc1412
+# Library ports: streams, Serialize, DLHeap, VD/VidEngine, MD5, PS2 helpers (and the callee slots their tests fake)
+0x0031c350    MD5_Transform
+0x00254410    VD_TextureSink_ctor
+0x002548d0    VD_TextureSink_DrawFrame
+0x003b0c58    PS2_SONY_CODEC_INTERNAL_Open
+0x002f0548    PS2VisualEffectsMan_ctor
+0x0031f018    DLHeap_Realloc
+0x002f0820    PS2VisualEffectsMan_dtor
+0x0031f858    DLHeap_IAlloc
+0x0031f4e8    DLHeap_MemalignOffset
+0x0031fc20    DLHeap_Mallinfo
+0x0038c590    PS2BezierMan_DebugDrawGrid
+0x003b09a0    PS2_SONY_CODEC_INTERNAL_dtor
+0x00254c48    VD_TextureSink_UploadFrame
+0x002534a8    VidEnginePlayer_Open
+0x0031e6d8    DLHeap_SysTrim
+0x0031d3a8    MD5_Update
+0x0031fe30    DLHeap_Mallopt
+0x002d2868    Serialize_ReadDataBlock
+0x0031d4d0    MD5_Final
+0x002d27b0    Serialize_ReadString
+0x0031a920    PS2ExecMan_v03
+0x00253890    VidEnginePlayer_Render
+0x002d26f8    Serialize_ReadQuat
+0x002d2478    Serialize_WriteDataBlock
+0x002d23e8    Serialize_WriteString
+0x002d25a0    Serialize_ReadVec3
+0x00317710    MD5_HashString
+0x0031e260    DLHeap_InitState
+0x002d2628    Serialize_ReadVec4
+0x002d2690    Serialize_ReadMatrix
+0x0031fb00    DLHeap_Pvalloc
+0x00317690    MD5_HashString64
+0x002d2248    Serialize_WriteVec3
+0x002d22a8    Serialize_WriteVec4
+0x002d2308    Serialize_WriteMatrix
+0x002d2368    Serialize_WriteQuat
+0x0031faa8    DLHeap_Valloc
+0x0031fb68    DLHeap_Trim
+0x00253460    VidEnginePlayer_Reopen
+0x00253b18    VidEngine_DebugPrintfStub
+0x00254e20    VD_DebugPrintfStub
+0x00255670    VD_Alloc
+0x002556b0    VD_Alloc_2
+0x00320a20    PS2ExecMan_ForwardSlot06
+0x00317478    PS2ExecMan_SetCallback
+0x00317798    MD5_HashStringDiscard
+0x003209c0    PS2ExecMan_ForwardSlot05
+0x003209f0    PS2ExecMan_ForwardSlot04
+0x00320a60    PS2ExecMan_ForwardSlot11
+0x00320a90    PS2ExecMan_ForwardSlot12
+0x0031f810    DLHeap_IndependentCalloc
+0x00255750    VD_Free
+0x00255778    VD_Free_2
+0x00254330    VidEnginePlayer_GlobalCtors
+0x002557c0    VD_GlobalCtors
+0x003176f0    MD5_HashString64Discard
+0x0031f838    DLHeap_IndependentComalloc
+0x00253af8    VidEngine_MemFree
+0x00254da0    VD_TextureSink_Redraw
+0x0031aaf0    PS2ExecMan_WaitSema
+0x0031f7f0    DLHeap_Free_Wrapper
+0x00320038    DLHeap_Malloc_Wrapper
+0x00320b08    PS2ExecMan_v06
+0x00254400    VD_TextureSink_SetFrameRate

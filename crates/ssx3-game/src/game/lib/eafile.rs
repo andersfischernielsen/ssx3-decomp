@@ -5863,24 +5863,18 @@ pub fn ea_file_platform_get_lsn(c: &mut Cpu) {
         c.g[V1][0] = 0x1;
         let host = c.g[A1][0] != c.g[V1][0];
         c.g[A0][0] = c.g[A0][0] & c.g[V0][0];
-        'b_3e3578: {
-            'b_3e3570: {
-                if host {
-                    break 'b_3e3570;
-                }
-                c.cycles += 6;
-                c.g[A1][0] = 0;
-                c.g[A2][0] = 0;
-                c.g[RA][0] = sx(0x003e_3568);
-                c.g[A3][0] = c.g[SP][0];
-                callee::EA_FILE_CD_GET_ENTRY.call(c, 0x003e_3568)?;
-                c.g[V0][0] = c.lw(c.g[SP][0] as u32);
-                break 'b_3e3578;
-            }
+        if !host {
+            c.cycles += 6;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            c.g[RA][0] = sx(0x003e_3568);
+            c.g[A3][0] = c.g[SP][0];
+            callee::EA_FILE_CD_GET_ENTRY.call(c, 0x003e_3568)?;
+            c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+        } else {
             c.cycles += 2;
             c.sw(c.g[SP][0] as u32, 0);
             c.g[V0][0] = c.lw(c.g[SP][0] as u32);
-            break 'b_3e3578;
         }
         c.cycles += 3;
         frame.restore_ra(c, 0x10);

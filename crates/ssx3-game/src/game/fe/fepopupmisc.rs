@@ -1415,11 +1415,6 @@ pub(crate) mod callee {
         addr: 0x001e_3620,
         f: ee::s04::f_001e3620,
     };
-
-    pub const MESSAGE_CENTER_GET_INBOX_5: Callee = Callee {
-        addr: 0x001e_39f8,
-        f: ee::s04::f_001e39f8,
-    };
 }
 
 /// `void MessageCenter_GetInbox(Inbox* self)` (0x1e39f8): the inbox of the
@@ -21659,7 +21654,7 @@ pub fn message_center_get_first_unread(c: &mut Cpu) {
                 c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                 c.g[RA][0] = sx(0x001e3474);
                 c.g[S0][0] = c.g[A0][0];
-                callee::MESSAGE_CENTER_GET_INBOX_5.call(c, 0x001e3474)?;
+                callee::MESSAGE_CENTER_GET_INBOX_3.call(c, 0x001e3474)?;
                 c.g[A1][0] = c.g[V0][0];
                 c.g[V0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0xcc));
                 let t = c.g[V0][0] == 0u64;
@@ -21751,7 +21746,7 @@ pub fn message_center_get_entry(c: &mut Cpu) {
         c.sd(c.g[SP][0] as u32, c.g[RA][0]);
         c.g[RA][0] = sx(0x001e3604);
         c.g[S0][0] = c.g[A0][0];
-        callee::MESSAGE_CENTER_GET_INBOX_5.call(c, 0x001e3604)?;
+        callee::MESSAGE_CENTER_GET_INBOX_3.call(c, 0x001e3604)?;
         c.g[S0][0] = sx((c.g[S0][0] as u32) << 3);
         c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
@@ -30892,7 +30887,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn message_center_get_group_message_id_matches_r2() {
+    fn message_center_get_group_message_id_events_match() {
         check_events(
             message_center_get_group_message_id_generated,
             message_center_get_group_message_id_hand,

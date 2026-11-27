@@ -300,16 +300,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::misc::callee::PROTO_PING_DESTROY;
     pub(crate) use crate::game::misc::callee::SSX_CLEAR_TRAY_OPENED;
 
-    pub const BE_NEW_PLAYER_INT_PACK_PLAYER_DATA: Callee = Callee {
-        addr: 0x0014_e2c8,
-        f: ee::s01::f_0014e2c8,
-    };
-
-    pub const BE_NEW_PLAYER_INT_UNPACK_PLAYER_DATA: Callee = Callee {
-        addr: 0x0014_e5c8,
-        f: ee::s01::f_0014e5c8,
-    };
-
     pub const PROTO_PING_REQUEST: Callee = Callee {
         addr: 0x003e_7450,
         f: ee::s14::f_003e7450,
@@ -520,14 +510,6 @@ pub(crate) mod callee {
     pub const GAME_RAND_SEED: Callee = Callee {
         addr: 0x0023_7cb0,
         f: ee::s06::f_00237cb0,
-    };
-
-    /// Fellow ctor used by the `gcomm_block` test helper (dead in the
-    /// non-test build only).
-    #[allow(dead_code)]
-    pub const C_GAME_COMM_CTOR_2: Callee = Callee {
-        addr: 0x0025_6c78,
-        f: ee::s06::f_00256c78,
     };
 
     pub const C_COMM_SYSTEM_GET_CHANNEL_STATUS: Callee = Callee {
@@ -1326,7 +1308,7 @@ pub fn c_game_comm_update(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00257368);
                     c.g[A1][0] = 0x1;
-                    callee::BE_NEW_PLAYER_INT_UNPACK_PLAYER_DATA.call(c, 0x00257368)?;
+                    callee::BE_NETWORK_INT_UNPACK_PLAYER_DATA.call(c, 0x00257368)?;
                     let t = true;
                     c.g[A0][0] = c.g[S0][0];
                     if t {
@@ -1577,7 +1559,7 @@ pub fn c_game_comm_update(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x002574cc);
                     c.g[A1][0] = 0u64;
-                    callee::BE_NEW_PLAYER_INT_UNPACK_PLAYER_DATA.call(c, 0x002574cc)?;
+                    callee::BE_NETWORK_INT_UNPACK_PLAYER_DATA.call(c, 0x002574cc)?;
                     c.g[A0][0] = c.g[S0][0];
                     pc = 0x002574d0;
                     continue;
@@ -1606,7 +1588,7 @@ pub fn c_game_comm_update(c: &mut Cpu) {
                 }
                 0x002574ec => {
                     c.cycles += 11;
-                    callee::BE_NEW_PLAYER_INT_PACK_PLAYER_DATA.call(c, 0x002574f4)?;
+                    callee::BE_NETWORK_INT_PACK_PLAYER_DATA.call(c, 0x002574f4)?;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3ec));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x00257504);
@@ -6602,9 +6584,8 @@ pub(crate) mod tests {
         // match): S == 1 matches on the second slot, S == 2 runs to
         // the bound. A1 points at a match string so STRNCMP hits
         // zero; the S0+0xc4 array and the SP+0x108 word steer the
-        // scan length; +0xb8 bounds it. Only %4==2 seeds reach the
-        // check (planted ring + clear flag), and those never collide
-        // with the %16==4 reply block above.
+        // scan length; +0xb8 bounds it. Only the four scan seeds
+        // below reach the check.
         // The +0x3fc countdown is steered positive on its own digit.
         // Scan seeds are four purpose-built Unwind seeds (planted
         // ring, clear flag): 34/46 match at k=1, 70/82 run to the
@@ -6625,6 +6606,12 @@ pub(crate) mod tests {
             c.bus.write32(SELF + 0x3fc, 1);
         } else if seed == 46 {
             c.bus.write32(SELF + 0x3fc, 5);
+        }
+        // The ping countdown at +0x138 starts at 2 on the matching
+        // seeds, so the 0x2570fc decrement leaves 1 and the 0x257178
+        // clear changes the word.
+        if scan == 1 {
+            c.bus.write32(SELF + 0x138, 2);
         }
         if scan != 0 {
             // The scan runs only when the ping response is nonzero,
@@ -6656,8 +6643,9 @@ pub(crate) mod tests {
                     if scan == 1 && i == 1 { M } else { 0x5000 + i },
                 );
             }
-            c.bus
-                .write32(sp.wrapping_sub(0x58), if scan == 1 { M } else { 0x6000 });
+            // The ping response copies the 16-byte header to `sp + 0x100`,
+            // so the scan's `sp + 0x108` word is `HDR + 8`.
+            c.bus.write32(HDR + 8, if scan == 1 { M } else { 0x6000 });
             c.bus.write32(SELF + 0xb8, 4);
             // Tell the event hook to skip the 0x257110 unwind on
             // scan seeds so the VBlank reaches the scan instead.
@@ -7198,7 +7186,7 @@ pub(crate) mod tests {
         c.g[A1][0] = a0 as u64;
         c.g[A2][0] = a1 as u64;
         c.g[RA][0] = sx(0x0025_6ca4);
-        callee::C_GAME_COMM_CTOR_2.call(c, 0x0025_6ca4).unwrap();
+        callee::C_GAME_COMM_CTOR.call(c, 0x0025_6ca4).unwrap();
         this
     }
 

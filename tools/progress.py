@@ -117,15 +117,25 @@ def rust_dirs():
     return out
 
 
+def registered():
+    """Addresses with a hand-written Rust replacement: the entries of every
+    `OVERRIDES` table under crates/ssx3-game/src. Lines in overrides.txt that
+    only hold a slot for the generated body do not count."""
+    import glob
+
+    done = set()
+    pat = re.compile(r"pub(?:\(crate\))? (?:const|static) OVERRIDES[^=]*=\s*&?\[")
+    for path in glob.glob(os.path.join(ROOT, "crates/ssx3-game/src/**/*.rs"), recursive=True):
+        text = open(path).read()
+        for m in pat.finditer(text):
+            end = text.index("];", m.end())
+            for a in re.findall(r"\(\s*0x([0-9a-fA-F_]+)\s*,", text[m.end():end]):
+                done.add(int(a.replace("_", ""), 16))
+    return done
+
+
 def counts():
-    ported = set()
-    for line in open(os.path.join(ROOT, "crates/ssx3-game/overrides.txt")):
-        word = line.split("#")[0].split()
-        if word:
-            try:
-                ported.add(int(word[0], 16))
-            except ValueError:
-                pass
+    ported = registered()
     mapped, rust = purpose_groups(), rust_dirs()
     # [functions done, functions, bytes done, bytes] overall and per group
     stats = {g: [0, 0, 0, 0] for g in ["All"] + GROUPS}

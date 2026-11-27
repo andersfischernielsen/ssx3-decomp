@@ -349,9 +349,9 @@ pub fn wscript_event_queue_peek(c: &mut Cpu) {
 // Main memory.
 
 /// The allocator's mutex.
-const MEM_MUTEX: u32 = 0x0053_8b00;
+pub(crate) const MEM_MUTEX: u32 = 0x0053_8b00;
 /// The dlmalloc arena of the main heap.
-const MEM_HEAP: u32 = 0x004f_f250;
+pub(crate) const MEM_HEAP: u32 = 0x004f_f250;
 
 /// `void EA_MemZero(void* p, int n)` (0x3e6220): `EA_MemSet(p, 0, n)`.
 /// 8 cycles plus the callee.
@@ -1701,7 +1701,7 @@ pub fn vram_heap_alloc(c: &mut Cpu) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::difftest::fakes::*;
     use crate::difftest::{
@@ -1885,7 +1885,7 @@ mod tests {
 
     /// The main heap's dlmalloc arena over 256 KiB of test RAM, with a few
     /// live blocks; returns them.
-    fn mem_heap(c: &mut Cpu, r: &mut Rng) -> Vec<u32> {
+    pub(crate) fn mem_heap(c: &mut Cpu, r: &mut Rng) -> Vec<u32> {
         c.g[GP][0] = GAME_GP as u64;
         run(
             c,
@@ -1928,7 +1928,7 @@ mod tests {
 
     /// The allocator mutex: sometimes held by "this thread" (the first fake
     /// syscall, `GetThreadId`, returns 0x42), at some depth.
-    fn mutex_state(c: &mut Cpu, r: &mut Rng, m: u32) {
+    pub(crate) fn mutex_state(c: &mut Cpu, r: &mut Rng, m: u32) {
         match r.next_u32() % 3 {
             0 => {
                 c.bus.write32(m + 4, 0x42);
@@ -1989,7 +1989,7 @@ mod tests {
     /// A pointer to free: null, a pool pointer (the pools' bases are 0 in
     /// the test machine, so small addresses count as pooled), or a live
     /// heap block.
-    fn free_target(c: &mut Cpu, r: &mut Rng) -> u64 {
+    pub(crate) fn free_target(c: &mut Cpu, r: &mut Rng) -> u64 {
         let blocks = mem_heap(c, r);
         match r.next_u32() % 4 {
             0 => 0,

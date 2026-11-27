@@ -6980,6 +6980,87 @@ pub(crate) mod tests {
         h as i32 as i64 as u64
     }
 
+    use crate::game::mem::memstd::tests::norm_miss;
+
+    /// Our stream fixture (kept for the ported-libs tests below): plants
+    /// the stream pointer at `SND_STREAMS` with handle-less-vs-backed
+    /// (`+0x124`), request (`+0x11c`) and buffered (`+0x14`) steering.
+    pub(crate) fn stream_fixture_2(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        const SELF: u32 = DATA + 0x20_0000;
+        const STREAM: u32 = SELF + 0x1000;
+        const REQ: u32 = SELF + 0x2000;
+        c.bus.write32(0x0045_0000 - 0x3b94, FAKE);
+        c.bus.write32(0x0045_0000 - 0x3b90, FAKE + 0x10);
+        c.bus.write8(0x0051_0000 - 0x56d2, 1);
+        c.bus.write32(0x0051_0000 - 0x5f60, STREAM);
+        let id = if seed % 3 == 0 {
+            1 + r.next_u32() % 4
+        } else {
+            0
+        };
+        c.bus.write32(SELF + SB_STREAM, id);
+        c.bus.write32(
+            STREAM + 0x124,
+            if seed % 3 == 1 { 0 } else { r.next_u32() | 1 },
+        );
+        c.bus.write32(STREAM + 0x11c, REQ);
+        c.bus.write32(REQ + 0xc, r.next_u32());
+        c.bus.write16(STREAM + 0x14, 0);
+        c.bus
+            .write8(0x0051_0000 - 0x5718 + 0x176, r.next_u32() as u8);
+        SELF
+    }
+
+    /// Our stream array of 4 slots over one live buffer.
+    pub(crate) fn array_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        const ARRAY: u32 = DATA + 0x1000;
+        const BUFS: u32 = DATA + 0x1100;
+        let live = stream_fixture_2(c, r, seed);
+        c.bus.write32(ARRAY + 8, BUFS);
+        for i in 0..4u32 {
+            c.bus
+                .write32(BUFS + 4 * i, if (seed / 4 + i) & 1 == 0 { 0 } else { live });
+        }
+        ARRAY
+    }
+
+    /// Steer the request the status callees resolve.
+    pub(crate) fn request_steering_2(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        const REQ: u32 = DATA + 0x20_0000 + 0x2000;
+        c.bus.write32(
+            REQ + 0xc,
+            match seed % 3 {
+                0 => 0,
+                1 => 0x8000_0000 | r.next_u32(),
+                _ => r.next_u32() & 0x7fff_ffff,
+            },
+        );
+        c.bus.write8(REQ + 0x24, ((seed / 3) % 2) as u8 * 0x11);
+        c.bus.write8(DATA + 0x5024, ((seed / 6) % 2) as u8 * 0x22);
+    }
+
+    /// Our queue-array fixture over one live buffer.
+    pub(crate) fn queue_array_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        const ARRAY: u32 = DATA + 0x1000;
+        const BUFS: u32 = DATA + 0x1100;
+        let live = stream_fixture_2(c, r, seed);
+        c.bus.write32(ARRAY + 8, BUFS);
+        for i in 0..4u32 {
+            c.bus
+                .write32(BUFS + 4 * i, if (seed / 4 + i) & 1 == 0 { 0 } else { live });
+        }
+        c.bus.write32(live + 0x14, 0xaaaa_0000 + seed);
+        c.bus.write32(
+            live + 0x74,
+            match seed % 3 {
+                0 => 0,
+                1 => 0xbbbb_0000 + seed,
+                _ => 0,
+            },
+        );
+        ARRAY
+    }
+
     #[test]
     fn stream_array_queue_from_big_matches() {
         check(
@@ -7411,6 +7492,934 @@ pub(crate) mod tests {
                 oc1045_arm(c, 2, &[]);
                 oc1045_arm(c, 3, &[]);
                 oc1045_arm(c, 4, &[]);
+            },
+        );
+    }
+    // ---------- Stream coverage for the ported libs ----------
+    // Our stream tests, renamed with `_live` (live-fixture stream), run
+    // against main's bodies. Keepers pin paths or assert properties
+    // main's tests do not cover.
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::require_paths;
+
+    driven!(pause_live_gen, ee::s08::f_002aac98__generated);
+
+    driven!(pause_live_hand, stream_array_pause_all);
+
+    driven!(resume_live_gen, ee::s08::f_002aad08__generated);
+
+    driven!(resume_live_hand, stream_array_resume_all);
+
+    /// Gate of the `SNDSTRM_Create` fake for the ctor_2 test: with
+    /// `CTOR2_MAGIC` at `CTOR2_CTRL` the call is logged by `fakes::fake_call`
+    /// (results, scrambled temporaries, the chosen unwind) at a fixed 4 cycles.
+    pub(crate) const CTOR2_CTRL: u32 = DATA + 0x1f60;
+
+    pub(crate) const CTOR2_MAGIC: u32 = 0x5c7a_2c02;
+
+    pub(crate) static CTOR2_PREV_CREATE: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    pub(crate) fn ctor2_fake_create(c: &mut Cpu) {
+        if c.bus.read32(CTOR2_CTRL) != CTOR2_MAGIC {
+            return crate::difftest::fakes::fall_back(
+                c,
+                &CTOR2_PREV_CREATE,
+                ee::s13::f_003b7818__generated,
+            );
+        }
+        // A fixed cost, so each arm has one cycle total.
+        let before = c.cycles;
+        crate::difftest::fakes::fake_call(c, 0x003b_7818);
+        c.cycles = before + 4;
+    }
+
+    /// The ctor_2 fixture. `P` (a1) holds the stream index at `+0x1c`, the
+    /// volume-pointer array at `+0x3c`, the level array at `+0x38` and the
+    /// 0x18-stride byte array at `+0x20`. Seeds pick the index, a null or
+    /// real volume (0.25, 1, 1.5, -1) and a level (negative, 0..126,
+    /// large), so the level times the volume lands below 0, inside 0..127 or
+    /// at or above 127. One seed in three makes `SNDSTRM_Create` unwind.
+    pub(crate) fn ctor2_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine_rt(c, seed, 0x002a_9c00, 1);
+        crate::difftest::fakes::hook(
+            std::ptr::addr_of_mut!(ee::s13::OVERRIDE_003B7818),
+            ctor2_fake_create,
+            &CTOR2_PREV_CREATE,
+        );
+        c.bus.write32(CTOR2_CTRL, CTOR2_MAGIC);
+        const BUF: u32 = DATA + 0x100;
+        const P: u32 = DATA + 0x400;
+        const VOLS: u32 = DATA + 0x500;
+        const FLOATS: u32 = DATA + 0x540;
+        const LEVELS: u32 = DATA + 0x580;
+        const BYTES: u32 = DATA + 0x600;
+        crate::difftest::fill(c, &mut r, BUF, 0x10);
+        crate::difftest::fill(c, &mut r, BYTES, 0x18);
+        let index = seed % 3;
+        let floats = [0x3e80_0000u32, 0x3f80_0000, 0x3fc0_0000, 0xbf80_0000];
+        crate::difftest::put_words(c, FLOATS, &floats);
+        for i in 0..3 {
+            let vol = if (seed / 3 + i) % 5 == 4 {
+                0
+            } else {
+                FLOATS + 4 * ((seed / 3 + i) % 4)
+            };
+            c.bus.write32(VOLS + 4 * i, vol);
+            let level = match (seed / 15 + i) % 4 {
+                0 => -(1 + (r.next_u32() % 200) as i32),
+                1 => (r.next_u32() % 100) as i32,
+                2 => 100 + (r.next_u32() % 60) as i32,
+                _ => 0x1000 + (r.next_u32() % 0x1000) as i32,
+            };
+            c.bus.write32(LEVELS + 4 * i, level as u32);
+        }
+        c.bus.write32(P + 0x1c, index);
+        c.bus.write32(P + 0x20, BYTES);
+        c.bus.write32(P + 0x38, LEVELS);
+        c.bus.write32(P + 0x3c, VOLS);
+        c.g[A0][0] = BUF as u64;
+        c.g[A1][0] = P as u64;
+        c.g[A2][0] = 0x2222_0000 + seed as u64;
+        c.g[A3][0] = 0x3333_0000 + seed as u64;
+        c.g[T0][0] = 0x4444_0000 + seed as u64;
+        c.g[T1][0] = 0x5555_0000 + seed as u64;
+        c.pc = 0x002a_9c00;
+    }
+
+    /// `StreamBuffer_ctor_2`: every clamp of the level times the volume, the
+    /// null-volume skip, and an unwinding `SNDSTRM_Create`.
+    #[test]
+    fn stream_buffer_ctor_2_live_matches() {
+        check(
+            ee::s08::f_002a9c00__generated,
+            stream_buffer_ctor_2,
+            90,
+            &ctor2_fixture,
+        );
+        // Null volume 43; the three clamp arms (below 0, at or above 127, inside).
+        require_paths(
+            ee::s08::f_002a9c00__generated,
+            90,
+            &[43, 90, 101, 120],
+            &ctor2_fixture,
+        );
+    }
+
+    /// `StreamBuffer_QueueFromBig`: no entry reads 0; a live entry runs the
+    /// real find-and-queue.
+    #[test]
+    fn stream_buffer_queue_from_big_live_matches() {
+        check(
+            ee::s08::f_002aa398__generated,
+            stream_buffer_queue_from_big,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a398, 0);
+                c.hooks.miss = norm_miss;
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.bus.write32(this + 0x14, 0xaaaa_0000 + seed);
+                c.bus.write32(
+                    this + 0x74,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 0xbbbb_0000 + seed,
+                        _ => 0,
+                    },
+                );
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = [0u64, 0x100, 0xffff_ffff][seed as usize % 3];
+                c.g[A2][0] = [0u64, 1, 0xabcd_0000][seed as usize % 3];
+                c.g[A3][0] = (seed % 2) as u64;
+                c.g[T0][0] = (seed % 3) as u64;
+                c.pc = 0x002a_a398;
+            },
+        );
+        require_paths(
+            ee::s08::f_002aa398__generated,
+            60,
+            &[18, 291],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a398, 0);
+                c.hooks.miss = norm_miss;
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.bus.write32(this + 0x14, 0xaaaa_0000 + seed);
+                c.bus.write32(
+                    this + 0x74,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 0xbbbb_0000 + seed,
+                        _ => 0,
+                    },
+                );
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = [0u64, 0x100, 0xffff_ffff][seed as usize % 3];
+                c.g[A2][0] = [0u64, 1, 0xabcd_0000][seed as usize % 3];
+                c.g[A3][0] = (seed % 2) as u64;
+                c.g[T0][0] = (seed % 3) as u64;
+                c.pc = 0x002a_a398;
+            },
+        );
+    }
+
+    /// `StreamBuffer_GetRequestLength`: the summed words as a float when the
+    /// status is 2, else the constant 2.
+    #[test]
+    fn stream_buffer_get_request_length_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_a260, 0);
+            c.hooks.miss = norm_miss;
+            snd_world(c, &mut r, true);
+            // Plant the fixture stream after the world, so the
+            // request steering below steers a live request.
+            let this = stream_fixture_2(c, &mut r, seed);
+            request_steering_2(c, &mut r, seed);
+            c.g[A0][0] = this as u64;
+            c.pc = 0x002a_a260;
+        };
+        check(
+            ee::s08::f_002aa260__generated,
+            stream_buffer_get_request_length,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002aa260__generated,
+            100,
+            &[200, 231, 237, 1338],
+            &setup,
+        );
+    }
+
+    /// `StreamBuffer_SetStreamParam`: the parameter crosses the SND lock to
+    /// the real setter on a live or missing stream.
+    #[test]
+    fn stream_buffer_set_stream_param_live_matches() {
+        check(
+            ee::s08::f_002aa448__generated,
+            stream_buffer_set_stream_param,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a448, 0);
+                c.hooks.miss = norm_miss;
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = [0u64, 1, 0xffff_ffff][seed as usize % 3];
+                c.g[A2][0] = 0xcc00_0000 + seed as u64;
+                c.pc = 0x002a_a448;
+            },
+        );
+        require_paths(
+            ee::s08::f_002aa448__generated,
+            60,
+            &[72, 112],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a448, 0);
+                c.hooks.miss = norm_miss;
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = [0u64, 1, 0xffff_ffff][seed as usize % 3];
+                c.g[A2][0] = 0xcc00_0000 + seed as u64;
+                c.pc = 0x002a_a448;
+            },
+        );
+    }
+
+    /// `StreamBuffer_GetRequestPosition`: status 2 reads the position word
+    /// as a float, anything else reads 0.0.
+    #[test]
+    fn stream_buffer_get_request_position_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_a0c0, 0);
+            c.hooks.miss = norm_miss;
+            snd_world(c, &mut r, true);
+            // Plant the fixture stream after the world, so the
+            // request steering below steers a live request.
+            let this = stream_fixture_2(c, &mut r, seed);
+            request_steering_2(c, &mut r, seed);
+            c.g[A0][0] = this as u64;
+            c.pc = 0x002a_a0c0;
+        };
+        check(
+            ee::s08::f_002aa0c0__generated,
+            stream_buffer_get_request_position,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002aa0c0__generated,
+            100,
+            &[200, 231, 237, 1336],
+            &setup,
+        );
+    }
+
+    /// `StreamBuffer_Pause` and `StreamBuffer_Resume`: the pitch call runs
+    /// for real on the fixture stream.
+    #[test]
+    fn stream_buffer_pause_resume_live_matches() {
+        for (gen, hand, addr, salt) in [
+            (
+                ee::s08::f_002aa2b0__generated as fn(&mut Cpu),
+                stream_buffer_pause as fn(&mut Cpu),
+                0x002a_a2b0,
+                0x002a_a2b0,
+            ),
+            (
+                ee::s08::f_002aa2e8__generated as fn(&mut Cpu),
+                stream_buffer_resume as fn(&mut Cpu),
+                0x002a_a2e8,
+                0x002a_a2e8,
+            ),
+        ] {
+            check(gen, hand, 60, &|c, seed| {
+                let mut r = machine(c, seed, salt as u64, 0);
+                c.hooks.miss = norm_miss;
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = this as u64;
+                c.pc = addr;
+            });
+            require_paths(gen, 60, &[70, 112], &|c, seed| {
+                let mut r = machine(c, seed, salt as u64, 0);
+                c.hooks.miss = norm_miss;
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = this as u64;
+                c.pc = addr;
+            });
+        }
+    }
+
+    /// `StreamBuffer_HasBuffered`: the buffered count crosses the steered
+    /// threshold both ways.
+    #[test]
+    fn stream_buffer_has_buffered_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_a150, 0);
+            c.hooks.miss = norm_miss;
+            snd_world(c, &mut r, true);
+            // Plant the fixture stream after the world.
+            let this = stream_fixture_2(c, &mut r, seed);
+            // Buffered halves for even seeds, so the live stream actually
+            // buffers (else every threshold-1 seed reads 0).
+            if seed % 2 == 0 {
+                c.bus.write16(this + 0x1000 + 0x14, 0x20);
+                c.bus.write16(this + 0x1000 + 0x18, 0x40);
+            }
+            c.g[A0][0] = this as u64;
+            c.g[A1][0] = [0u64, 1, 0x7fff_ffff, 0xffff_ffff][seed as usize % 4];
+            c.pc = 0x002a_a150;
+        };
+        check(
+            ee::s08::f_002aa150__generated,
+            stream_buffer_has_buffered,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002aa150__generated,
+            100,
+            &[95, 104, 109, 146, 157],
+            &setup,
+        );
+    }
+
+    /// `StreamBuffer_IsRequestPending`: status 0 and 2 both read
+    /// not-pending (status 1 is unreached on this single-request fixture;
+    /// see the branch table).
+    #[test]
+    fn stream_buffer_is_request_pending_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_a188, 0);
+            snd_world(c, &mut r, true);
+            // Plant the fixture stream after the world so the SND_STREAMS
+            // pointer (0x50a0a0) is the fixture's live stream, not the
+            // world's: the +0x124/+0x11c/+0x14 steering is actually read.
+            let this = stream_fixture_2(c, &mut r, seed);
+            c.g[A0][0] = this as u64;
+            c.g[A1][0] = 0xeeee_0000 + seed as u64;
+            c.pc = 0x002a_a188;
+        };
+        check(
+            ee::s08::f_002aa188__generated,
+            stream_buffer_is_request_pending,
+            100,
+            &setup,
+        );
+        // The fixture stream must be live: handle-less seeds resolve no
+        // request (status 3), while backed seeds resolve 0 or 2 (pre-fix
+        // every seed reads the world's stream, whose node is always
+        // found: only 0 or 2, never 3).
+        const OUT: u32 = DATA + 0x30_0000;
+        let mut statuses = std::collections::BTreeSet::new();
+        for seed in 0..crate::difftest::seed_count(100) {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            c.g[A1][0] = OUT as u64;
+            c.g[A2][0] = 0;
+            c.pc = 0x002a_a068;
+            crate::difftest::run_generated(&mut c, stream_buffer_get_request_status);
+            statuses.insert(c.bus.read32(OUT));
+        }
+        assert!(
+            statuses.contains(&3),
+            "request status never leaves 0/2: {statuses:?}"
+        );
+    }
+
+    /// `StreamBuffer_ClearPrebuffer`: the real `GetStatus` reads the
+    /// fixture stream, and the real `SetPrebuffer` clears (or refuses) the
+    /// resulting handle, on both sides.
+    #[test]
+    fn stream_buffer_clear_prebuffer_live_matches() {
+        check(
+            ee::s08::f_002aa1e8__generated,
+            stream_buffer_clear_prebuffer,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a1e8, 0);
+                let this = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = this as u64;
+                c.pc = 0x002a_a1e8;
+            },
+        );
+    }
+
+    /// `StreamBuffer_ClearPrebufferHandle`: handle 0 matches the fixture
+    /// request (the prebuffer size is cleared), a negative handle matches
+    /// nothing (`-8`).
+    #[test]
+    fn stream_buffer_clear_prebuffer_handle_live_matches() {
+        check(
+            ee::s08::f_002aa240__generated,
+            stream_buffer_clear_prebuffer_handle,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a240, 0);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = 0xdead_beef;
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    0xffff_ffff_ffff_ffff
+                };
+                c.pc = 0x002a_a240;
+            },
+        );
+    }
+
+    /// `StreamArray_CreateStreamEx`: the slot holds what the constructor
+    /// returned on both sides.
+    #[test]
+    fn stream_array_create_stream_ex_live_matches() {
+        check(
+            ee::s08::f_002aa870__generated,
+            stream_array_create_stream_ex,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_a870, 0);
+                crate::difftest::fakes::machine_rt(c, seed, 0x002a_a870, 0);
+                let array = array_fixture(c, &mut r, seed);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = 0xaaaa_0000 + seed as u64;
+                c.g[A3][0] = 0xbbbb_0000 + seed as u64;
+                c.g[T0][0] = 0xcccc_0000 + seed as u64;
+                c.g[T1][0] = 0xdddd_0000 + seed as u64;
+                c.g[T2][0] = 0xeeee_0000 + seed as u64;
+                c.pc = 0x002a_a870;
+            },
+        );
+        require_paths(ee::s08::f_002aa870__generated, 60, &[1522], &|c, seed| {
+            let mut r = machine(c, seed, 0x002a_a870, 0);
+            crate::difftest::fakes::machine_rt(c, seed, 0x002a_a870, 0);
+            let array = array_fixture(c, &mut r, seed);
+            c.g[A0][0] = array as u64;
+            c.g[A1][0] = (seed % 4) as u64;
+            c.g[A2][0] = 0xaaaa_0000 + seed as u64;
+            c.g[A3][0] = 0xbbbb_0000 + seed as u64;
+            c.g[T0][0] = 0xcccc_0000 + seed as u64;
+            c.g[T1][0] = 0xdddd_0000 + seed as u64;
+            c.g[T2][0] = 0xeeee_0000 + seed as u64;
+            c.pc = 0x002a_a870;
+        });
+    }
+
+    /// `StreamArray_PauseAll` and `StreamArray_ResumeAll`: counts of -1..4
+    /// with null and live slots run the real pause/resume on each live one.
+    #[test]
+    fn stream_array_pause_resume_all_live_matches() {
+        for (gen, hand, addr) in [
+            (
+                ee::s08::f_002aac98__generated as fn(&mut Cpu),
+                stream_array_pause_all as fn(&mut Cpu),
+                0x002a_ac98,
+            ),
+            (
+                ee::s08::f_002aad08__generated as fn(&mut Cpu),
+                stream_array_resume_all as fn(&mut Cpu),
+                0x002a_ad08,
+            ),
+        ] {
+            check(gen, hand, 100, &|c, seed| {
+                let mut r = machine(c, seed, addr as u64, 0);
+                c.hooks.miss = norm_miss;
+                const ARRAY: u32 = DATA + 0x1000;
+                const BUFS: u32 = DATA + 0x1100;
+                let live = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                let count = match seed % 6 {
+                    0 => 0xffff_ffff,
+                    1 => 0,
+                    _ => 1 + (seed % 4),
+                };
+                c.bus.write32(ARRAY + 4, count);
+                c.bus.write32(ARRAY + 8, BUFS);
+                for i in 0..4u32 {
+                    c.bus
+                        .write32(BUFS + 4 * i, if (seed / 6 + i) & 1 == 0 { 0 } else { live });
+                }
+                c.g[A0][0] = ARRAY as u64;
+                c.pc = addr;
+            });
+            require_paths(
+                gen,
+                100,
+                &[13, 24, 106, 139, 148, 157, 197, 272, 281],
+                &|c, seed| {
+                    let mut r = machine(c, seed, addr as u64, 0);
+                    c.hooks.miss = norm_miss;
+                    const ARRAY: u32 = DATA + 0x1000;
+                    const BUFS: u32 = DATA + 0x1100;
+                    let live = stream_fixture_2(c, &mut r, seed);
+                    snd_world(c, &mut r, true);
+                    let count = match seed % 6 {
+                        0 => 0xffff_ffff,
+                        1 => 0,
+                        _ => 1 + (seed % 4),
+                    };
+                    c.bus.write32(ARRAY + 4, count);
+                    c.bus.write32(ARRAY + 8, BUFS);
+                    for i in 0..4u32 {
+                        c.bus
+                            .write32(BUFS + 4 * i, if (seed / 6 + i) & 1 == 0 { 0 } else { live });
+                    }
+                    c.g[A0][0] = ARRAY as u64;
+                    c.pc = addr;
+                },
+            );
+        }
+    }
+
+    /// The pause/resume loops under delivered events. Resume's head
+    /// (0x2aad30) is structured: the port must carry on, never resume
+    /// there (the pause head is covered by
+    /// `stream_array_pause_all_back_edge_carries_on`).
+    #[test]
+    fn stream_array_pause_resume_all_live_events() {
+        for (gen, hand, addr, no_resume) in [
+            (
+                pause_live_gen as fn(&mut Cpu),
+                pause_live_hand as fn(&mut Cpu),
+                0x002a_ac98,
+                None,
+            ),
+            (
+                resume_live_gen as fn(&mut Cpu),
+                resume_live_hand as fn(&mut Cpu),
+                0x002a_ad08,
+                Some(0x002a_ad30),
+            ),
+        ] {
+            let resumes = check_events(gen, hand, 100, &|c, seed| {
+                let mut r = machine(c, seed, addr as u64, 0);
+                c.hooks.miss = norm_miss;
+                const ARRAY: u32 = DATA + 0x1000;
+                const BUFS: u32 = DATA + 0x1100;
+                let live = stream_fixture_2(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                let count = match seed % 6 {
+                    0 => 0xffff_ffff,
+                    1 => 0,
+                    _ => 1 + (seed % 4),
+                };
+                c.bus.write32(ARRAY + 4, count);
+                c.bus.write32(ARRAY + 8, BUFS);
+                for i in 0..4u32 {
+                    c.bus
+                        .write32(BUFS + 4 * i, if (seed / 6 + i) & 1 == 0 { 0 } else { live });
+                }
+                c.g[A0][0] = ARRAY as u64;
+                schedule(c, &mut r, seed, addr)
+            });
+            if let Some(head) = no_resume {
+                assert!(
+                    resumes.get(&head).is_none(),
+                    "unwound at structured head {head:#x}: {resumes:x?}"
+                );
+            }
+        }
+    }
+
+    /// `StreamArray_IsRequestDone`: 1 for a negative handle, else 1 only
+    /// when the status is 3 (unreached on this fixture; the status is 0 or
+    /// 2 here).
+    #[test]
+    fn stream_array_is_request_done_live_matches() {
+        check(
+            ee::s08::f_002aaf78__generated,
+            stream_array_is_request_done,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_af78, 0);
+                c.hooks.miss = norm_miss;
+                snd_world(c, &mut r, true);
+                c.bus.write8(DATA + 0x5024, ((seed / 3) % 2) as u8 * 0x22);
+                c.g[A0][0] = 0xdada_0000 + seed as u64;
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0xffff_ffff_ffff_ffff - (seed % 100) as u64,
+                    1 => 0,
+                    _ => 1 + (seed % 100) as u64,
+                };
+                c.pc = 0x002a_af78;
+            },
+        );
+        require_paths(
+            ee::s08::f_002aaf78__generated,
+            100,
+            &[78, 90, 133, 1238],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_af78, 0);
+                c.hooks.miss = norm_miss;
+                snd_world(c, &mut r, true);
+                c.bus.write8(DATA + 0x5024, ((seed / 3) % 2) as u8 * 0x22);
+                c.g[A0][0] = 0xdada_0000 + seed as u64;
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0xffff_ffff_ffff_ffff - (seed % 100) as u64,
+                    1 => 0,
+                    _ => 1 + (seed % 100) as u64,
+                };
+                c.pc = 0x002a_af78;
+            },
+        );
+    }
+
+    /// `StreamArray_IsRequestPlaying`: 1 for a non-negative handle with
+    /// status 2, else 0.
+    #[test]
+    fn stream_array_is_request_playing_live_matches() {
+        check(
+            ee::s08::f_002aafd0__generated,
+            stream_array_is_request_playing,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_afd0, 0);
+                c.hooks.miss = norm_miss;
+                snd_world(c, &mut r, true);
+                c.bus.write8(DATA + 0x5024, ((seed / 3) % 2) as u8 * 0x22);
+                c.g[A0][0] = 0xdbdb_0000 + seed as u64;
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0xffff_ffff_ffff_ffff - (seed % 100) as u64,
+                    1 => 0,
+                    _ => 1 + (seed % 100) as u64,
+                };
+                c.pc = 0x002a_afd0;
+            },
+        );
+        require_paths(
+            ee::s08::f_002aafd0__generated,
+            100,
+            &[75, 87, 132, 1239],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_afd0, 0);
+                c.hooks.miss = norm_miss;
+                snd_world(c, &mut r, true);
+                c.bus.write8(DATA + 0x5024, ((seed / 3) % 2) as u8 * 0x22);
+                c.g[A0][0] = 0xdbdb_0000 + seed as u64;
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0xffff_ffff_ffff_ffff - (seed % 100) as u64,
+                    1 => 0,
+                    _ => 1 + (seed % 100) as u64,
+                };
+                c.pc = 0x002a_afd0;
+            },
+        );
+    }
+
+    /// `StreamArray_QueueFromBig`: null slots read -1, zero-entry buffers
+    /// read 0, live entries run the real queue.
+    #[test]
+    fn stream_array_queue_from_big_live_matches() {
+        check(
+            ee::s08::f_002aadc0__generated,
+            stream_array_queue_from_big,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_adc0, 0);
+                let array = queue_array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = [0u64, 0x100, 0xffff_ffff][seed as usize % 3];
+                c.g[A3][0] = [0u64, 1, 0xabcd_0000][seed as usize % 3];
+                c.g[T0][0] = (seed % 2) as u64;
+                c.pc = 0x002a_adc0;
+            },
+        );
+        require_paths(
+            ee::s08::f_002aadc0__generated,
+            60,
+            &[14, 33, 306],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_adc0, 0);
+                let array = queue_array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = [0u64, 0x100, 0xffff_ffff][seed as usize % 3];
+                c.g[A3][0] = [0u64, 1, 0xabcd_0000][seed as usize % 3];
+                c.g[T0][0] = (seed % 2) as u64;
+                c.pc = 0x002a_adc0;
+            },
+        );
+    }
+
+    /// `StreamArray_GetRequestLength`: a negative index reads 0.0 without
+    /// touching the table; null slots do the same after the lookup.
+    #[test]
+    fn stream_array_get_request_length_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_aec0, 0);
+            snd_world(c, &mut r, true);
+            // Plant the fixture array after the world.
+            let array = queue_array_fixture(c, &mut r, seed);
+            c.g[A0][0] = array as u64;
+            c.g[A1][0] = match seed % 5 {
+                0 => 0xffff_ffff_ffff_ffff,
+                _ => (seed % 4) as u64,
+            };
+            c.g[A2][0] = 0xee00_0000 + seed as u64;
+            c.pc = 0x002a_aec0;
+        };
+        check(
+            ee::s08::f_002aaec0__generated,
+            stream_array_get_request_length,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002aaec0__generated,
+            100,
+            &[8, 14, 217, 225, 250, 256],
+            &setup,
+        );
+    }
+
+    /// `StreamArray_HasBuffered`: null slots read 0; live slots run the
+    /// real buffered check against the fixture stream with a steered
+    /// threshold.
+    #[test]
+    fn stream_array_has_buffered_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_af08, 0);
+            snd_world(c, &mut r, true);
+            // Plant the fixture array after the world.
+            let array = array_fixture(c, &mut r, seed);
+            // Buffered halves for even seeds (stream at SELF + 0x1000).
+            if seed % 2 == 0 {
+                c.bus.write16(DATA + 0x20_1000 + 0x14, 0x20);
+                c.bus.write16(DATA + 0x20_1000 + 0x18, 0x40);
+            }
+            c.g[A0][0] = array as u64;
+            c.g[A1][0] = (seed % 4) as u64;
+            c.g[A2][0] = [0, 1, 0x7fff_ffff, 0xffff_ffff][seed as usize % 4];
+            c.pc = 0x002a_af08;
+        };
+        check(
+            ee::s08::f_002aaf08__generated,
+            stream_array_has_buffered,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002aaf08__generated,
+            100,
+            &[11, 112, 122, 128, 170, 176],
+            &setup,
+        );
+    }
+
+    /// `StreamArray_IsRequestPending`: null slots read 0; live slots run
+    /// the real pending check.
+    #[test]
+    fn stream_array_is_request_pending_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_af40, 0);
+            snd_world(c, &mut r, true);
+            // Plant the fixture array after the world.
+            let array = array_fixture(c, &mut r, seed);
+            c.g[A0][0] = array as u64;
+            c.g[A1][0] = (seed % 4) as u64;
+            c.g[A2][0] = 0xaaaa_0000 + seed as u64;
+            c.pc = 0x002a_af40;
+        };
+        check(
+            ee::s08::f_002aaf40__generated,
+            stream_array_is_request_pending,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002aaf40__generated,
+            100,
+            &[11, 213, 221, 246, 252],
+            &setup,
+        );
+    }
+
+    /// `StreamArray_ClearPrebuffer`: null slots are a no-op; live slots run
+    /// the real clear.
+    #[test]
+    fn stream_array_clear_prebuffer_live_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x002a_ab60, 0);
+            snd_world(c, &mut r, true);
+            // Plant the fixture array after the world.
+            let array = array_fixture(c, &mut r, seed);
+            c.g[A0][0] = array as u64;
+            c.g[A1][0] = (seed % 4) as u64;
+            c.g[A2][0] = 0xbbbb_0000 + seed as u64;
+            c.pc = 0x002a_b060;
+        };
+        check(
+            ee::s08::f_002ab060__generated,
+            stream_array_clear_prebuffer,
+            100,
+            &setup,
+        );
+        require_paths(
+            ee::s08::f_002ab060__generated,
+            100,
+            &[10, 204, 212, 220],
+            &setup,
+        );
+    }
+
+    /// `StreamArray_ClearPrebufferHandle`: the handle either matches the
+    /// fixture request (cleared) or matches nothing (`-8`), or the slot is
+    /// null (0 without calling).
+    #[test]
+    fn stream_array_clear_prebuffer_handle_live_matches() {
+        check(
+            ee::s08::f_002ab098__generated,
+            stream_array_clear_prebuffer_handle,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_ab98, 0);
+                let array = array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    0xffff_ffff_ffff_ffff
+                };
+                c.pc = 0x002a_b098;
+            },
+        );
+        require_paths(
+            ee::s08::f_002ab098__generated,
+            100,
+            &[10, 96, 119],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_ab98, 0);
+                let array = array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    0xffff_ffff_ffff_ffff
+                };
+                c.pc = 0x002a_b098;
+            },
+        );
+    }
+
+    /// `StreamArray_SetStreamVolume`: volumes whose low byte is 0 or not
+    /// land at the buffer's volume slot; null slots store nothing.
+    #[test]
+    fn stream_array_set_stream_volume_live_matches() {
+        check(
+            ee::s08::f_002ab0f0__generated,
+            stream_array_set_stream_volume,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_abf0, 0);
+                let array = array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = [0u64, 1, 0x100, 0x1ab][seed as usize % 4];
+                c.pc = 0x002a_b0f0;
+            },
+        );
+        require_paths(
+            ee::s08::f_002ab0f0__generated,
+            100,
+            &[10, 15],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_abf0, 0);
+                let array = array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, true);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = [0u64, 1, 0x100, 0x1ab][seed as usize % 4];
+                c.pc = 0x002a_b0f0;
+            },
+        );
+    }
+
+    /// `StreamArray_SetStreamParam`: the parameter crosses the SND lock to
+    /// the real setter, or the slot is null (-1 without calling).
+    #[test]
+    fn stream_array_set_stream_param_live_matches() {
+        check(
+            ee::s08::f_002ab1c8__generated,
+            stream_array_set_stream_param,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_ab1c, 0);
+                let array = array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, seed % 3 != 2);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = [0u64, 1, 0xffff_ffff][seed as usize % 3];
+                c.pc = 0x002a_b1c8;
+            },
+        );
+        require_paths(
+            ee::s08::f_002ab1c8__generated,
+            100,
+            &[11, 86, 89, 130],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_ab1c, 0);
+                let array = array_fixture(c, &mut r, seed);
+                snd_world(c, &mut r, seed % 3 != 2);
+                c.g[A0][0] = array as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = [0u64, 1, 0xffff_ffff][seed as usize % 3];
+                c.pc = 0x002a_b1c8;
             },
         );
     }

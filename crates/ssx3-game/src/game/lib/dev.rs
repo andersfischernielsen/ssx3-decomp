@@ -274,51 +274,36 @@ pub fn libdev_vu1_get_reg(c: &mut Cpu) {
 /// (COP2 control 29) into a VU1 run state: bit 9 set is 1, else bit 10 set
 /// is 2, else bit 11 set is 3, else bit 8 set is 4, else 0.
 pub fn libdev_vu1_get_state(c: &mut Cpu) {
-    'b_3fed48: {
-        'b_3fed20: {
-            c.cycles += 4;
-            c.cfc2(3, 29);
-            c.g[V0][0] = c.g[V1][0] & 0x200;
-            let bit9_clear = c.g[V0][0] == 0u64;
-            c.g[V0][0] = c.g[V1][0] & 0x400;
-            if bit9_clear {
-                break 'b_3fed20;
-            } else {
-                c.cycles += 2;
-                c.g[V1][0] = 0x1;
-                break 'b_3fed48;
-            }
-        }
-        'b_3fed30: {
+    c.cycles += 4;
+    c.cfc2(3, 29);
+    c.g[V0][0] = c.g[V1][0] & 0x200;
+    let bit9_clear = c.g[V0][0] == 0u64;
+    c.g[V0][0] = c.g[V1][0] & 0x400;
+    if !bit9_clear {
+        c.cycles += 2;
+        c.g[V1][0] = 0x1;
+    } else {
+        c.cycles += 2;
+        let t = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.g[V1][0] & 0x800;
+        if !t {
             c.cycles += 2;
-            let t = c.g[V0][0] == 0u64;
-            c.g[V0][0] = c.g[V1][0] & 0x800;
-            if t {
-                break 'b_3fed30;
-            } else {
-                c.cycles += 2;
-                c.g[V1][0] = 0x2;
-                break 'b_3fed48;
-            }
-        }
-        'b_3fed40: {
+            c.g[V1][0] = 0x2;
+        } else {
             c.cycles += 2;
             let t = c.g[V0][0] == 0u64;
             c.g[V0][0] = c.g[V1][0] & 0x100;
-            if t {
-                break 'b_3fed40;
-            } else {
+            if !t {
                 c.cycles += 2;
                 c.g[V1][0] = 0x3;
-                break 'b_3fed48;
+            } else {
+                c.cycles += 2;
+                c.g[V1][0] = 0x4;
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = 0u64;
+                }
             }
         }
-        c.cycles += 2;
-        c.g[V1][0] = 0x4;
-        if c.g[V0][0] == 0 {
-            c.g[V1][0] = 0u64;
-        }
-        break 'b_3fed48;
     }
     c.cycles += 2;
     c.g[V0][0] = c.g[V1][0];
@@ -380,24 +365,19 @@ pub fn sce_dev_vif0_continue(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 7;
         let frame = Frame::open(c, 0x10);
-        'b_3ff120: {
-            c.sd(frame.at(c, 0), c.g[RA][0]);
-            c.g[RA][0] = sx(0x003f_f100);
-            callee::VIF0_GET_STATE.call(c, 0x003f_f100)?;
-            c.g[V1][0] = 0x1;
-            let stalled = c.g[V0][0] != c.g[V1][0];
-            c.g[V0][0] = 0u64;
-            if stalled {
-                break 'b_3ff120;
-            } else {
-                c.cycles += 5;
-                c.g[V1][0] = 0x10000000;
-                c.g[A0][0] = 0x8;
-                c.g[V1][0] = c.g[V1][0] | 0x3810;
-                c.g[V0][0] = 0x1;
-                c.sw(c.g[V1][0] as u32, c.g[A0][0]);
-                break 'b_3ff120;
-            }
+        c.sd(frame.at(c, 0), c.g[RA][0]);
+        c.g[RA][0] = sx(0x003f_f100);
+        callee::VIF0_GET_STATE.call(c, 0x003f_f100)?;
+        c.g[V1][0] = 0x1;
+        let stalled = c.g[V0][0] != c.g[V1][0];
+        c.g[V0][0] = 0u64;
+        if !stalled {
+            c.cycles += 5;
+            c.g[V1][0] = 0x10000000;
+            c.g[A0][0] = 0x8;
+            c.g[V1][0] = c.g[V1][0] | 0x3810;
+            c.g[V0][0] = 0x1;
+            c.sw(c.g[V1][0] as u32, c.g[A0][0]);
         }
         c.cycles += 3;
         frame.restore_ra(c, 0);
@@ -622,41 +602,34 @@ pub fn sce_dev_vu0_continue(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
         let frame = Frame::open(c, 0x20);
-        'b_3fe74c: {
-            'b_3fe748: {
-                c.sd(frame.at(c, 0), c.g[S0][0]);
-                c.sd(frame.at(c, 0x10), c.g[RA][0]);
-                c.g[RA][0] = sx(0x003f_e71c);
-                c.g[S0][0] = 0u64;
-                callee::VU0_GET_STATE.call(c, 0x003f_e71c)?;
-                c.g[V1][0] = c.g[V0][0];
-                c.g[V0][0] = ((c.g[V1][0] as i64) < 4i64) as u64;
-                let paused = c.g[V0][0] == 0u64;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x10), c.g[RA][0]);
+        c.g[RA][0] = sx(0x003f_e71c);
+        c.g[S0][0] = 0u64;
+        callee::VU0_GET_STATE.call(c, 0x003f_e71c)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 4i64) as u64;
+        let paused = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.g[S0][0];
+        if !paused {
+            c.cycles += 2;
+            let idle = (c.g[V1][0] as i64) <= 0;
+            c.g[RA][0] = c.ld(frame.at(c, 0x10));
+            if !idle {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x003f_e73c);
+                c.g[S0][0] = 0x1;
+                callee::VU0_GET_TPC.call(c, 0x003f_e73c)?;
+                c.g[RA][0] = sx(0x003f_e744);
+                c.g[A0][0] = c.g[V0][0];
+                callee::VU0_EXEC.call(c, 0x003f_e744)?;
                 c.g[V0][0] = c.g[S0][0];
-                if paused {
-                    break 'b_3fe748;
-                } else {
-                    c.cycles += 2;
-                    let idle = (c.g[V1][0] as i64) <= 0;
-                    c.g[RA][0] = c.ld(frame.at(c, 0x10));
-                    if idle {
-                        break 'b_3fe74c;
-                    } else {
-                        c.cycles += 5;
-                        c.g[RA][0] = sx(0x003f_e73c);
-                        c.g[S0][0] = 0x1;
-                        callee::VU0_GET_TPC.call(c, 0x003f_e73c)?;
-                        c.g[RA][0] = sx(0x003f_e744);
-                        c.g[A0][0] = c.g[V0][0];
-                        callee::VU0_EXEC.call(c, 0x003f_e744)?;
-                        c.g[V0][0] = c.g[S0][0];
-                        break 'b_3fe748;
-                    }
-                }
+                c.cycles += 1;
+                c.g[RA][0] = c.ld(frame.at(c, 0x10));
             }
+        } else {
             c.cycles += 1;
             c.g[RA][0] = c.ld(frame.at(c, 0x10));
-            break 'b_3fe74c;
         }
         c.cycles += 3;
         c.g[S0][0] = c.ld(frame.at(c, 0));
@@ -686,57 +659,52 @@ pub fn sce_dev_vu0_get_cnd(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 7;
         let frame = Frame::open(c, 0x20);
-        'b_3fe988: {
-            c.sd(frame.at(c, 0), c.g[S0][0]);
-            c.sd(frame.at(c, 0x10), c.g[RA][0]);
-            c.g[RA][0] = sx(0x003f_e84c);
-            c.g[S0][0] = c.g[A0][0];
-            callee::VU0_IS_RUNNING.call(c, 0x003f_e84c)?;
-            let busy = c.g[V0][0] != 0u64;
-            c.g[V0][0] = 0u64;
-            if busy {
-                break 'b_3fe988;
-            } else {
-                c.cycles += 77;
-                let out = c.g[S0][0] as u32;
-                for i in 0..32usize {
-                    c.sqc2(i, (c.g[V0][0] as u32).wrapping_add(i as u32 * 0x10));
-                }
-                for (off, reg) in [
-                    (0x200u32, 16usize),
-                    (0x204, 17),
-                    (0x208, 18),
-                    (0x20c, 20),
-                    (0x210, 21),
-                    (0x214, 22),
-                ] {
-                    c.cfc2(2, reg);
-                    c.sw(out.wrapping_add(off), c.g[V0][0]);
-                }
-                for (off, reg) in [
-                    (0x218u32, 0usize),
-                    (0x21a, 1),
-                    (0x21c, 2),
-                    (0x21e, 3),
-                    (0x220, 4),
-                    (0x222, 5),
-                    (0x224, 6),
-                    (0x226, 7),
-                    (0x228, 8),
-                    (0x22a, 9),
-                    (0x22c, 10),
-                    (0x22e, 11),
-                    (0x230, 12),
-                    (0x232, 13),
-                    (0x234, 14),
-                    (0x236, 15),
-                ] {
-                    c.cfc2(2, reg);
-                    c.sh(out.wrapping_add(off), c.g[V0][0]);
-                }
-                c.g[V0][0] = 0x1;
-                break 'b_3fe988;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x10), c.g[RA][0]);
+        c.g[RA][0] = sx(0x003f_e84c);
+        c.g[S0][0] = c.g[A0][0];
+        callee::VU0_IS_RUNNING.call(c, 0x003f_e84c)?;
+        let busy = c.g[V0][0] != 0u64;
+        c.g[V0][0] = 0u64;
+        if !busy {
+            c.cycles += 77;
+            let out = c.g[S0][0] as u32;
+            for i in 0..32usize {
+                c.sqc2(i, (c.g[V0][0] as u32).wrapping_add(i as u32 * 0x10));
             }
+            for (off, reg) in [
+                (0x200u32, 16usize),
+                (0x204, 17),
+                (0x208, 18),
+                (0x20c, 20),
+                (0x210, 21),
+                (0x214, 22),
+            ] {
+                c.cfc2(2, reg);
+                c.sw(out.wrapping_add(off), c.g[V0][0]);
+            }
+            for (off, reg) in [
+                (0x218u32, 0usize),
+                (0x21a, 1),
+                (0x21c, 2),
+                (0x21e, 3),
+                (0x220, 4),
+                (0x222, 5),
+                (0x224, 6),
+                (0x226, 7),
+                (0x228, 8),
+                (0x22a, 9),
+                (0x22c, 10),
+                (0x22e, 11),
+                (0x230, 12),
+                (0x232, 13),
+                (0x234, 14),
+                (0x236, 15),
+            ] {
+                c.cfc2(2, reg);
+                c.sh(out.wrapping_add(off), c.g[V0][0]);
+            }
+            c.g[V0][0] = 0x1;
         }
         c.cycles += 4;
         c.g[RA][0] = c.ld(frame.at(c, 0x10));
@@ -764,49 +732,41 @@ pub fn sce_dev_vu0_pause(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
         let frame = Frame::open(c, 0x20);
-        'b_3fe6f4: {
-            c.sd(frame.at(c, 0), c.g[S0][0]);
-            c.sd(frame.at(c, 0x10), c.g[RA][0]);
-            c.g[RA][0] = sx(0x003f_e6bc);
-            c.g[S0][0] = 0u64;
-            callee::VU0_GET_STATE.call(c, 0x003f_e6bc)?;
-            c.g[V1][0] = c.g[V0][0];
-            c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
-            let unknown_state = c.g[V0][0] == 0u64;
-            c.g[V0][0] = 0x490000;
-            if unknown_state {
-                break 'b_3fe6f4;
-            } else {
-                'b_3fe6f0: {
-                    c.cycles += 6;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7850));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
-                    let t = c.g[A0][0] as u32;
-                    match t {
-                        0x003f_e6e4 => {
-                            c.cycles += 3;
-                            c.cfc2(2, 28);
-                            c.g[V0][0] = c.g[V0][0] | 0x1;
-                            c.ctc2(2, 28);
-                            break 'b_3fe6f0;
-                        }
-                        0x003f_e6f0 => {
-                            break 'b_3fe6f0;
-                        }
-                        0x003f_e6f4 => {
-                            break 'b_3fe6f4;
-                        }
-                        _ => {
-                            c.jump_out(t, 0x003f_e6a8, 0x003f_e708);
-                            return Ok(());
-                        }
-                    }
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x10), c.g[RA][0]);
+        c.g[RA][0] = sx(0x003f_e6bc);
+        c.g[S0][0] = 0u64;
+        callee::VU0_GET_STATE.call(c, 0x003f_e6bc)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
+        let unknown_state = c.g[V0][0] == 0u64;
+        c.g[V0][0] = 0x490000;
+        if !unknown_state {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7850));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            // Jump table (0x003f_e6a8): states 0-4 through 0x497850.
+            let t = c.g[A0][0] as u32;
+            match t {
+                0x003f_e6e4 => {
+                    c.cycles += 3;
+                    c.cfc2(2, 28);
+                    c.g[V0][0] = c.g[V0][0] | 0x1;
+                    c.ctc2(2, 28);
+                    c.cycles += 1;
+                    c.g[S0][0] = 0x1;
                 }
-                c.cycles += 1;
-                c.g[S0][0] = 0x1;
-                break 'b_3fe6f4;
+                0x003f_e6f0 => {
+                    c.cycles += 1;
+                    c.g[S0][0] = 0x1;
+                }
+                0x003f_e6f4 => {}
+                _ => {
+                    c.jump_out(t, 0x003f_e6a8, 0x003f_e708);
+                    return Ok(());
+                }
             }
         }
         c.cycles += 5;
@@ -906,41 +866,34 @@ pub fn sce_dev_vu1_continue(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
         let frame = Frame::open(c, 0x20);
-        'b_3fec7c: {
-            'b_3fec78: {
-                c.sd(frame.at(c, 0), c.g[S0][0]);
-                c.sd(frame.at(c, 0x10), c.g[RA][0]);
-                c.g[RA][0] = sx(0x003f_ec4c);
-                c.g[S0][0] = 0u64;
-                callee::VU1_GET_STATE.call(c, 0x003f_ec4c)?;
-                c.g[V1][0] = c.g[V0][0];
-                c.g[V0][0] = ((c.g[V1][0] as i64) < 4i64) as u64;
-                let paused = c.g[V0][0] == 0u64;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x10), c.g[RA][0]);
+        c.g[RA][0] = sx(0x003f_ec4c);
+        c.g[S0][0] = 0u64;
+        callee::VU1_GET_STATE.call(c, 0x003f_ec4c)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 4i64) as u64;
+        let paused = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.g[S0][0];
+        if !paused {
+            c.cycles += 2;
+            let idle = (c.g[V1][0] as i64) <= 0;
+            c.g[RA][0] = c.ld(frame.at(c, 0x10));
+            if !idle {
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x003f_ec6c);
+                c.g[S0][0] = 0x1;
+                callee::VU1_GET_TPC.call(c, 0x003f_ec6c)?;
+                c.g[RA][0] = sx(0x003f_ec74);
+                c.g[A0][0] = c.g[V0][0];
+                callee::VU1_EXEC.call(c, 0x003f_ec74)?;
                 c.g[V0][0] = c.g[S0][0];
-                if paused {
-                    break 'b_3fec78;
-                } else {
-                    c.cycles += 2;
-                    let idle = (c.g[V1][0] as i64) <= 0;
-                    c.g[RA][0] = c.ld(frame.at(c, 0x10));
-                    if idle {
-                        break 'b_3fec7c;
-                    } else {
-                        c.cycles += 5;
-                        c.g[RA][0] = sx(0x003f_ec6c);
-                        c.g[S0][0] = 0x1;
-                        callee::VU1_GET_TPC.call(c, 0x003f_ec6c)?;
-                        c.g[RA][0] = sx(0x003f_ec74);
-                        c.g[A0][0] = c.g[V0][0];
-                        callee::VU1_EXEC.call(c, 0x003f_ec74)?;
-                        c.g[V0][0] = c.g[S0][0];
-                        break 'b_3fec78;
-                    }
-                }
+                c.cycles += 1;
+                c.g[RA][0] = c.ld(frame.at(c, 0x10));
             }
+        } else {
             c.cycles += 1;
             c.g[RA][0] = c.ld(frame.at(c, 0x10));
-            break 'b_3fec7c;
         }
         c.cycles += 3;
         c.g[S0][0] = c.ld(frame.at(c, 0));
@@ -1135,49 +1088,41 @@ pub fn sce_dev_vu1_pause(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
         let frame = Frame::open(c, 0x20);
-        'b_3fec24: {
-            c.sd(frame.at(c, 0), c.g[S0][0]);
-            c.sd(frame.at(c, 0x10), c.g[RA][0]);
-            c.g[RA][0] = sx(0x003f_ebec);
-            c.g[S0][0] = 0u64;
-            callee::VU1_GET_STATE.call(c, 0x003f_ebec)?;
-            c.g[V1][0] = c.g[V0][0];
-            c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
-            let unknown_state = c.g[V0][0] == 0u64;
-            c.g[V0][0] = 0x490000;
-            if unknown_state {
-                break 'b_3fec24;
-            } else {
-                'b_3fec20: {
-                    c.cycles += 6;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7870));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
-                    let t = c.g[A0][0] as u32;
-                    match t {
-                        0x003f_ec14 => {
-                            c.cycles += 3;
-                            c.cfc2(2, 28);
-                            c.g[V0][0] = c.g[V0][0] | 0x100;
-                            c.ctc2(2, 28);
-                            break 'b_3fec20;
-                        }
-                        0x003f_ec20 => {
-                            break 'b_3fec20;
-                        }
-                        0x003f_ec24 => {
-                            break 'b_3fec24;
-                        }
-                        _ => {
-                            c.jump_out(t, 0x003f_ebd8, 0x003f_ec38);
-                            return Ok(());
-                        }
-                    }
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.sd(frame.at(c, 0x10), c.g[RA][0]);
+        c.g[RA][0] = sx(0x003f_ebec);
+        c.g[S0][0] = 0u64;
+        callee::VU1_GET_STATE.call(c, 0x003f_ebec)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
+        let unknown_state = c.g[V0][0] == 0u64;
+        c.g[V0][0] = 0x490000;
+        if !unknown_state {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7870));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            // Jump table (0x003f_ebd8): states 0-4 through 0x497870.
+            let t = c.g[A0][0] as u32;
+            match t {
+                0x003f_ec14 => {
+                    c.cycles += 3;
+                    c.cfc2(2, 28);
+                    c.g[V0][0] = c.g[V0][0] | 0x100;
+                    c.ctc2(2, 28);
+                    c.cycles += 1;
+                    c.g[S0][0] = 0x1;
                 }
-                c.cycles += 1;
-                c.g[S0][0] = 0x1;
-                break 'b_3fec24;
+                0x003f_ec20 => {
+                    c.cycles += 1;
+                    c.g[S0][0] = 0x1;
+                }
+                0x003f_ec24 => {}
+                _ => {
+                    c.jump_out(t, 0x003f_ebd8, 0x003f_ec38);
+                    return Ok(());
+                }
             }
         }
         c.cycles += 5;

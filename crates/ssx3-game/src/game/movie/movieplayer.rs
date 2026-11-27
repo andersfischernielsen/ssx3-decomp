@@ -459,6 +459,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MCManager_ReadDirInfo",
     ),
     (0x0024_2288, mc_manager_ctor, "MCManager_ctor"),
+    (
+        0x0024_2d50,
+        mc_manager_debug_printf_stub,
+        "MCManager_DebugPrintfStub",
+    ),
+    (
+        0x0024_4860,
+        mc_manager_null_callback,
+        "MCManager_NullCallback",
+    ),
+    (
+        0x0024_4868,
+        mc_manager_null_callback_ret0,
+        "MCManager_NullCallbackRet0",
+    ),
+    (
+        0x0024_4870,
+        mc_manager_null_callback_ret1,
+        "MCManager_NullCallbackRet1",
+    ),
+    (
+        0x0024_4878,
+        mc_manager_null_chunk_callback,
+        "MCManager_NullChunkCallback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11316,6 +11341,69 @@ pub fn mc_manager_ctor(c: &mut Cpu) {
     })
 }
 
+/// `void *MCManager_DebugPrintfStub(...)` (0x242d50): debug-printf
+/// placeholder: spills the argument registers to the stack and returns
+/// `A0` unchanged.
+pub fn mc_manager_debug_printf_stub(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    c.pc = t;
+    return;
+}
+
+/// `void MCManager_NullCallback(...)` (0x244860): manager-callback
+/// placeholder with no result.
+pub fn mc_manager_null_callback(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+    return;
+}
+
+/// `int MCManager_NullCallbackRet0(...)` (0x244868): placeholder
+/// returning 0.
+pub fn mc_manager_null_callback_ret0(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int MCManager_NullCallbackRet1(...)` (0x244870): placeholder
+/// returning 1.
+pub fn mc_manager_null_callback_ret1(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x1;
+    c.pc = t;
+    return;
+}
+
+/// `int MCManager_NullChunkCallback(...)` (0x244878): chunk-callback
+/// placeholder returning 0.
+pub fn mc_manager_null_chunk_callback(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16184,6 +16272,91 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.pc = 0x0024_2288;
             },
+        );
+    }
+    pub(crate) fn null_callback_fixture(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x1a1) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    pub(crate) fn null_chunk_callback_fixture(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x181) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn mc_manager_debug_printf_stub_matches() {
+        const PATHS: &[u64] = &[15];
+        check_paths(
+            ee::s06::f_00242d50__generated,
+            mc_manager_debug_printf_stub,
+            32,
+            PATHS,
+            &|c, seed| {
+                machine(c, seed, 0x0024_2d50, 0);
+                c.g[A0][0] = (DATA + 0x251) as u64;
+                c.g[A1][0] = 0x1111_1111_2222_2222 ^ seed as u64;
+                c.g[A2][0] = 0x3333_3333_4444_4444 ^ (seed as u64 * 3);
+                c.g[A3][0] = 0x5555_5555_6666_6666 ^ (seed as u64 * 5);
+                c.g[T0][0] = 0x7777_7777_8888_8888 ^ (seed as u64 * 7);
+                c.g[T1][0] = 0x9999_9999_aaaa_aaaa ^ (seed as u64 * 11);
+                c.g[T2][0] = 0xbbbb_bbbb_cccc_cccc ^ (seed as u64 * 13);
+                c.g[T3][0] = 0xdddd_dddd_eeee_eeee ^ (seed as u64 * 17);
+                c.f[12] = 0x3f80_0001 + seed;
+                c.f[14] = 0x4000_0001 + seed;
+                c.f[16] = 0x4040_0001 + seed;
+                c.f[18] = 0x4080_0001 + seed;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0024_2d50;
+            },
+        );
+    }
+
+    #[test]
+    fn mc_manager_null_callback_matches() {
+        check_paths(
+            ee::s06::f_00244860__generated,
+            mc_manager_null_callback,
+            16,
+            &[2],
+            &|c, seed| null_callback_fixture(c, seed, 0x0024_4860, 0x0024_4860),
+        );
+    }
+
+    #[test]
+    fn mc_manager_null_callback_ret0_matches() {
+        check_paths(
+            ee::s06::f_00244868__generated,
+            mc_manager_null_callback_ret0,
+            16,
+            &[2],
+            &|c, seed| null_callback_fixture(c, seed, 0x0024_4868, 0x0024_4868),
+        );
+    }
+
+    #[test]
+    fn mc_manager_null_callback_ret1_matches() {
+        check_paths(
+            ee::s06::f_00244870__generated,
+            mc_manager_null_callback_ret1,
+            16,
+            &[2],
+            &|c, seed| null_callback_fixture(c, seed, 0x0024_4870, 0x0024_4870),
+        );
+    }
+
+    #[test]
+    fn mc_manager_null_chunk_callback_matches() {
+        check_paths(
+            ee::s06::f_00244878__generated,
+            mc_manager_null_chunk_callback,
+            16,
+            &[2],
+            &|c, seed| null_chunk_callback_fixture(c, seed, 0x0024_4878, 0x0024_4878),
         );
     }
 }

@@ -4003,16 +4003,6 @@ pub(crate) mod callee {
         f: ee::s09::f_002cc0b8,
     };
 
-    pub const MPEG2_GET_BITS_2: Callee = Callee {
-        addr: 0x003b_1300,
-        f: ee::s13::f_003b1300,
-    };
-
-    pub const MPEG2_MARKER_BIT_2: Callee = Callee {
-        addr: 0x003b_2360,
-        f: ee::s13::f_003b2360,
-    };
-
     pub const SND_LOAD_QUEUE_FLUSH: Callee = Callee {
         addr: 0x0028_a230,
         f: ee::s07::f_0028a230,
@@ -4835,11 +4825,6 @@ pub(crate) mod callee {
         f: ee::s09::f_002cc3b8,
     };
 
-    pub const C_BX_STRING_ASSIGN_CSTR_2: Callee = Callee {
-        addr: 0x0031_84e8,
-        f: ee::s10::f_003184e8,
-    };
-
     pub const LOBBY_MAN_LOGIN: Callee = Callee {
         addr: 0x0025_c610,
         f: ee::s06::f_0025c610,
@@ -4853,11 +4838,6 @@ pub(crate) mod callee {
     pub const LOBBY_MAN_GET_ROOM_NAME: Callee = Callee {
         addr: 0x0025_f150,
         f: ee::s06::f_0025f150,
-    };
-
-    pub const STRCMP_2: Callee = Callee {
-        addr: 0x0041_65a8,
-        f: ee::s15::f_004165a8,
     };
 
     pub const LOBBY_MAN_MOVE_TO_ROOM_INDEX: Callee = Callee {
@@ -4883,11 +4863,6 @@ pub(crate) mod callee {
     pub const LOBBY_MENU_START_NET_RACE: Callee = Callee {
         addr: 0x0017_de70,
         f: ee::s02::f_0017de70,
-    };
-
-    pub const C_BX_STRING_ASSIGN: Callee = Callee {
-        addr: 0x0031_8448,
-        f: ee::s10::f_00318448,
     };
 
     pub const EA_MEM_ALLOC_NAMED: Callee = Callee {
@@ -98779,9 +98754,9 @@ pub(crate) mod tests {
 
     pub(crate) const COMMS_B: u32 = FIX + 0x400;
 
-    pub(crate) const LOBBY_R2: u32 = FIX + 0x800;
+    pub(crate) const NET_LOBBY_FIX: u32 = FIX + 0x800;
 
-    pub(crate) const VT_2_R2: u32 = FIX + 0x1400;
+    pub(crate) const POPUP_VT: u32 = FIX + 0x1400;
 
     pub(crate) fn base_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
         let mut r = alloc_base_bx(c, seed, salt);
@@ -98794,7 +98769,7 @@ pub(crate) mod tests {
     pub(crate) fn comms(c: &mut Cpu) {
         c.bus.write32(GAME_GP.wrapping_sub(0x848), COMMS_A);
         c.bus.write32(GAME_GP.wrapping_sub(0x238), COMMS_B);
-        c.bus.write32(GAME_GP.wrapping_sub(0xc8), LOBBY_R2);
+        c.bus.write32(GAME_GP.wrapping_sub(0xc8), NET_LOBBY_FIX);
     }
 
     pub(crate) fn clear_words(c: &mut Cpu, base: u32, words: u32) {
@@ -98828,7 +98803,7 @@ pub(crate) mod tests {
         comms(c);
         clear_words(c, COMMS_A, 0x100);
         clear_words(c, COMMS_B, 0x100);
-        clear_words(c, LOBBY_R2, 0x100);
+        clear_words(c, NET_LOBBY_FIX, 0x100);
         let this = SELF_KB;
         let live = FIX + 0x2400;
         clear_words(c, live, 0x80);
@@ -98840,10 +98815,10 @@ pub(crate) mod tests {
         c.bus.write32(err + 8, WORDS[(seed as usize) % WORDS.len()]);
         c.bus.write32(COMMS_A + 0x8c, FIX + 0x2700);
         c.bus.write32(FIX + 0x2700 + 4, FIX + 0x2800);
-        vtable_slot(c, FIX + 0x2800, 0x20, VT_2_R2);
-        vtable_slot(c, VT_2_R2 + 0x20, 0, 0x0041_0000);
-        c.bus.write32(FIX + 0x2800 + 0x24, VT_2_R2 + 0x80);
-        vtable_slot(c, VT_2_R2 + 0x80, 0, crate::difftest::fakes::FAKE);
+        vtable_slot(c, FIX + 0x2800, 0x20, POPUP_VT);
+        vtable_slot(c, POPUP_VT + 0x20, 0, 0x0041_0000);
+        c.bus.write32(FIX + 0x2800 + 0x24, POPUP_VT + 0x80);
+        vtable_slot(c, POPUP_VT + 0x80, 0, crate::difftest::fakes::FAKE);
         c.bus.write32(err + 0x10, FIX + 0x2a00);
         clear_words(c, FIX + 0x2a00, 0x20);
         // `S3 + 0xc`: the message buffer (refcount/length before
@@ -98866,8 +98841,8 @@ pub(crate) mod tests {
         c.bus.write32(buddy + 0xd8, 1);
         c.bus
             .write32(GAME_GP + 0x238, if seed / 3 % 2 == 0 { 0 } else { buddy });
-        c.bus.write32(LOBBY_R2 + 0x54, 0);
-        c.bus.write32(LOBBY_R2 + 0xb4, 0);
+        c.bus.write32(NET_LOBBY_FIX + 0x54, 0);
+        c.bus.write32(NET_LOBBY_FIX + 0xb4, 0);
         c.g[A0][0] = this as u64;
         c.g[A1][0] = (FIX + 0x3000) as u64;
         c.g[A2][0] = 0;
@@ -98910,7 +98885,7 @@ pub(crate) mod tests {
     /// loop's head unwinds when a VBlank is due there; both sides resume at
     /// the head and finish identically.
     #[test]
-    fn net_fe_state_show_net_error_popup_unwinds_r2() {
+    fn net_fe_state_show_net_error_popup_resumes_at_loop_head() {
         let resumes = check_events(
             net_fe_state_show_net_error_popup_generated,
             net_fe_state_show_net_error_popup_hand,
@@ -99318,7 +99293,7 @@ pub(crate) mod tests {
     /// and the name string and `UIState` base destroy. The deleting flag
     /// steers the final free.
     #[test]
-    fn net_fe_state_dtor_matches_r2() {
+    fn net_fe_state_dtor_events_match() {
         check_events(
             net_fe_state_dtor_generated,
             net_fe_state_dtor_hand,
@@ -99384,7 +99359,7 @@ pub(crate) mod tests {
     /// (matched or missed in the fixture screen list) and the chain length
     /// steer the arms.
     #[test]
-    fn net_fe_state_goto_next_state_matches_r2() {
+    fn net_fe_state_goto_next_state_events_match() {
         check_events(
             net_fe_state_goto_next_state_generated,
             net_fe_state_goto_next_state_hand,
@@ -99523,7 +99498,7 @@ pub(crate) mod tests {
     /// state) and exits through the keyboard arm (hooked above). No
     /// event is delivered anywhere.
     #[test]
-    fn net_fe_state_on_child_event_rerun_matches_r2() {
+    fn net_fe_state_on_child_event_rerun_without_delivery_matches() {
         CHILD_RERUN_FLIPS.with(|n| n.set(0));
         check(
             ee::s03::f_001a97b8__generated,
@@ -99536,7 +99511,7 @@ pub(crate) mod tests {
                 comms(c);
                 clear_words(c, COMMS_A, 0x100);
                 clear_words(c, COMMS_B, 0x100);
-                clear_words(c, LOBBY_R2, 0x100);
+                clear_words(c, NET_LOBBY_FIX, 0x100);
                 fakes::hook(
                     std::ptr::addr_of_mut!(ee::s03::OVERRIDE_001A94E0),
                     keyboard_rerun_fake,
@@ -99592,7 +99567,7 @@ pub(crate) mod tests {
     /// 0x40 frame in generated) and exits. No event is delivered
     /// anywhere (the hook only reschedules).
     #[test]
-    fn net_fe_state_handle_net_event_rerun_matches_r2() {
+    fn net_fe_state_handle_net_event_rerun_without_delivery_matches() {
         RERUN_FLIPS.with(|n| n.set(0));
         check(
             ee::s03::f_001a8e40__generated,
@@ -99605,7 +99580,7 @@ pub(crate) mod tests {
                 comms(c);
                 clear_words(c, COMMS_A, 0x100);
                 clear_words(c, COMMS_B, 0x100);
-                clear_words(c, LOBBY_R2, 0x100);
+                clear_words(c, NET_LOBBY_FIX, 0x100);
                 // Slot 0 carries the self-loop target (as in the real
                 // table).
                 c.bus.write32(0x0046_1b50, 0x001a_8e40);
@@ -99658,7 +99633,7 @@ pub(crate) mod tests {
     /// hook preserves registers so the second pass dispatches
     /// identically. No event is delivered anywhere.
     #[test]
-    fn net_fe_state_on_net_event_rerun_matches_r2() {
+    fn net_fe_state_on_net_event_rerun_without_delivery_matches() {
         check(
             ee::s03::f_001a8b88__generated,
             net_fe_state_on_net_event,
@@ -99670,7 +99645,7 @@ pub(crate) mod tests {
                 comms(c);
                 clear_words(c, COMMS_A, 0x100);
                 clear_words(c, COMMS_B, 0x100);
-                clear_words(c, LOBBY_R2, 0x100);
+                clear_words(c, NET_LOBBY_FIX, 0x100);
                 c.hooks.miss = on_net_event_rerun_miss;
                 let this = SELF_KB;
                 // Message page behind `+0x8`: the queue call returns
@@ -100085,7 +100060,7 @@ pub(crate) mod tests {
         comms(c);
         clear_words(c, COMMS_A, 0x100);
         clear_words(c, COMMS_B, 0x100);
-        clear_words(c, LOBBY_R2, 0x100);
+        clear_words(c, NET_LOBBY_FIX, 0x100);
         clear_words(c, SELF_KB, 0x710);
         // Room names: zero-pad the region first so the dotless loops
         // (which ignore NUL and run to their bounds) copy zeros, not
@@ -100162,7 +100137,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn net_fe_format_room_name_matches_r2() {
+    fn net_fe_format_room_name_events_match() {
         check_events(
             net_fe_format_room_name_generated,
             net_fe_format_room_name_hand,

@@ -2175,43 +2175,36 @@ pub fn libkernl_loadfile_needs_rebind(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 17;
         let frame = Frame::open(c, 0x50);
-        'b_42b1d4: {
-            c.g[V0][0] = 0x450000;
-            c.sd(frame.at(c, 0x30), c.g[S3][0]);
-            c.g[V1][0] = 0x530000;
-            c.sd(frame.at(c, 0x10), c.g[S1][0]);
-            c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5164));
-            c.sd(frame.at(c, 0x20), c.g[S2][0]);
-            c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xd58));
-            c.sd(frame.at(c, 0x40), c.g[RA][0]);
-            c.g[S2][0] = 0u64;
-            c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[V0][0] = 0x450000;
+        c.sd(frame.at(c, 0x30), c.g[S3][0]);
+        c.g[V1][0] = 0x530000;
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5164));
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xd58));
+        c.sd(frame.at(c, 0x40), c.g[RA][0]);
+        c.g[S2][0] = 0u64;
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = 0x4;
+        callee::MEMCMP.call(c, 0x0042_b1a4)?;
+        let t = c.g[V0][0] == 0u64;
+        c.g[S0][0] = 0x450000;
+        if !t {
+            c.cycles += 6;
             c.g[A0][0] = c.g[S1][0];
-            c.g[A1][0] = c.g[S3][0];
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x522c));
             c.g[A2][0] = 0x4;
-            callee::MEMCMP.call(c, 0x0042_b1a4)?;
+            callee::MEMCMP.call(c, 0x0042_b1bc)?;
             let t = c.g[V0][0] == 0u64;
-            c.g[S0][0] = 0x450000;
-            if t {
-                break 'b_42b1d4;
-            } else {
-                c.cycles += 6;
-                c.g[A0][0] = c.g[S1][0];
-                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x522c));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x522c));
+            if !t {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S3][0];
                 c.g[A2][0] = 0x4;
-                callee::MEMCMP.call(c, 0x0042_b1bc)?;
-                let t = c.g[V0][0] == 0u64;
-                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x522c));
-                if t {
-                    break 'b_42b1d4;
-                } else {
-                    c.cycles += 4;
-                    c.g[A0][0] = c.g[S3][0];
-                    c.g[A2][0] = 0x4;
-                    callee::MEMCMP.call(c, 0x0042_b1d0)?;
-                    c.g[S2][0] = (0u64 < c.g[V0][0]) as u64;
-                    break 'b_42b1d4;
-                }
+                callee::MEMCMP.call(c, 0x0042_b1d0)?;
+                c.g[S2][0] = (0u64 < c.g[V0][0]) as u64;
             }
         }
         c.cycles += 8;

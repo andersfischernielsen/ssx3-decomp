@@ -6,9 +6,11 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -17,7 +19,6 @@ pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
-pub(crate) use crate::game::fe::feasyncfile::p as p_3;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateload::at as at_2;
 pub(crate) use crate::game::intersect::riderspheretree::sw_reg;
@@ -103,6 +104,39 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ssx_InstallPowerOffHandler",
     ),
     (0x0031_a6d8, ps2_exec_man_init, "PS2ExecMan_Init"),
+    (
+        0x0031_7478,
+        ps2_exec_man_set_callback,
+        "PS2ExecMan_SetCallback",
+    ),
+    (0x0031_a920, ps2_exec_man_v03, "PS2ExecMan_v03"),
+    (0x0031_aaf0, ps2_exec_man_wait_sema, "PS2ExecMan_WaitSema"),
+    (
+        0x0032_09c0,
+        ps2_exec_man_forward_slot05,
+        "PS2ExecMan_ForwardSlot05",
+    ),
+    (
+        0x0032_09f0,
+        ps2_exec_man_forward_slot04,
+        "PS2ExecMan_ForwardSlot04",
+    ),
+    (
+        0x0032_0a20,
+        ps2_exec_man_forward_slot06,
+        "PS2ExecMan_ForwardSlot06",
+    ),
+    (
+        0x0032_0a60,
+        ps2_exec_man_forward_slot11,
+        "PS2ExecMan_ForwardSlot11",
+    ),
+    (
+        0x0032_0a90,
+        ps2_exec_man_forward_slot12,
+        "PS2ExecMan_ForwardSlot12",
+    ),
+    (0x0032_0b08, ps2_exec_man_v06, "PS2ExecMan_v06"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1021,56 +1055,6 @@ pub fn vu0_set_signed_unit_vector(c: &mut Cpu) {
     abi::ret(c);
 }
 
-/// `void PS2ExecMan_v03(self)` (0x31a920): shut down the PS2 exec manager's
-/// interrupts, threads and semaphores.
-pub fn ps2_exec_man_v03(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 45;
-        let frame = Frame::open(c, 0x30);
-        frame.save(c, S1, 0x10);
-        let this = c.g[A0][0];
-        c.g[S1][0] = this;
-        frame.save(c, S0, 0x20);
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 0x3;
-        call_ptr(c, 0x0042_4880, 0x0031_a93c)?;
-        c.g[S0][0] = 0x10000;
-        c.g[A0][0] = 0x3;
-        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
-        c.g[A1][0] = Addr(p_3(c.g[S0][0] as u32, 0x4290)).lw(c);
-        call_ptr(c, 0x0042_3aa0, 0x0031_a950)?;
-        c.g[A0][0] = 0x3;
-        call_ptr(c, 0x0042_48e8, 0x0031_a958)?;
-        c.g[V1][0] = 0x1;
-        c.sw(p_3(c.g[S1][0] as u32, 0x20), c.g[V1][0]);
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4044)).lw(c);
-        call_ptr(c, 0x0042_3dc0, 0x0031_a968)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4034)).lw(c);
-        call_ptr(c, 0x0042_3dc0, 0x0031_a970)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4030)).lw(c);
-        call_ptr(c, 0x0042_3bf0, 0x0031_a988)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4030)).lw(c);
-        call_ptr(c, 0x0042_3bb0, 0x0031_a990)?;
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4040)).lw(c);
-        call_ptr(c, 0x0042_3bf0, 0x0031_a998)?;
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4040)).lw(c);
-        call_ptr(c, 0x0042_3bb0, 0x0031_a9a0)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4034)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9a8)?;
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4044)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9b0)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x18)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9b8)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0xc)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9c0)?;
-        frame.restore(c, S0, 0x20);
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 // ---------------------------------------------------------------------------
 // PS2ExecMan_VBlankEndIntc (0x31a490)
 
@@ -1803,6 +1787,180 @@ pub fn ps2_exec_man_init(c: &mut Cpu) {
         c.pc = t;
         return Ok(());
     });
+}
+
+/// `void PS2ExecMan_v03(PS2ExecMan *man)` (0x31a920): install the default
+/// exception/signal handlers and semaphores on `man`.
+pub fn ps2_exec_man_v03(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 45;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 17, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 16, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x3;
+        call_ptr(c, 0x0042_4880, 0x0031_a93c)?;
+        c.g[S0][0] = 0x10000;
+        c.g[A0][0] = 0x3;
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4290));
+        call_ptr(c, 0x0042_3aa0, 0x0031_a950)?;
+        c.g[A0][0] = 0x3;
+        call_ptr(c, 0x0042_48e8, 0x0031_a958)?;
+        c.g[V1][0] = 0x1;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4044));
+        call_ptr(c, 0x0042_3dc0, 0x0031_a968)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4034));
+        call_ptr(c, 0x0042_3dc0, 0x0031_a970)?;
+        call_ptr(c, 0x0042_3cc0, 0x0031_a978)?;
+        call_ptr(c, 0x0042_3cc0, 0x0031_a980)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4030));
+        call_ptr(c, 0x0042_3bf0, 0x0031_a988)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4030));
+        call_ptr(c, 0x0042_3bb0, 0x0031_a990)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4040));
+        call_ptr(c, 0x0042_3bf0, 0x0031_a998)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4040));
+        call_ptr(c, 0x0042_3bb0, 0x0031_a9a0)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4034));
+        call_ptr(c, 0x0042_3db0, 0x0031_a9a8)?;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4044));
+        call_ptr(c, 0x0042_3db0, 0x0031_a9b0)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+        call_ptr(c, 0x0042_3db0, 0x0031_a9b8)?;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+        call_ptr(c, 0x0042_3db0, 0x0031_a9c0)?;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2ExecMan_ForwardSlot06(PS2ExecMan *man)` (0x320a20): tail-call the
+/// slot-6 handler through the object's slot table (-1 when `man` has no
+/// table).
+pub fn ps2_exec_man_forward_slot06(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        if c.g[A1][0] != 0u64 {
+            c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+            c.cycles += 4;
+            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x30));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x34));
+            let t = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0032_0a50)?;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            c.g[V0][0] = c.g[V0][0] | 0xffff;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2ExecMan_SetCallback(PS2ExecMan *man, ...)` (0x317478): store the
+/// callback arguments at `man`, then tail-call the slot handler through the
+/// object's slot table.
+pub fn ps2_exec_man_set_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.sw(c.g[A0][0] as u32, c.g[A1][0]);
+        c.g[V1][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x68));
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6c));
+        let t = c.g[A1][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        call_ptr(c, t, 0x0031_749c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2ExecMan_ForwardSlot05(PS2ExecMan *man)` (0x3209c0): tail-call the
+/// slot-5 handler through the object's slot table.
+pub fn ps2_exec_man_forward_slot05(c: &mut Cpu) {
+    forward_slot(c, 0x28, 0x2c, 0x0032_09e0);
+}
+
+/// `int PS2ExecMan_ForwardSlot04(PS2ExecMan *man)` (0x3209f0): tail-call the
+/// slot-4 handler through the object's slot table.
+pub fn ps2_exec_man_forward_slot04(c: &mut Cpu) {
+    forward_slot(c, 0x20, 0x24, 0x0032_0a10);
+}
+
+/// `int PS2ExecMan_ForwardSlot11(PS2ExecMan *man)` (0x320a60): tail-call the
+/// slot-11 handler through the object's slot table.
+pub fn ps2_exec_man_forward_slot11(c: &mut Cpu) {
+    forward_slot(c, 0x58, 0x5c, 0x0032_0a80);
+}
+
+/// Shared body of the `ForwardSlot` wrappers: load the handler and the
+/// signed offset from the object's slot table and tail-call it.
+pub(crate) fn forward_slot(c: &mut Cpu, half: u32, word: u32, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(half));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(word));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2ExecMan_ForwardSlot12(PS2ExecMan *man)` (0x320a90): tail-call the
+/// slot-12 handler through the object's slot table (the target lives at
+/// `*(*(man + 8) + 8) + 0x64`; the argument is `*(man + 8)` plus the signed
+/// half at `+0x60`).
+pub fn ps2_exec_man_forward_slot12(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x60));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x64));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0032_0ab0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2ExecMan_WaitSema(PS2ExecMan *man)` (0x31aaf0): wait on the
+/// semaphore id at `man + 0xc`, through the kernel's `WaitSema`.
+pub fn ps2_exec_man_wait_sema(c: &mut Cpu) {
+    tail_wrapper(c, Some(0xc), Target::Table(0x0042_3de0), 0x0031_ab00);
+}
+
+/// `int PS2ExecMan_v06(void)` (0x320b08): return the calling thread's id
+/// through the kernel's `GetThreadId`.
+pub fn ps2_exec_man_v06(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0042_3c90), 0x0032_0b18);
 }
 
 #[cfg(test)]
@@ -2818,5 +2976,360 @@ pub(crate) mod tests {
             c.bus.write32(m + 0x98, r.next_u32() % 0x40);
         }
         r
+    }
+
+    use crate::difftest::check_paths;
+
+    use crate::difftest::require_paths;
+
+    pub(crate) use crate::game::mem::memstd::tests::norm_miss;
+
+    /// `PS2ExecMan_v03`: syscalls run against the test machine on both
+    /// sides.
+    #[test]
+    fn ps2_exec_man_v03_matches() {
+        check(
+            ee::s10::f_0031a920__generated,
+            ps2_exec_man_v03,
+            30,
+            &|c, seed| {
+                machine(c, seed, 0x0031_a920, 0);
+                c.hooks.miss = norm_miss;
+                const MAN: u32 = DATA + 0x100;
+                const MEM: u32 = DATA + 0x10000;
+                for i in 0..0x10u32 {
+                    c.bus.write32(MAN + 4 * i, 0xaaaa_0000 + i);
+                }
+                for i in 0..0x1100u32 {
+                    c.bus.write32(MEM + 4 * i, 0xbbbb_0000 + i + seed);
+                }
+                c.g[A0][0] = MAN as u64;
+                c.pc = 0x0031_a920;
+            },
+        );
+        require_paths(
+            ee::s10::f_0031a920__generated,
+            30,
+            &[
+                224, 232, 233, 234, 235, 236, 239, 240, 242, 243, 244, 245, 246, 248, 249, 251,
+                252, 256,
+            ],
+            &|c, seed| {
+                machine(c, seed, 0x0031_a920, 0);
+                c.hooks.miss = norm_miss;
+                const MAN: u32 = DATA + 0x100;
+                const MEM: u32 = DATA + 0x10000;
+                for i in 0..0x10u32 {
+                    c.bus.write32(MAN + 4 * i, 0xaaaa_0000 + i);
+                }
+                for i in 0..0x1100u32 {
+                    c.bus.write32(MEM + 4 * i, 0xbbbb_0000 + i + seed);
+                }
+                c.g[A0][0] = MAN as u64;
+                c.pc = 0x0031_a920;
+            },
+        );
+    }
+
+    /// `PS2ExecMan_ForwardSlot06`: no table reads -1; a table runs the fake
+    /// handler with a steered offset.
+    #[test]
+    fn ps2_exec_man_forward_slot06_matches() {
+        check(
+            ee::s10::f_00320a20__generated,
+            ps2_exec_man_forward_slot06,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_0a20, 0);
+                c.hooks.miss = norm_miss;
+                const OBJ: u32 = DATA + 0x110;
+                const TAB1: u32 = DATA + 0x230;
+                const TAB2: u32 = DATA + 0x350;
+                if seed % 2 == 0 {
+                    c.bus.write32(OBJ + 8, 0);
+                } else {
+                    c.bus.write32(OBJ + 8, TAB1);
+                    c.bus.write32(TAB1 + 8, TAB2);
+                    for i in 0..0x20u32 {
+                        c.bus.write32(TAB2 + 4 * i, 0x9e37_0000 + i);
+                    }
+                    let off = match seed % 3 {
+                        0 => 0,
+                        1 => (r.next_u32() % 0x4000) as u16,
+                        _ => (0x10000 - r.next_u32() % 0x4000) as u16,
+                    };
+                    c.bus.write16(TAB2 + 0x30, off);
+                    c.bus.write32(TAB2 + 0x34, FAKE);
+                }
+                c.g[A0][0] = OBJ as u64;
+                c.pc = 0x0032_0a20;
+            },
+        );
+        require_paths(
+            ee::s10::f_00320a20__generated,
+            100,
+            &[11, 16],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_0a20, 0);
+                c.hooks.miss = norm_miss;
+                const OBJ: u32 = DATA + 0x110;
+                const TAB1: u32 = DATA + 0x230;
+                const TAB2: u32 = DATA + 0x350;
+                if seed % 2 == 0 {
+                    c.bus.write32(OBJ + 8, 0);
+                } else {
+                    c.bus.write32(OBJ + 8, TAB1);
+                    c.bus.write32(TAB1 + 8, TAB2);
+                    for i in 0..0x20u32 {
+                        c.bus.write32(TAB2 + 4 * i, 0x9e37_0000 + i);
+                    }
+                    let off = match seed % 3 {
+                        0 => 0,
+                        1 => (r.next_u32() % 0x4000) as u16,
+                        _ => (0x10000 - r.next_u32() % 0x4000) as u16,
+                    };
+                    c.bus.write16(TAB2 + 0x30, off);
+                    c.bus.write32(TAB2 + 0x34, FAKE);
+                }
+                c.g[A0][0] = OBJ as u64;
+                c.pc = 0x0032_0a20;
+            },
+        );
+    }
+
+    /// `PS2ExecMan_SetCallback`: the arguments land at the object before
+    /// the fake slot handler runs with the adjusted object.
+    #[test]
+    fn ps2_exec_man_set_callback_matches() {
+        check(
+            ee::s10::f_00317478__generated,
+            ps2_exec_man_set_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_7478, 0);
+                c.hooks.miss = norm_miss;
+                const OBJ: u32 = DATA + 0x100;
+                const TAB: u32 = DATA + 0x200;
+                c.bus.write32(OBJ + 8, TAB);
+                let off = match seed % 3 {
+                    0 => 0,
+                    1 => (r.next_u32() % 0x400) as u16,
+                    _ => (0x10000 - r.next_u32() % 0x400) as u16,
+                };
+                c.bus.write16(TAB + 0x68, off);
+                c.bus.write32(TAB + 0x6c, FAKE);
+                c.g[A0][0] = OBJ as u64;
+                c.g[A1][0] = 0xc0de_0000 + seed as u64;
+                c.g[A2][0] = 0xf00d_0000 + seed as u64 * 3;
+                c.pc = 0x0031_7478;
+            },
+        );
+        require_paths(ee::s10::f_00317478__generated, 300, &[16], &|c, seed| {
+            let mut r = machine(c, seed, 0x0031_7478, 0);
+            c.hooks.miss = norm_miss;
+            const OBJ: u32 = DATA + 0x100;
+            const TAB: u32 = DATA + 0x200;
+            c.bus.write32(OBJ + 8, TAB);
+            let off = match seed % 3 {
+                0 => 0,
+                1 => (r.next_u32() % 0x400) as u16,
+                _ => (0x10000 - r.next_u32() % 0x400) as u16,
+            };
+            c.bus.write16(TAB + 0x68, off);
+            c.bus.write32(TAB + 0x6c, FAKE);
+            c.g[A0][0] = OBJ as u64;
+            c.g[A1][0] = 0xc0de_0000 + seed as u64;
+            c.g[A2][0] = 0xf00d_0000 + seed as u64 * 3;
+            c.pc = 0x0031_7478;
+        });
+    }
+
+    /// The three remaining `ForwardSlot` wrappers: the slot table yields
+    /// the fake handler with a seed-steered offset. The tables are
+    /// prefilled with garbage, so a wrong offset reads a visibly wrong
+    /// target into the call log instead of the fake.
+    #[test]
+    fn ps2_exec_man_forward_slots_match() {
+        for (gen, hand, addr, half, word) in [
+            (
+                ee::s10::f_003209c0__generated as fn(&mut Cpu),
+                ps2_exec_man_forward_slot05 as fn(&mut Cpu),
+                0x0032_09c0,
+                0x28,
+                0x2c,
+            ),
+            (
+                ee::s10::f_003209f0__generated as fn(&mut Cpu),
+                ps2_exec_man_forward_slot04 as fn(&mut Cpu),
+                0x0032_09f0,
+                0x20,
+                0x24,
+            ),
+            (
+                ee::s10::f_00320a60__generated as fn(&mut Cpu),
+                ps2_exec_man_forward_slot11 as fn(&mut Cpu),
+                0x0032_0a60,
+                0x58,
+                0x5c,
+            ),
+        ] {
+            check(gen, hand, 100, &|c, seed| {
+                let mut r = machine(c, seed, addr as u64, 0);
+                c.hooks.miss = norm_miss;
+                const OBJ: u32 = DATA + 0x110;
+                const TAB1: u32 = DATA + 0x230;
+                const TAB2: u32 = DATA + 0x350;
+                c.bus.write32(OBJ + 8, TAB1);
+                c.bus.write32(TAB1 + 8, TAB2);
+                for i in 0..0x20u32 {
+                    c.bus.write32(TAB2 + 4 * i, 0x9e37_0000 + i);
+                }
+                let off = match seed % 3 {
+                    0 => 0,
+                    1 => (r.next_u32() % 0x4000) as u16,
+                    _ => (0x10000 - r.next_u32() % 0x4000) as u16,
+                };
+                c.bus.write16(TAB2 + half, off);
+                c.bus.write32(TAB2 + word, FAKE);
+                c.g[A0][0] = OBJ as u64;
+                c.pc = addr;
+            });
+            require_paths(gen, 100, &[15], &|c, seed| {
+                let mut r = machine(c, seed, addr as u64, 0);
+                c.hooks.miss = norm_miss;
+                const OBJ: u32 = DATA + 0x110;
+                const TAB1: u32 = DATA + 0x230;
+                const TAB2: u32 = DATA + 0x350;
+                c.bus.write32(OBJ + 8, TAB1);
+                c.bus.write32(TAB1 + 8, TAB2);
+                for i in 0..0x20u32 {
+                    c.bus.write32(TAB2 + 4 * i, 0x9e37_0000 + i);
+                }
+                let off = match seed % 3 {
+                    0 => 0,
+                    1 => (r.next_u32() % 0x4000) as u16,
+                    _ => (0x10000 - r.next_u32() % 0x4000) as u16,
+                };
+                c.bus.write16(TAB2 + half, off);
+                c.bus.write32(TAB2 + word, FAKE);
+                c.g[A0][0] = OBJ as u64;
+                c.pc = addr;
+            });
+        }
+    }
+
+    /// `PS2ExecMan_ForwardSlot12`: the slot table yields the fake handler
+    /// with a seed-steered signed offset, so the forwarded argument varies
+    /// on both sides.
+    #[test]
+    fn ps2_exec_man_forward_slot12_matches() {
+        check(
+            ee::s10::f_00320a90__generated,
+            ps2_exec_man_forward_slot12,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_0a90, 0);
+                const OBJ: u32 = DATA + 0x110;
+                const TAB1: u32 = DATA + 0x230;
+                const TAB2: u32 = DATA + 0x350;
+                c.bus.write32(OBJ + 8, TAB1);
+                c.bus.write32(TAB1 + 8, TAB2);
+                let off = match seed % 3 {
+                    0 => 0,
+                    1 => (r.next_u32() % 0x4000) as u16,
+                    _ => (0x10000 - r.next_u32() % 0x4000) as u16,
+                };
+                c.bus.write16(TAB2 + 0x60, off);
+                c.bus.write32(TAB2 + 0x64, FAKE);
+                c.g[A0][0] = OBJ as u64;
+                c.pc = 0x0032_0a90;
+            },
+        );
+    }
+
+    /// Gate for the `WaitSema` / `GetThreadId` fakes below: the syscalls run
+    /// for real unless a test plants this magic word.
+    pub(crate) const CTRL: u32 = DATA + 0x1f00;
+
+    pub(crate) const MAGIC: u32 = 0x5711_5e4d;
+
+    pub(crate) static PREV_WAIT_SEMA: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static PREV_GET_THREAD_ID: AtomicUsize = AtomicUsize::new(0);
+
+    /// The fake kernel call: log the call like `fakes::fake_call` (so the
+    /// strict-args check sees the wrapper's call arguments), then pin the
+    /// cost to the real syscall's 4 cycles — the fake's hash-based cost
+    /// would otherwise make the wrapper's cycle total seed-varying.
+    pub(crate) fn fake_kernel_call(c: &mut Cpu, addr: u32) {
+        let before = c.cycles;
+        fakes::fake_call(c, addr);
+        c.cycles = before + 4;
+    }
+
+    pub(crate) fn fake_wait_sema(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &PREV_WAIT_SEMA, ee::s15::f_00423de0__generated);
+        }
+        fake_kernel_call(c, 0x0042_3de0);
+    }
+
+    pub(crate) fn fake_get_thread_id(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(c, &PREV_GET_THREAD_ID, ee::s15::f_00423c90__generated);
+        }
+        fake_kernel_call(c, 0x0042_3c90);
+    }
+
+    pub(crate) fn install_kernel_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423DE0),
+            fake_wait_sema,
+            &PREV_WAIT_SEMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423C90),
+            fake_get_thread_id,
+            &PREV_GET_THREAD_ID,
+        );
+    }
+
+    /// `PS2ExecMan_WaitSema`: the sema id comes from `man + 0xc` (varied
+    /// per seed); the fake `WaitSema` returns a hash `V0`, so the wrapper's
+    /// return path runs with a distinctive value on both sides.
+    #[test]
+    fn ps2_exec_man_wait_sema_matches() {
+        check_paths(
+            ee::s10::f_0031aaf0__generated,
+            ps2_exec_man_wait_sema,
+            300,
+            &[11],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_aaf0, 0);
+                install_kernel_fakes();
+                c.bus.write32(CTRL, MAGIC);
+                let man = DATA + 0x100 + (r.next_u32() & 0xf0);
+                c.bus.write32(man + 0xc, 0x1000 + seed);
+                c.g[A0][0] = man as u64;
+                c.pc = 0x0031_aaf0;
+            },
+        );
+    }
+
+    /// `PS2ExecMan_v06`: the fake `GetThreadId` returns a hash `V0`.
+    #[test]
+    fn ps2_exec_man_v06_matches() {
+        check_paths(
+            ee::s10::f_00320b08__generated,
+            ps2_exec_man_v06,
+            300,
+            &[11],
+            &|c, seed| {
+                machine(c, seed, 0x0032_0b08, 0);
+                install_kernel_fakes();
+                c.bus.write32(CTRL, MAGIC);
+                c.pc = 0x0032_0b08;
+            },
+        );
     }
 }

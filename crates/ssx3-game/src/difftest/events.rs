@@ -25,6 +25,11 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
+/// Take and clear the resume counts (for tests asserting per-head unwinds).
+pub(crate) fn take_resumes() -> std::collections::BTreeMap<u32, u32> {
+    RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()))
+}
+
 /// Run `f` the way the trampoline does: after an unwind, deliver any due
 /// event and re-enter at the (cleared) `pc` through the function table
 /// until it returns. In the unwind form the re-entry goes through the
@@ -104,7 +109,7 @@ pub fn schedule(c: &mut Cpu, r: &mut Rng, seed: u32, entry: u32) -> Events {
 }
 
 /// Compare the deadlines each run leaves behind to catch missed event checks.
-fn compare_schedule(a: &Cpu, b: &Cpu, hard: &mut Vec<String>) {
+pub(crate) fn compare_schedule(a: &Cpu, b: &Cpu, hard: &mut Vec<String>) {
     let (ma, mb) = (ssx3_ps2::mr!(a), ssx3_ps2::mr!(b));
     let (sa, sb) = (&ma.sched, &mb.sched);
     // A nearer poll can mask a difference in the deadlines it is polling.
