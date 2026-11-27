@@ -496,8 +496,8 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
 
-    pub(crate) use crate::game::fe::feasyncfile::callee::C_BX_STRING_ASSIGN;
-    pub(crate) use crate::game::fe::feasyncfile::callee::C_BX_STRING_ASSIGN_CSTR_2 as C_BX_STRING_ASSIGN_CSTR;
+    pub(crate) use crate::game::dirtysock::tagsunk::callee::C_BX_STRING_ASSIGN;
+    pub(crate) use crate::game::fe::feasyncfile::callee::C_BX_STRING_ASSIGN_CSTR;
     pub(crate) use crate::game::fe::feasyncfile::callee::EA_MEM_ALLOC_NAMED;
     pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_GET_ROOM_COUNT;
     pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_GET_ROOM_NAME;
@@ -510,7 +510,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_START_NET_RACE;
     pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_POP_PAGE;
     pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_PUSH_PAGE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::STRCMP_2 as STRCMP;
+    pub(crate) use crate::game::lib::libc::callee::STRCMP;
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -12778,7 +12778,7 @@ pub(crate) mod tests {
     driven!(lobby_menu_dtor_hand, lobby_menu_dtor);
 
     #[test]
-    fn lobby_menu_dtor_matches_r2() {
+    fn lobby_menu_dtor_events_match() {
         check_events(
             lobby_menu_dtor_generated,
             lobby_menu_dtor_hand,
@@ -12842,7 +12842,7 @@ pub(crate) mod tests {
     /// away on this fixture (its EA alloc loop never terminates here,
     /// while the direct `StartNetRace` test terminates on its own
     /// fixture); the backend itself is covered by
-    /// `lobby_menu_start_net_race_matches_r2`. The arm's call, state store
+    /// `lobby_menu_start_net_race_events_match`. The arm's call, state store
     /// and exit are what this test compares.
     pub(crate) fn start_net_race_fake(c: &mut Cpu) {
         if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC_EF {
@@ -12928,8 +12928,9 @@ pub(crate) mod tests {
                     },
                 );
                 c.bus.write32(FAKE_IS_IN_ROOM, seed / 2 % 2);
-                // Room-loop answers: two rooms, named so the name loop
-                // iterates (even seeds) or stops at the first (odd).
+                // Room-loop answers: two rooms; the name fake answers the
+                // same name for both, so neither matches the selected
+                // room (even seeds) or both do (odd).
                 c.bus.write32(FAKE_EV_GATE, FAKE_MAGIC_E6);
                 c.bus.write32(FAKE_ROOM_COUNT, 2);
                 c.bus
@@ -12953,6 +12954,8 @@ pub(crate) mod tests {
                 );
                 // The 0xec arm reads the state: 0xc takes the
                 // room-page tail, anything else declines the invite.
+                // Other ids only store it, so it starts nonzero there
+                // and the `0x17d774` clear changes the word.
                 c.bus.write32(
                     this + 4,
                     if ev == 0xec {
@@ -12962,7 +12965,7 @@ pub(crate) mod tests {
                             0
                         }
                     } else {
-                        0
+                        0x5a5a_0000 | seed
                     },
                 );
                 c.bus.write32(FIX + 0x2400, ev);
@@ -12988,7 +12991,7 @@ pub(crate) mod tests {
     driven!(lobby_menu_update_state_hand, lobby_menu_update_state);
 
     #[test]
-    fn lobby_menu_update_state_matches_r2() {
+    fn lobby_menu_update_state_events_match() {
         check_events(
             lobby_menu_update_state_generated,
             lobby_menu_update_state_hand,
@@ -13052,7 +13055,7 @@ pub(crate) mod tests {
     // --------------------------------------------------------------- lobby
 
     #[test]
-    fn lobby_menu_start_net_race_matches_r2() {
+    fn lobby_menu_start_net_race_events_match() {
         check_events(
             lobby_menu_start_net_race_generated,
             lobby_menu_start_net_race_hand,
@@ -13135,7 +13138,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn lobby_menu_init_delete_persona_page_matches_r2() {
+    fn lobby_menu_init_delete_persona_page_events_match() {
         check_events(
             lobby_menu_init_delete_persona_page_generated,
             lobby_menu_init_delete_persona_page_hand,
@@ -13145,7 +13148,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn lobby_menu_init_select_persona_page_matches_r2() {
+    fn lobby_menu_init_select_persona_page_events_match() {
         check_events(
             lobby_menu_init_select_persona_page_generated,
             lobby_menu_init_select_persona_page_hand,
@@ -13155,7 +13158,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn lobby_menu_init_select_room_page_matches_r2() {
+    fn lobby_menu_init_select_room_page_events_match() {
         check_events(
             lobby_menu_init_select_room_page_generated,
             lobby_menu_init_select_room_page_hand,
@@ -13265,7 +13268,7 @@ pub(crate) mod tests {
         c.pc = 0x0017_e5c8;
     }
     #[test]
-    fn lobby_menu_render_matches_r2() {
+    fn lobby_menu_render_arm_totals_match() {
         const PATHS: &[u64] = &[
             47, 51, 54, 84, 92, 657, 720, 723, 750, 760, 788, 811, 873, 907, 944, 5774, 5780, 5810,
             5813, 7412, 7485, 7506, 7572, 7618, 7640, 7695, 7699, 7783, 7828, 7838, 7907, 7917,
@@ -13293,7 +13296,7 @@ pub(crate) mod tests {
     /// nonzero-low-byte fixture shift); both are stable across the
     /// login flag and the fill garbage.
     #[test]
-    fn lobby_menu_show_error_matches_r2() {
+    fn lobby_menu_show_error_arm_totals_match() {
         const PATHS: &[u64] = &[12, 18, 62, 65, 67, 74, 5865];
         check_paths(
             ee::s02::f_0017da30__generated,
@@ -13657,7 +13660,7 @@ pub(crate) mod tests {
         schedule(c, &mut r, seed, entry)
     }
     #[test]
-    fn lobby_menu_init_room_occupants_page_matches_r2() {
+    fn lobby_menu_init_room_occupants_page_events_match() {
         check_events(
             lobby_menu_init_room_occupants_page_generated,
             lobby_menu_init_room_occupants_page_hand,
@@ -13685,7 +13688,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn lobby_menu_init_chat_page_matches_r2() {
+    fn lobby_menu_init_chat_page_events_match() {
         check_events(
             lobby_menu_init_chat_page_generated,
             lobby_menu_init_chat_page_hand,

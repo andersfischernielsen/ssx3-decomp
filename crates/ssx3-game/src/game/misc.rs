@@ -38447,7 +38447,7 @@ pub(crate) mod tests {
 
     /// Channel-item fixture: the slot array with item blocks whose
     /// vtable slots route to the miss-hook fake, each with a nonzero
-    /// `this` adjustment. Items whose first word is set (seeds 3..6 mod
+    /// `this` adjustment. Items whose first word is set (seeds 3..5 mod
     /// 6) are open, so `CloseChannel` closes them before the destroy.
     pub(crate) fn channel_item_fixture(c: &mut Cpu, seed: u32, entry: u32, null0: bool) {
         let _r = base(c, seed, entry as u64);
@@ -38886,6 +38886,16 @@ pub(crate) mod tests {
             PATHS,
             &addr_fixture,
         );
+        // Both arms cost the same, so the total cannot tell them apart:
+        // the out word shows the planted status survives the real
+        // request and the store lands on odd seeds only.
+        for seed in 0..8 {
+            let mut c = crate::difftest::fresh();
+            addr_fixture(&mut c, seed);
+            ee::s06::f_00256038__generated(&mut c);
+            let want = if seed % 2 == 0 { 0 } else { 0xc0a8_0102 };
+            assert_eq!(c.bus.read32(FIX + 0x3100), want, "seed {seed}");
+        }
     }
 
     driven!(c_comm_system_ctor_generated, ee::s06::f_002558c0__generated);
