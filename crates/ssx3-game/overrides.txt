@@ -10517,6 +10517,45 @@
 # Phase 2 wave: oc1009, oc1016, oc1017, oc1018, oc974, oc980, oc990, oc995
 # Phase 2 wave: oc975, oc976, oc989, oc990, oc991, oc993, oc995, oc997, oc1009, oc1015, oc1019
 # Phase 2 wave: oc975, oc976, oc989, oc990, oc991, oc993, oc995, oc997, oc1009, oc1015, oc1019
+# Phase 2 wave: oc1438
+# Phase 2 wave: oc1438
+# Phase 2 wave: oc1438
+# Phase 2 wave: oc1438
+# Phase 2 wave: oc1436
+# Phase 2 wave: oc1437
+# Phase 2 wave: oc1437, oc1438
+# Phase 2 wave: oc1437
+# Phase 2 wave: oc1435
+# Phase 2 wave: oc1435
+# Phase 2 wave: oc1435
+# Phase 2 wave: oc1435
+# Phase 2 wave: oc1435
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1439
+# Phase 2 wave: oc1430
+# Phase 2 wave: oc1431, oc1432, oc1433, oc1434
+# Phase 2 wave: oc1434
+# Phase 2 wave: oc1434
+# Phase 2 wave: oc1433
+# Phase 2 wave: oc1431, oc1432
+# Phase 2 wave: oc1431, oc1432, oc1433
+# Phase 2 wave: oc1433
+# Phase 2 wave: oc1433
+# Phase 2 wave: oc1433
+# Phase 2 wave: oc1431, oc1432
+# Phase 2 wave: oc1431, oc1432
+# Phase 2 wave: oc1431
+# Phase 2 wave: oc1431, oc1432, oc1433, oc1434
+# Phase 2 wave: oc1430, oc1431, oc1432, oc1433, oc1434, oc1435, oc1436, oc1437, oc1438, oc1439
+# Phase 2 wave: oc1430, oc1431, oc1432, oc1433, oc1434, oc1435, oc1436, oc1437, oc1438, oc1439
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -11285,3 +11324,142 @@
 0x003b5a60    SND_RemoveEventCallback
 0x002a34d0    SSXAudioSystem_PASay20C4
 0x002b6950    WorldTriggerManager_SetEnabled
+0x002d06e8    MenuSysVectorItem_HandleInput
+0x002d0008    MenuSysColorSwatchItem_Draw
+0x002d0ef8    MenuSysPoint2DItem_Draw
+0x002cf1c8    MenuSysColorChannelItem_Draw
+0x002d0908    MenuSysPoint2DItem_HandleInput
+0x002cad58    MenuSysPage_Draw
+0x002ce910    MenuSysTextEditItem_Draw
+0x002cb498    MenuSysPage_DrawFrame
+0x002ce488    MenuSysTextEditItem_HandleInput
+0x002ceee8    MenuSysColorChannelItem_Measure
+0x0017a378    DebugMenu_ParseWorldListFile
+0x002ca4c8    MenuSysItem_MeasureRow
+0x002cc8f0    MenuSysEnumItem_HandleInput
+0x002ca768    MenuSysItem_DrawRowText
+0x002cd5a0    MenuSysInt8Item_HandleInput
+0x002cd9d8    MenuSysIntItem_HandleInput
+0x002cb8c8    MenuSysPage_DrawScrollArrowDown
+0x002cbac8    MenuSysPage_DrawScrollArrowUp
+0x002cdd78    MenuSysFloatItem_HandleInput
+0x003e6428    Debug_ConsoleOutput
+0x003e5a78    Debug_SetChannelFlag
+0x0013f8b8    DebugPrintf_Stub_f8b8
+0x0015afe8    DebugPrintf_Stub_afe8
+0x001673b8    DebugPrintf_Stub_73b8
+0x00174808    DebugPrintf_Stub_4808
+0x00177610    DebugPrintf_Stub_7610
+0x00178f18    DebugPrintf_Stub_8f18
+0x00179758    DebugPrintf_Stub_9758
+0x003e5d30    Debug_Printf
+0x003e5ef8    Debug_EnableChannel
+0x003e5f48    Debug_IsChannelEnabled
+0x003e5d78    Debug_PrintfChannel2
+0x003e5e38    Debug_IsOutputEnabled
+0x003e5f98    Debug_SetChannelName
+0x003e5dc8    Debug_EnableOutput
+0x003e5e88    Debug_SetOutput
+0x003e5ff0    Debug_OutputDirect
+0x003e5aa8    Debug_SetChannelState
+0x003e5c78    Debug_VPrintf
+0x003e5b60    Debug_InitChannels
+0x002d3a68    MenuSysBoolItem_dtor
+0x002d3a98    MenuSysEnumItem_dtor
+0x002d3ae0    MenuSysSubmenuItem_dtor
+0x002d3b10    MenuSysBackItem_dtor
+0x002d3b38    MenuSysActionItem_dtor
+0x002d3b80    MenuSysCallbackItem_dtor
+0x002d3bb0    MenuSysLabelItem_dtor
+0x002d3be0    MenuSysSpacerItem_dtor
+0x002d3c00    MenuSysInt8Item_dtor
+0x002d3c30    MenuSysIntItem_dtor
+0x002d3c60    MenuSysFloatItem_dtor
+0x002d3ce0    MenuSysFloatRangeItem_dtor
+0x002d3d20    MenuSysTextEditItem_dtor
+0x002d3d70    MenuSysColorChannelItem_dtor
+0x002d3d90    MenuSysGroupItem_PageDtor
+0x002d3df8    MenuSysColorSwatchItem_dtor
+0x002d3ea8    MenuSysVectorLabelItem_dtor
+0x002d3f50    MenuSysPoint2DItem_dtor
+0x002d3db0    MenuSysGroupItem_dtor
+0x002d3f78    MenuSysMessagePage_dtor
+0x002d3ed0    MenuSysVectorItem_dtor
+0x002d3e20    MenuSysColorItem_dtor
+0x002cc018    MenuSys_ctor
+0x002cc7f8    MenuSysEnumItem_ctor_2
+0x002cd128    MenuSysCallbackItem_ctor
+0x002cc7b0    MenuSysEnumItem_ctor
+0x002ccf50    MenuSysActionItem_ctor_2
+0x002cd2a0    MenuSysLabelItem_ctor
+0x002cd350    MenuSysSpacerItem_ctor
+0x002cd450    MenuSysInt8Item_ctor_2
+0x002cd8a8    MenuSysIntItem_ctor_2
+0x002cd168    MenuSysCallbackItem_ctor_2
+0x002cd3f8    MenuSysInt8Item_ctor
+0x002cd850    MenuSysIntItem_ctor
+0x002d03f0    MenuSysVectorLabelItem_ctor
+0x002cdc88    MenuSysFloatItem_ctor
+0x002cc500    MenuSysBoolItem_ctor
+0x002cc838    MenuSysEnumItem_ctor_3
+0x002cf7e8    MenuSysGroupItem_ctor
+0x002cf860    MenuSysGroupItem_ctor_2
+0x002ce170    MenuSysFloatRangeItem_ctor
+0x002cd4a0    MenuSysInt8Item_ctor_3
+0x002d1740    MenuSysMessagePage_ctor
+0x002d17f0    MenuSysMessagePage_ctor_2
+0x002d0808    MenuSysPoint2DItem_ctor
+0x002d02b0    MenuSysColorItem_ctor
+0x002d05a8    MenuSysVectorItem_ctor
+0x002ca368    MenuSysItem_OnFocus
+0x002ca370    MenuSysItem_OnBlur
+0x002cad48    MenuSysPage_OnAction
+0x002cad50    MenuSysPage_v04
+0x002cc0b8    MenuSys_SetActive
+0x002cc248    MenuSys_GetInputCode
+0x002cc250    MenuSys_GetKeyCode
+0x002cc258    MenuSys_GetKeyChar
+0x002cd2e8    MenuSysLabelItem_IsSelectable
+0x002cd398    MenuSysSpacerItem_IsSelectable
+0x002cff80    MenuSysColorSwatchItem_IsSelectable
+0x002d39f8    MenuSysItem_ResetValue
+0x002ca408    MenuSysItem_GetLeftAxis
+0x002ca428    MenuSysItem_GetRightAxis
+0x002ca448    MenuSysItem_GetUpAxis
+0x002ca468    MenuSysItem_GetDownAxis
+0x002ca488    MenuSysItem_IsSlowModHeld
+0x002ca4a8    MenuSysItem_IsFineModHeld
+0x002cc260    MenuSys_GetLeftAxis
+0x002cc280    MenuSys_GetRightAxis
+0x002cc2a0    MenuSys_GetUpAxis
+0x002cc2c0    MenuSys_GetDownAxis
+0x002cfaf8    MenuSysGroupItem_v09
+0x002cfef8    MenuSysGroupItem_OnBlur
+0x002cc2e0    MenuSys_IsSlowModHeld
+0x002cc318    MenuSys_IsFineModHeld
+0x002d0448    MenuSysVectorLabelItem_IsSelectable
+0x002cd3f0    MenuSysSpacerItem_Draw
+0x002cf908    MenuSysGroupItem_AddItem
+0x002cf928    MenuSysGroupItem_RemoveItem
+0x002d03d0    MenuSysColorItem_HandleInput
+0x002ccdc8    MenuSysSubmenuItem_Draw
+0x002ccee0    MenuSysBackItem_Draw
+0x002cd328    MenuSysLabelItem_Draw
+0x002d4008    MenuSysPage_SortCompare
+0x002cd278    MenuSysCallbackItem_Draw
+0x002d3d48    MenuSysTextEditItem_SetText
+0x002cf788    MenuSysGroupItem_PageForwardV03
+0x002cf7b8    MenuSysGroupItem_PageForwardV04
+0x002cf948    MenuSysGroupItem_Reset
+0x002d4080    MenuSys_DebugPrintf_4080
+0x002cbe20    MenuSysPage_SortItems
+0x002cf988    MenuSysGroupItem_SetHeaderItem
+0x002cbd50    MenuSysPage_RemoveItem
+0x002ca988    MenuSysItem_DrawRow
+0x002ce820    MenuSysTextEditItem_Measure
+0x002cfa08    MenuSysGroupItem_HandleInput
+0x002cc648    MenuSysBoolItem_Measure
+0x002ccb18    MenuSysEnumItem_Measure
+0x002cdfd8    MenuSys_FormatFloat
+0x002ced78    MenuSysColorChannelItem_HandleInput
+0x002ce1f0    MenuSysFloatRangeItem_HandleInput

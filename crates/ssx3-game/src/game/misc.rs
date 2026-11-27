@@ -552,6 +552,84 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_6240, ea_is_valid_pointer, "EA_IsValidPointer"),
     (0x003e_62b0, ea_assert_not_busy, "EA_AssertNotBusy"),
     (0x003e_62d0, ea_crc16, "EA_Crc16"),
+    (0x0013_f8b8, debug_printf_stub_f8b8, "DebugPrintf_Stub_f8b8"),
+    (0x0015_afe8, debug_printf_stub_afe8, "DebugPrintf_Stub_afe8"),
+    (0x0016_73b8, debug_printf_stub_73b8, "DebugPrintf_Stub_73b8"),
+    (0x0017_4808, debug_printf_stub_4808, "DebugPrintf_Stub_4808"),
+    (0x0017_7610, debug_printf_stub_7610, "DebugPrintf_Stub_7610"),
+    (0x0017_8f18, debug_printf_stub_8f18, "DebugPrintf_Stub_8f18"),
+    (0x0017_9758, debug_printf_stub_9758, "DebugPrintf_Stub_9758"),
+    (
+        0x002d_02b0,
+        menu_sys_color_item_ctor,
+        "MenuSysColorItem_ctor",
+    ),
+    (
+        0x002d_03d0,
+        menu_sys_color_item_handle_input,
+        "MenuSysColorItem_HandleInput",
+    ),
+    (
+        0x002d_05a8,
+        menu_sys_vector_item_ctor,
+        "MenuSysVectorItem_ctor",
+    ),
+    (
+        0x002d_06e8,
+        menu_sys_vector_item_handle_input,
+        "MenuSysVectorItem_HandleInput",
+    ),
+    (
+        0x002d_1740,
+        menu_sys_message_page_ctor,
+        "MenuSysMessagePage_ctor",
+    ),
+    (
+        0x002d_17f0,
+        menu_sys_message_page_ctor_2,
+        "MenuSysMessagePage_ctor_2",
+    ),
+    (
+        0x002d_3e20,
+        menu_sys_color_item_dtor,
+        "MenuSysColorItem_dtor",
+    ),
+    (
+        0x002d_3ed0,
+        menu_sys_vector_item_dtor,
+        "MenuSysVectorItem_dtor",
+    ),
+    (
+        0x002d_3f78,
+        menu_sys_message_page_dtor,
+        "MenuSysMessagePage_dtor",
+    ),
+    (0x003e_5a78, debug_set_channel_flag, "Debug_SetChannelFlag"),
+    (
+        0x003e_5aa8,
+        debug_set_channel_state,
+        "Debug_SetChannelState",
+    ),
+    (0x003e_5b60, debug_init_channels, "Debug_InitChannels"),
+    (0x003e_5c78, debug_vprintf, "Debug_VPrintf"),
+    (0x003e_5d30, debug_printf, "Debug_Printf"),
+    (0x003e_5d78, debug_printf_channel2, "Debug_PrintfChannel2"),
+    (0x003e_5dc8, debug_enable_output, "Debug_EnableOutput"),
+    (
+        0x003e_5e38,
+        debug_is_output_enabled,
+        "Debug_IsOutputEnabled",
+    ),
+    (0x003e_5e88, debug_set_output, "Debug_SetOutput"),
+    (0x003e_5ef8, debug_enable_channel, "Debug_EnableChannel"),
+    (
+        0x003e_5f48,
+        debug_is_channel_enabled,
+        "Debug_IsChannelEnabled",
+    ),
+    (0x003e_5f98, debug_set_channel_name, "Debug_SetChannelName"),
+    (0x003e_5ff0, debug_output_direct, "Debug_OutputDirect"),
+    (0x003e_6428, debug_console_output, "Debug_ConsoleOutput"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -32229,6 +32307,1411 @@ pub fn ea_assert_not_busy(c: &mut Cpu) {
     }
 }
 
+/// `MenuSysVectorItem_HandleInput` (0x002d06e8): the normal entry, converted from the generated body
+/// (a `match pc` / labelled-block body: every register, cycle and call kept).
+/// Any other `pc` (a resume after an unwound callee or event) runs the
+/// generated body (at install: its `__generated` alias).
+pub fn menu_sys_vector_item_handle_input(c: &mut Cpu) {
+    if c.pc != 0x002d06e8 {
+        return ee::s09::f_002d06e8__generated(c);
+    }
+    guest(c, |c| {
+        'b_2d07f4: {
+            c.cycles += 9;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.g[RA][0] = sx(0x002d06fc);
+            c.g[S0][0] = c.g[A0][0];
+            callee::MENU_SYS_GROUP_ITEM_HANDLE_INPUT.call(c, 0x002d06fc)?;
+            c.g[T1][0] = c.g[V0][0];
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x670));
+            let t = c.g[V0][0] == 0u64;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5b8));
+            if t {
+                break 'b_2d07f4;
+            } else {
+                'b_2d07d0: {
+                    'b_2d07c8: {
+                        c.cycles += 37;
+                        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x5dc));
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x18));
+                        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5ec));
+                        c.g[A2][0] = c.g[V0][0];
+                        c.lwc1(3, (c.g[S0][0] as u32).wrapping_add(0x610));
+                        c.lwc1(1, c.g[A0][0] as u32);
+                        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x620));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
+                        c.g[T0][0] = c.g[V1][0];
+                        c.mul_s(0, 0, 1);
+                        c.lwc1(5, (c.g[S0][0] as u32).wrapping_add(0x648));
+                        c.lwc1(2, c.g[V0][0] as u32);
+                        c.g[A3][0] = c.g[A1][0];
+                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x5e0));
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x18));
+                        c.mul_s(3, 3, 2);
+                        c.add_s(7, 0, 1);
+                        c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x614));
+                        c.lwc1(4, c.g[V0][0] as u32);
+                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x644));
+                        c.add_s(6, 3, 2);
+                        c.mul_s(0, 7, 7);
+                        c.swc1(7, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.mul_s(1, 1, 4);
+                        c.mul_s(2, 6, 6);
+                        c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x14));
+                        c.mtc1(0, 3);
+                        c.add_s(4, 1, 5);
+                        c.add_s(0, 0, 2);
+                        c.mul_s(1, 4, 4);
+                        c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x18));
+                        c.add_s(0, 0, 1);
+                        c.sqrt_s(1, 0);
+                        c.c_eq_s(1, 3);
+                        if c.fcc() {
+                            c.swc1(7, c.g[SP][0] as u32);
+                            break 'b_2d07c8;
+                        } else {
+                            c.cycles += 10;
+                            c.g[AT][0] = 0x3f800000;
+                            c.mtc1(1, 0);
+                            c.div_s(0, 0, 1);
+                            c.mul_s(1, 4, 0);
+                            c.mul_s(2, 7, 0);
+                            c.mul_s(0, 6, 0);
+                            c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x8));
+                            c.swc1(2, c.g[SP][0] as u32);
+                            let t = true;
+                            c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
+                            if t {
+                                break 'b_2d07d0;
+                            } else {
+                                break 'b_2d07c8;
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x8));
+                    break 'b_2d07d0;
+                }
+                c.cycles += 9;
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x18));
+                c.lwc1(0, c.g[SP][0] as u32);
+                c.swc1(0, c.g[V0][0] as u32);
+                c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x18));
+                c.swc1(0, c.g[V1][0] as u32);
+                c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x18));
+                c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
+                c.swc1(0, c.g[V0][0] as u32);
+                break 'b_2d07f4;
+            }
+        }
+        c.cycles += 5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[V0][0] = c.g[T1][0];
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    });
+}
+
+/// Debug channel table bases: the output table at `0x451250` (12 bytes per
+/// channel: output pointer, output function, flags with bit 0 the enable)
+/// and the state table at `0x450e08` (8 bytes per channel: name, flags).
+/// Test-only: only the fixtures below name these addresses.
+#[cfg(test)]
+pub(crate) const DEBUG_OUTPUT_TABLE: u32 = 0x0045_1250;
+
+#[cfg(test)]
+pub(crate) const DEBUG_STATE_TABLE: u32 = 0x0045_0e08;
+
+/// The channels-initialised flag.
+#[cfg(test)]
+pub(crate) const DEBUG_INIT_DONE: u32 = 0x0045_1008;
+
+/// `void Debug_ConsoleOutput(int ch, char c)` (0x3e6428): forward the
+/// character to the console.
+pub fn debug_console_output(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        call_ptr(c, 0x0041_75c8, 0x003e_6438)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Debug_SetChannelFlag(int ch, int on)` (0x3e5a78): set or clear bit
+/// 0 of the channel's output-table flags at `0x451250 + ch * 12 + 8`.
+pub fn debug_set_channel_flag(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[V0][0] = 0xc;
+        c.g[V1][0] = 0x450000;
+        c.mult(0, 4, 4, 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
+        c.g[A2][0] = 0xfffffffffffffffe;
+        c.g[A1][0] = c.g[A1][0] & 0x1;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+        c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+        let t = c.g[RA][0] as u32;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x13f8b8): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_f8b8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x15afe8): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_afe8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x1673b8): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_73b8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x174808): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_4808(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x177610): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_7610(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x178f18): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_8f18(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// A `DebugPrintf` call site (0x179758): marshal the varargs onto the stack
+/// and return the format, without printing.
+pub fn debug_printf_stub_9758(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.g[V0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_Printf(char *fmt, ...)` (0x3e5d30): format into the
+/// channel-0 buffer through `Debug_VPrintf`.
+pub fn debug_printf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x44));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x48));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x4c));
+        callee::DEBUG_VPRINTF.call(c, 0x003e_5d68)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_EnableChannel(int ch, int on)` (0x3e5ef8): lazily initialise
+/// the channels, then set the channel's state from `on`.
+pub fn debug_enable_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x450000;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1008));
+        c.g[S1][0] = c.g[A0][0];
+        let t = c.g[V1][0] != 0;
+        frame.save_ra(c, 0);
+        // 'b_3e5f24: channels ready (initialised above when needed).
+        if !t {
+            c.cycles += 2;
+            callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5f24)?;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        callee::DEBUG_SET_CHANNEL_STATE.call(c, 0x003e_5f30)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool Debug_IsChannelEnabled(int ch)` (0x3e5f48): lazily initialise the
+/// channels, then read the channel's state bit.
+pub fn debug_is_channel_enabled(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        'enabled: {
+            c.g[V1][0] = 0x450000;
+            frame.save(c, S0, 0x10);
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1008));
+            c.g[S0][0] = c.g[A0][0];
+            let t = c.g[V0][0] != 0;
+            frame.save_ra(c, 0);
+            if t {
+                break 'enabled;
+            } else {
+                c.cycles += 2;
+                callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5f6c)?;
+                break 'enabled;
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = 0x450000;
+        c.g[V1][0] = sx((c.g[S0][0] as u32) << 3);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = c.g[V0][0] & 0x1;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_PrintfChannel2(int ch, char *fmt, ...)` (0x3e5d78): format
+/// into channel 2's buffer through `Debug_VPrintf`.
+pub fn debug_printf_channel2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[A2][0]);
+        c.g[A1][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = 0x2;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[A3][0]);
+        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x58));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T0][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[T2][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x88), c.g[T3][0]);
+        c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x48));
+        c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x4c));
+        c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x54));
+        callee::DEBUG_VPRINTF.call(c, 0x003e_5dbc)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `bool Debug_IsOutputEnabled(int ch)` (0x3e5e38): lazily initialise the
+/// channels, then read the channel's output enable bit.
+pub fn debug_is_output_enabled(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        'output_enabled: {
+            c.g[V1][0] = 0x450000;
+            frame.save(c, S0, 0x10);
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1008));
+            c.g[S0][0] = c.g[A0][0];
+            let t = c.g[V0][0] != 0;
+            frame.save_ra(c, 0);
+            if t {
+                break 'output_enabled;
+            } else {
+                c.cycles += 2;
+                callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5e5c)?;
+                break 'output_enabled;
+            }
+        }
+        c.cycles += 11;
+        c.g[V1][0] = 0xc;
+        c.g[V0][0] = 0x450000;
+        c.mult(0, 3, 16, 3);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1250));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.g[V0][0] & 0x1;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_SetChannelName(int ch, char *name)` (0x3e5f98): lazily
+/// initialise the channels, then store the name at the channel's state.
+pub fn debug_set_channel_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        'set_name: {
+            c.g[V0][0] = 0x450000;
+            frame.save(c, S0, 0x20);
+            frame.save(c, S1, 0x10);
+            c.g[S0][0] = c.g[A0][0];
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1008));
+            c.g[S1][0] = c.g[A1][0];
+            let t = c.g[V1][0] != 0;
+            frame.save_ra(c, 0);
+            if t {
+                break 'set_name;
+            } else {
+                c.cycles += 2;
+                callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5fc4)?;
+                break 'set_name;
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = 0x450000;
+        c.g[V1][0] = sx((c.g[S0][0] as u32) << 3);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw(c.g[V1][0] as u32, c.g[S1][0]);
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_EnableOutput(int ch, int on)` (0x3e5dc8): lazily initialise
+/// the channels unless the channel has no output table entry, then set the
+/// channel's output flag.
+pub fn debug_enable_output(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x450000;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1250));
+        c.g[A0][0] = 0xc;
+        frame.save_ra(c, 0);
+        c.mult(0, 4, 16, 4);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        let t = c.g[V1][0] == 0;
+        c.g[S1][0] = c.g[A1][0];
+        // 'b_3e5e20: enable, calling back through 'b_3e5e18 when set.
+        if t {
+            // No output table entry: nothing to do.
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = 0x450000;
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1008));
+            let t = c.g[V1][0] != 0;
+            c.g[A0][0] = c.g[S0][0];
+            if !t {
+                c.cycles += 3;
+                callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5e14)?;
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S1][0];
+            callee::DEBUG_SET_CHANNEL_FLAG.call(c, 0x003e_5e20)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Debug_SetOutput(int ch, void *out, void *out2)` (0x3e5e88):
+/// lazily initialise the channels, then store the two output pointers.
+pub fn debug_set_output(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        'set_output: {
+            c.g[V0][0] = 0x450000;
+            frame.save(c, S0, 0x30);
+            frame.save(c, S1, 0x20);
+            c.g[S0][0] = c.g[A0][0];
+            frame.save(c, S2, 0x10);
+            c.g[S1][0] = c.g[A1][0];
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1008));
+            c.g[S2][0] = c.g[A2][0];
+            let t = c.g[V1][0] != 0;
+            frame.save_ra(c, 0);
+            if t {
+                break 'set_output;
+            } else {
+                c.cycles += 2;
+                callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5ebc)?;
+                break 'set_output;
+            }
+        }
+        c.cycles += 14;
+        c.g[V1][0] = 0xc;
+        c.g[V0][0] = 0x450000;
+        c.mult(0, 3, 16, 3);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1250));
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[A0][0] as u32, c.g[S1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[S2][0]);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_OutputDirect(int ch, void *arg1, void *arg2)` (0x3e5ff0):
+/// call the channel's output function with the arguments, when set.
+pub fn debug_output_direct(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x450000;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1008));
+        c.g[S2][0] = c.g[A2][0];
+        let t = c.g[V1][0] != 0;
+        frame.save_ra(c, 0);
+        // 'b_3e6024: channels ready (initialised above when needed).
+        if t {
+            // Ready.
+        } else {
+            c.cycles += 2;
+            callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_6024)?;
+        }
+        // 'b_3e6054: call the output function when one is installed.
+        c.cycles += 8;
+        c.g[V0][0] = 0xc;
+        c.g[V1][0] = 0x450000;
+        c.mult(0, 4, 16, 2);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        let t = c.g[V1][0] == 0;
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        if t {
+            // No output function installed: nothing to do.
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+            c.g[A0][0] = c.g[S1][0];
+            let target = c.g[V1][0] as u32;
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, target, 0x003e_6054)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Debug_SetChannelState(int ch, int on)` (0x3e5aa8): set every
+/// channel (`ch` 0) or one channel (`ch` 1: single update; otherwise the
+/// indexed update) from `on`.
+pub fn debug_set_channel_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 2;
+        let t = c.g[A0][0] != 0;
+        c.g[A2][0] = c.g[A1][0];
+        if t {
+            c.cycles += 3;
+            c.g[V0][0] = 0x1;
+            let t = c.g[A0][0] != c.g[V0][0];
+            c.g[V0][0] = 0x450000;
+            if t {
+                c.cycles += 10;
+                c.g[V1][0] = sx((c.g[A0][0] as u32) << 3);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+                c.g[A1][0] = 0xfffffffffffffffe;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = (0u64 < c.g[A2][0]) as u64;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
+                c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                let t = c.g[RA][0] as u32;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                c.pc = t;
+                return Ok(());
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = (0u64 < c.g[A2][0]) as u64;
+                c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+                c.g[A1][0] = 0xfffffffffffffffe;
+                c.g[A2][0] = 0x3f;
+                'set_one: loop {
+                    'set_one_entry: {
+                        c.cycles += 5;
+                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = sx((c.g[V1][0] as u32) >> 1);
+                        c.g[V0][0] = c.g[V0][0] & 0x1;
+                        let t = c.g[V0][0] == 0;
+                        c.g[V0][0] = c.g[V1][0] & c.g[A1][0];
+                        if t {
+                            break 'set_one_entry;
+                        } else {
+                            c.cycles += 2;
+                            c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                            c.sw((c.g[A3][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            break 'set_one_entry;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[A2][0] as i64) >= 0;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x8));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003e_5b08);
+                        }
+                        continue 'set_one;
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[RA][0] as u32;
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        } else {
+            c.cycles += 6;
+            c.g[V0][0] = 0x450000;
+            c.g[A0][0] = (0u64 < c.g[A2][0]) as u64;
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+            c.g[A1][0] = 0xfffffffffffffffe;
+            c.g[A2][0] = 0x3f;
+            'set_all: loop {
+                c.cycles += 7;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
+                c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
+                c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                let t = (c.g[A2][0] as i64) >= 0;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003e_5ac8);
+                    }
+                    continue 'set_all;
+                } else {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.pc = t;
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `void Debug_VPrintf(int ch, char *fmt, ...)` (0x3e5c78): format into the
+/// channel-0 scratch buffer and hand it to every enabled output.
+pub fn debug_vprintf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x2040);
+        'vprintf: {
+            c.g[V0][0] = 0x450000;
+            frame.save(c, S0, 0x2030);
+            frame.save(c, S1, 0x2020);
+            c.g[S0][0] = c.g[A1][0];
+            frame.save(c, S2, 0x2010);
+            c.g[S1][0] = c.g[A0][0];
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1008));
+            c.g[S2][0] = c.g[A2][0];
+            let t = c.g[V1][0] != 0;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x2000), c.g[RA][0]);
+            if t {
+                break 'vprintf;
+            } else {
+                c.cycles += 2;
+                callee::DEBUG_INIT_CHANNELS.call(c, 0x003e_5cac)?;
+                break 'vprintf;
+            }
+        }
+        'dispatch: {
+            c.cycles += 8;
+            c.g[V0][0] = 0x450000;
+            c.g[A0][0] = sx((c.g[S1][0] as u32) << 3);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = c.g[V1][0] & 0x1;
+            let t = c.g[V1][0] == 0;
+            c.g[A2][0] = c.g[S2][0];
+            if t {
+                break 'dispatch;
+            } else {
+                c.cycles += 7;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x0041_86c8, 0x003e_5cd8)?;
+                c.g[V1][0] = 0x450000;
+                c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
+                c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x60));
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                'emit: loop {
+                    'emit_entry: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.g[V0][0] & 0x1;
+                        if c.g[V0][0] == 0 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+                            break 'emit_entry;
+                        } else {
+                            'emit_call: {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                let t = c.g[V0][0] == 0;
+                                c.g[A0][0] = c.g[S1][0];
+                                if t {
+                                    break 'emit_call;
+                                } else {
+                                    c.cycles += 2;
+                                    let target = c.g[V0][0] as u32;
+                                    c.g[A1][0] = c.g[SP][0];
+                                    call_ptr(c, target, 0x003e_5d08)?;
+                                    break 'emit_call;
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+                            break 'emit_entry;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003e_5ce8);
+                        }
+                        continue 'emit;
+                    } else {
+                        break 'dispatch;
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x2030);
+        frame.restore(c, S1, 0x2020);
+        frame.restore(c, S2, 0x2010);
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x2000));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x2040));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void Debug_InitChannels(void)` (0x3e5b60): mark the channels
+/// initialised, clear every table, then enable channel 2's output.
+pub fn debug_init_channels(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        c.g[A0][0] = 0x450000;
+        let frame = Frame::open(c, 0x10);
+        'init: {
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1008));
+            let t = c.g[V0][0] != 0;
+            frame.save_ra(c, 0);
+            if t {
+                break 'init;
+            } else {
+                c.cycles += 7;
+                c.g[V0][0] = 0x1;
+                c.g[V1][0] = 0x450000;
+                c.sw((c.g[A0][0] as u32).wrapping_add(0x1008), c.g[V0][0]);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1250));
+                c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x60));
+                c.g[A0][0] = 0xfffffffffffffffe;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                'clear_outputs: loop {
+                    c.cycles += 7;
+                    c.g[V0][0] = c.g[V0][0] & c.g[A0][0];
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003e_5b90);
+                        }
+                        continue 'clear_outputs;
+                    } else {
+                        c.cycles += 5;
+                        c.g[V0][0] = 0x450000;
+                        c.g[A1][0] = 0xfffffffffffffffe;
+                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+                        c.g[A0][0] = 0x3f;
+                        'clear_states: loop {
+                            c.cycles += 7;
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                            c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
+                            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            let t = (c.g[A0][0] as i64) >= 0;
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x003e_5bc0);
+                                }
+                                continue 'clear_states;
+                            } else {
+                                c.cycles += 5;
+                                c.g[V0][0] = 0x450000;
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1250));
+                                c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x60));
+                                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30));
+                                c.sw(c.g[V1][0] as u32, 0);
+                                'zero_outputs: loop {
+                                    c.cycles += 7;
+                                    c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0);
+                                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc));
+                                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                                    if c.g[V0][0] != 0 {
+                                        c.sw(c.g[V1][0] as u32, 0);
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x003e_5bf0);
+                                        }
+                                        continue 'zero_outputs;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = 0x450000;
+                                        c.g[A1][0] = 0xfffffffffffffffd;
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe08));
+                                        c.g[A0][0] = 0x31;
+                                        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x70));
+                                        'zero_states: loop {
+                                            c.cycles += 7;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                                            c.sw(c.g[V1][0] as u32, 0);
+                                            c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
+                                            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                            let t = (c.g[A0][0] as i64) >= 0;
+                                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8));
+                                            if t {
+                                                if event_due(c) {
+                                                    deliver_event_here(c, 0x003e_5c20);
+                                                }
+                                                continue 'zero_states;
+                                            } else {
+                                                c.cycles += 6;
+                                                c.g[A0][0] = 0x2;
+                                                c.g[A1][0] = 0x1;
+                                                callee::DEBUG_ENABLE_CHANNEL
+                                                    .call(c, 0x003e_5c48)?;
+                                                c.g[A0][0] = 0x2;
+                                                c.g[A1][0] = 0x1;
+                                                callee::DEBUG_ENABLE_OUTPUT.call(c, 0x003e_5c54)?;
+                                                break 'init;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysMessagePage_dtor(MenuSysMessagePage *page, int flag)`
+/// (0x2d3f78): destroy the three items at `+0x164/+0x14c/+0x130`, the page,
+/// then the base item with the flag.
+pub fn menu_sys_message_page_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x164));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3f9c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14c));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3fa8)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x130));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3fb4)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        callee::MENU_SYS_PAGE_DTOR.call(c, 0x002d_3fc0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysVectorItem_dtor(MenuSysVectorItem *item, int flag)`
+/// (0x2d3ed0): destroy the four items at `+0x654/+0x620/+0x5ec/+0x5b8`,
+/// the page at `+0x18`, then the base item with the flag.
+pub fn menu_sys_vector_item_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x654));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3ef4)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x620));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3f00)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5ec));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3f0c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5b8));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3f18)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_PAGE_DTOR.call(c, 0x002d_3f24)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3f30)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysColorItem_dtor(MenuSysColorItem *item, int flag)` (0x2d3e20):
+/// destroy the five items at `+0x640/+0x61c/+0x5f8/+0x5d4/+0x5b0`, the page
+/// at `+0x18`, then the base item with the flag.
+pub fn menu_sys_color_item_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x640));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3e44)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x61c));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3e50)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5f8));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3e5c)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5d4));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3e68)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5b0));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3e74)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_PAGE_DTOR.call(c, 0x002d_3e80)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        callee::MENU_SYS_ITEM_DTOR.call(c, 0x002d_3e8c)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysMessagePage_ctor(MenuSysMessagePage *page)` (0x2d1740):
+/// the page, its label at `+0x130`, spacer at `+0x14c` and back item at
+/// `+0x164`, all three inserted.
+pub fn menu_sys_message_page_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 43;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x130));
+        frame.save_ra(c, 0);
+        c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14c));
+        callee::MENU_SYS_PAGE_CTOR.call(c, 0x002d_1768)?;
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x164));
+        c.g[V0][0] = 0x480000;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x67b0));
+        c.g[A1][0] = 0;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x12c), c.g[V0][0]);
+        callee::MENU_SYS_LABEL_ITEM_CTOR.call(c, 0x002d_1784)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 0xa;
+        callee::MENU_SYS_SPACER_ITEM_CTOR.call(c, 0x002d_1790)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 0;
+        callee::MENU_SYS_BACK_ITEM_CTOR.call(c, 0x002d_179c)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_PAGE_INSERT_ITEM.call(c, 0x002d_17ac)?;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_PAGE_INSERT_ITEM.call(c, 0x002d_17bc)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_PAGE_INSERT_ITEM.call(c, 0x002d_17cc)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysMessagePage_ctor_2(MenuSysMessagePage *page, char *text)`
+/// (0x2d17f0): the page, its label at `+0x130` (with `text`), spacer at
+/// `+0x14c` and back item at `+0x164`, all three inserted.
+pub fn menu_sys_message_page_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S4, 0x10);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x130));
+        callee::MENU_SYS_PAGE_CTOR.call(c, 0x002d_1820)?;
+        c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x164));
+        c.g[V0][0] = 0x480000;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x67b0));
+        c.g[A0][0] = c.g[S2][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x12c), c.g[V0][0]);
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14c));
+        callee::MENU_SYS_LABEL_ITEM_CTOR.call(c, 0x002d_1840)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0x1e;
+        callee::MENU_SYS_SPACER_ITEM_CTOR.call(c, 0x002d_184c)?;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S3][0];
+        callee::MENU_SYS_BACK_ITEM_CTOR.call(c, 0x002d_1858)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_PAGE_INSERT_ITEM.call(c, 0x002d_1868)?;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_PAGE_INSERT_ITEM.call(c, 0x002d_1878)?;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_PAGE_INSERT_ITEM.call(c, 0x002d_1888)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysColorItem_ctor(MenuSysColorItem *group, ...)` (0x2d02b0):
+/// the group, its four channel items and swatch, all inserted.
+pub fn menu_sys_color_item_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 72;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S5, 0x30);
+        frame.save(c, S7, 0x10);
+        c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x640));
+        frame.save(c, S1, 0x70);
+        c.g[S7][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A3][0];
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        c.g[A2][0] = c.g[S5][0];
+        frame.save(c, S6, 0x20);
+        c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5b0));
+        frame.save_ra(c, 0);
+        c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5d4));
+        callee::MENU_SYS_GROUP_ITEM_CTOR_2.call(c, 0x002d_02f8)?;
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5f8));
+        c.g[V0][0] = 0x480000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x5ac), c.g[S1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6908));
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        c.g[A2][0] = 0;
+        c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x61c));
+        callee::MENU_SYS_COLOR_CHANNEL_ITEM_CTOR.call(c, 0x002d_0320)?;
+        c.g[A0][0] = c.g[S6][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 0x1;
+        callee::MENU_SYS_COLOR_CHANNEL_ITEM_CTOR.call(c, 0x002d_0330)?;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 0x2;
+        callee::MENU_SYS_COLOR_CHANNEL_ITEM_CTOR.call(c, 0x002d_0340)?;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 0x3;
+        callee::MENU_SYS_COLOR_CHANNEL_ITEM_CTOR.call(c, 0x002d_0350)?;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = c.g[S7][0];
+        c.g[A2][0] = c.g[S1][0];
+        callee::MENU_SYS_COLOR_SWATCH_ITEM_CTOR.call(c, 0x002d_0360)?;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_0370)?;
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_0380)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_0390)?;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_03a0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MenuSysVectorItem_ctor(MenuSysVectorItem *group, ...)` (0x2d05a8):
+/// the group, its three float items and label, all inserted.
+pub fn menu_sys_vector_item_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 80;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S5, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S6, 0x10);
+        c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x654));
+        c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x88));
+        c.g[S6][0] = c.g[A3][0];
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.mov_s(21, 13);
+        frame.save(c, S2, 0x50);
+        c.mov_s(20, 12);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        c.g[A2][0] = c.g[S5][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5b8));
+        callee::MENU_SYS_GROUP_ITEM_CTOR_2.call(c, 0x002d_05f8)?;
+        c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5ec));
+        c.g[V0][0] = 0x480000;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x5ac), c.g[S1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6858));
+        c.g[A3][0] = 0x4a0000;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x39d8));
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        c.g[A1][0] = 0;
+        c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x620));
+        callee::MENU_SYS_FLOAT_ITEM_CTOR_2.call(c, 0x002d_0630)?;
+        c.g[A3][0] = 0x4a0000;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x39e0));
+        c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A1][0] = 0x1;
+        callee::MENU_SYS_FLOAT_ITEM_CTOR_2.call(c, 0x002d_0650)?;
+        c.g[A3][0] = 0x4a0000;
+        c.mov_s(12, 20);
+        c.mov_s(13, 21);
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x39e8));
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = 0x2;
+        callee::MENU_SYS_FLOAT_ITEM_CTOR_2.call(c, 0x002d_0670)?;
+        c.g[A0][0] = c.g[S5][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = c.g[S1][0];
+        callee::MENU_SYS_VECTOR_LABEL_ITEM_CTOR.call(c, 0x002d_0680)?;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_0690)?;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_06a0)?;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0xffffffffffffffff;
+        callee::MENU_SYS_GROUP_ITEM_ADD_ITEM.call(c, 0x002d_06b0)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x670), 0);
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x88));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x80));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MenuSysColorItem_HandleInput(MenuSysColorItem *item)` (0x2d03d0):
+/// run the group input handler.
+pub fn menu_sys_color_item_handle_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee::MENU_SYS_GROUP_ITEM_HANDLE_INPUT_2.call(c, 0x002d_03e0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -46849,6 +48332,672 @@ pub(crate) mod tests {
             },
         );
     }
+
+    pub(crate) use crate::game::util::menu::tests::menu_sys_composite_fixture;
+    pub(crate) use crate::game::util::menu::tests::menu_sys_dtor_fixture;
+
+    /// Item with a vtable whose entry at `off`/`off + 4` is a delta and a
+    /// fake method; the fake's call-`n` result is forced to `code`.
+    pub(crate) fn vector_method_fixture(c: &mut Cpu, item: u32, off: u32, code: u32) {
+        let vt = DATA + 0x7000;
+        c.bus.write16(vt + off, 0x0020);
+        c.bus.write32(vt + off + 4, FAKE + 0x10);
+        c.bus.write32(item + 0x10, vt);
+        for n in 0..8u32 {
+            c.bus
+                .write32(crate::difftest::fakes::LOG_RESULTS + 4 * n, code);
+        }
+    }
+
+    /// Vector-item fixture: the item doubles as the group the input handler
+    /// runs (embedded page at `+0x18`), with the vector fields past `+0x5b8`.
+    /// `long` selects the `+0x670` arm; `equal` steers the `c_eq_s` arm.
+    pub(crate) fn vector_input_fixture(c: &mut Cpu, seed: u32, long: bool, equal: bool) -> u32 {
+        let item = DATA + 0x8000;
+        for w in 0..0x200u32 {
+            c.bus.write32(item + 4 * w, 0xC000_0000 ^ seed ^ w);
+        }
+        // Embedded group page: two items, steered selection.
+        c.bus.write32(item + 0x18, 2);
+        let sel = seed % 2;
+        c.bus.write32(item + 0x1c, sel);
+        for i in 0..2u32 {
+            let sub = DATA + 0x2000 + i * 0x40;
+            c.bus.write32(item + 0x24 + 4 * i, sub);
+            for w in 0..8u32 {
+                c.bus.write32(sub + 4 * w, 0xA100_0000 ^ seed ^ (i * 8 + w));
+            }
+        }
+        c.bus.write32(item + 0x14, 0);
+        let sub = DATA + 0x2000 + sel * 0x40;
+        vector_method_fixture(c, sub, 0x10, [3, 4, 0x11][(seed % 3) as usize]);
+        c.bus.write32(sub, item + 0x18);
+        c.bus.write32(sub + 4, sel);
+        // Vector arm.
+        if long {
+            c.bus.write32(item + 0x670, DATA + 0x9000);
+        } else {
+            c.bus.write32(item + 0x670, 0);
+        }
+        let mut r = machine(c, seed, 0x2d06_e8, 3);
+        let p1 = DATA + 0xa000;
+        c.bus.write32(item + 0x5b8 + 0x18, p1);
+        let p2 = DATA + 0xa100;
+        c.bus.write32(item + 0x5ec + 0x18, p2);
+        let p3 = DATA + 0xa200;
+        c.bus.write32(item + 0x620 + 0x18, p3);
+        let f1v = if equal { 0x3F80_0000 } else { r.edge_f32() };
+        c.bus.write32(p1, f1v);
+        // `f3` matches `f1` on `equal` seeds (the `c_eq_s` taken arm).
+        c.bus
+            .write32(item + 0x610, if equal { f1v } else { r.edge_f32() });
+        c.bus.write32(item + 0x5dc, r.edge_f32());
+        c.bus.write32(item + 0x5e0, r.edge_f32());
+        c.bus.write32(item + 0x614, r.edge_f32());
+        c.bus.write32(item + 0x644, r.edge_f32());
+        c.bus.write32(item + 0x648, r.edge_f32());
+        c.bus.write32(p2, r.edge_f32());
+        c.bus.write32(p3, r.edge_f32());
+        c.g[A0][0] = sx(item);
+        c.pc = 0x002d_06e8;
+        item
+    }
+
+    #[test]
+    fn menu_sys_vector_item_handle_input_matches() {
+        check(
+            ee::s09::f_002d06e8__generated,
+            menu_sys_vector_item_handle_input,
+            60,
+            &|c, seed| {
+                vector_input_fixture(c, seed, seed % 2 == 0, seed / 2 % 2 == 0);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_vector_item_handle_input_resumes() {
+        // Resume heads (call returns): both sides run the generated body
+        // there by design (the entry-only guard); pin the deferral.
+        for (head, seed) in [(0x002d_06fcu32, 3u32), (0x002d_06fc, 4)] {
+            for v0 in [0u32, 3] {
+                let mut a = crate::difftest::fresh();
+                machine(&mut a, seed, 0x2d06_e8, 0);
+                vector_input_fixture(&mut a, seed, true, false);
+                let mut b = crate::difftest::fresh();
+                machine(&mut b, seed, 0x2d06_e8, 0);
+                vector_input_fixture(&mut b, seed, true, false);
+                for c in [&mut a, &mut b] {
+                    c.pc = head;
+                    c.g[V0][0] = sx(v0);
+                }
+                ee::s09::f_002d06e8__generated(&mut a);
+                menu_sys_vector_item_handle_input(&mut b);
+                assert_eq!(a.g[V0][0], b.g[V0][0], "head {head:#x} v0 {v0}");
+                assert_eq!(a.pc, b.pc, "head {head:#x} v0 {v0}");
+            }
+        }
+    }
+
+    driven!(
+        debug_set_channel_state_generated,
+        ee::s14::f_003e5aa8__generated
+    );
+
+    driven!(debug_set_channel_state_hand, debug_set_channel_state);
+
+    driven!(debug_vprintf_generated, ee::s14::f_003e5c78__generated);
+
+    driven!(debug_vprintf_hand, debug_vprintf);
+
+    driven!(
+        debug_init_channels_generated,
+        ee::s14::f_003e5b60__generated
+    );
+
+    driven!(debug_init_channels_hand, debug_init_channels);
+
+    /// Debug fixture: nonzero channel tables, a chosen init flag, and seeded
+    /// argument registers.
+    pub(crate) fn menu_sys_debug_fixture(c: &mut Cpu, seed: u32, init_done: u64) {
+        for i in 0..16u32 {
+            c.bus.write32(
+                DEBUG_OUTPUT_TABLE + 4 * i,
+                0xB000_0000 ^ seed.wrapping_mul(0x9E37_79B1).wrapping_add(i),
+            );
+            c.bus.write32(
+                DEBUG_STATE_TABLE + 4 * i,
+                0xC000_0000 ^ seed.wrapping_mul(0x85EB_CA6B).wrapping_add(i),
+            );
+        }
+        c.bus.write32(DEBUG_INIT_DONE, init_done as u32);
+        c.g[A0][0] = sx(seed);
+        c.g[A1][0] = sx(0xD000_0000 ^ seed * 3);
+        c.g[A2][0] = sx(0xE000_0000 ^ seed * 5);
+        c.g[A3][0] = sx(0xF000_0000 ^ seed * 7);
+    }
+
+    #[test]
+    fn debug_console_output_matches() {
+        check(
+            ee::s14::f_003e6428__generated,
+            debug_console_output,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e64_28, 1);
+                let _ = &mut r;
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = sx(0x30 + seed % 64);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_set_channel_flag_matches() {
+        check(
+            ee::s14::f_003e5a78__generated,
+            debug_set_channel_flag,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5a_78, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, 1);
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(seed & 1);
+            },
+        );
+    }
+
+    /// Varargs-stub fixture: seeded registers and FPU args.
+    pub(crate) fn menu_sys_stub_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.g[A0][0] = sx(DATA + 0x1000 + (seed % 4) * 0x40);
+        c.g[A1][0] = sx(0xB000_0000 ^ seed * 3);
+        c.g[A2][0] = sx(0xC000_0000 ^ seed * 5);
+        c.g[A3][0] = sx(0xD000_0000 ^ seed * 7);
+        c.g[T0][0] = sx(0xE000_0000 ^ seed * 11);
+        c.g[T1][0] = sx(0xF000_0000 ^ seed * 13);
+        c.g[T2][0] = sx(0x0100_0000 ^ seed * 17);
+        c.g[T3][0] = sx(0x0200_0000 ^ seed * 19);
+        c.f[12] = r.edge_f32();
+        c.f[13] = r.edge_f32();
+        c.f[14] = r.edge_f32();
+        c.f[15] = r.edge_f32();
+        let _ = r.next_u32();
+    }
+
+    #[test]
+    fn debug_printf_stub_f8b8_matches() {
+        check(
+            ee::s01::f_0013f8b8__generated,
+            debug_printf_stub_f8b8,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x13f8_b8, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_stub_afe8_matches() {
+        check(
+            ee::s01::f_0015afe8__generated,
+            debug_printf_stub_afe8,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x15af_e8, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_stub_73b8_matches() {
+        check(
+            ee::s02::f_001673b8__generated,
+            debug_printf_stub_73b8,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1673_b8, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_stub_4808_matches() {
+        check(
+            ee::s02::f_00174808__generated,
+            debug_printf_stub_4808,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1748_08, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_stub_7610_matches() {
+        check(
+            ee::s02::f_00177610__generated,
+            debug_printf_stub_7610,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1776_10, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_stub_8f18_matches() {
+        check(
+            ee::s02::f_00178f18__generated,
+            debug_printf_stub_8f18,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x178f_18, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_stub_9758_matches() {
+        check(
+            ee::s02::f_00179758__generated,
+            debug_printf_stub_9758,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1797_58, 1);
+                menu_sys_stub_fixture(c, &mut r, seed);
+                c.bus.write32(DATA + 0x1000, 0x2525_2525);
+            },
+        );
+    }
+
+    /// Printf fixture: a plain format string plus varargs on the stack.
+    pub(crate) fn menu_sys_printf_fixture(c: &mut Cpu, r: &mut Rng, seed: u32, channel: u32) {
+        c.bus.write32(DATA + 0x1000, 0x6E69_616C);
+        c.bus.write32(DATA + 0x1004, 0x0000_0074);
+        menu_sys_stub_fixture(c, r, seed);
+        c.g[A0][0] = sx(channel);
+        c.g[A1][0] = sx(DATA + 0x1000);
+    }
+
+    #[test]
+    fn debug_printf_matches() {
+        check(
+            ee::s14::f_003e5d30__generated,
+            debug_printf,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5d_30, 1);
+                menu_sys_printf_fixture(c, &mut r, seed, 0);
+                menu_sys_debug_fixture(c, seed, 1);
+                c.g[A0][0] = sx(DATA + 0x1000);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_enable_channel_matches() {
+        check(
+            ee::s14::f_003e5ef8__generated,
+            debug_enable_channel,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5e_f8, 1);
+                let _ = &mut r;
+                // Seed both sides of the lazy-init branch.
+                menu_sys_debug_fixture(c, seed, (seed % 2) as u64);
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(seed & 1);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_is_channel_enabled_matches() {
+        check(
+            ee::s14::f_003e5f48__generated,
+            debug_is_channel_enabled,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5f_48, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, (seed % 2) as u64);
+                c.g[A0][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_printf_channel2_matches() {
+        check(
+            ee::s14::f_003e5d78__generated,
+            debug_printf_channel2,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5d_78, 1);
+                menu_sys_printf_fixture(c, &mut r, seed, 2);
+                menu_sys_debug_fixture(c, seed, 1);
+                c.g[A1][0] = sx(2);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_is_output_enabled_matches() {
+        check(
+            ee::s14::f_003e5e38__generated,
+            debug_is_output_enabled,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5e_38, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, (seed % 2) as u64);
+                c.g[A0][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_set_channel_name_matches() {
+        check(
+            ee::s14::f_003e5f98__generated,
+            debug_set_channel_name,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5f_98, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, (seed % 2) as u64);
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(DATA + 0x2000 + (seed % 4) * 8);
+                c.bus.write32(DATA + 0x2000 + (seed % 4) * 8, 0x4545_4545);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_enable_output_matches() {
+        check(
+            ee::s14::f_003e5dc8__generated,
+            debug_enable_output,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5d_c8, 1);
+                let _ = &mut r;
+                // Entry present or absent crossed with init done or not.
+                menu_sys_debug_fixture(c, seed, (seed / 2 % 2) as u64);
+                let entry = DEBUG_OUTPUT_TABLE + (seed % 8) * 12;
+                if seed % 2 == 0 {
+                    c.bus.write32(entry + 4, 0);
+                }
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(seed & 1);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_set_output_matches() {
+        check(
+            ee::s14::f_003e5e88__generated,
+            debug_set_output,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5e_88, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, (seed % 2) as u64);
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(DATA + 0x3000);
+                c.g[A2][0] = sx(DATA + 0x3100);
+            },
+        );
+    }
+
+    /// Output-table fixture: planted function slots (`FAKE`) or null,
+    /// crossed with flag bits.
+    pub(crate) fn menu_sys_output_table_fixture(c: &mut Cpu, seed: u32) {
+        for i in 0..8u32 {
+            let entry = DEBUG_OUTPUT_TABLE + 12 * i;
+            c.bus.write32(entry, DATA + 0x4000 + i * 8);
+            c.bus.write32(
+                entry + 4,
+                if (seed >> i) & 1 == 0 { 0 } else { FAKE + 0x10 },
+            );
+            c.bus.write32(entry + 8, (seed >> (i + 8)) & 1);
+        }
+    }
+
+    #[test]
+    fn debug_output_direct_matches() {
+        check(
+            ee::s14::f_003e5ff0__generated,
+            debug_output_direct,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5f_f0, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, 1);
+                menu_sys_output_table_fixture(c, seed);
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(0x1111_1111 ^ seed);
+                c.g[A2][0] = sx(0x2222_2222 ^ seed);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_set_channel_state_matches() {
+        check(
+            ee::s14::f_003e5aa8__generated,
+            debug_set_channel_state,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5a_a8, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, 1);
+                // A0: all three shapes in turn; A1: off and on.
+                c.g[A0][0] = sx(seed % 3);
+                c.g[A1][0] = sx(seed / 3 % 2);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_set_channel_state_events() {
+        check_events(
+            debug_set_channel_state_generated,
+            debug_set_channel_state_hand,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5a_a8, 1);
+                menu_sys_debug_fixture(c, seed, 1);
+                c.g[A0][0] = sx(seed % 2);
+                c.g[A1][0] = sx(seed / 2 % 2);
+                schedule(c, &mut r, seed, 0x003e_5aa8)
+            },
+        );
+    }
+
+    #[test]
+    fn debug_vprintf_matches() {
+        check(
+            ee::s14::f_003e5c78__generated,
+            debug_vprintf,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5c_78, 2);
+                c.bus.write32(DATA + 0x1000, 0x6E69_616C);
+                c.bus.write32(DATA + 0x1004, 0x0000_0074);
+                menu_sys_debug_fixture(c, seed, 1);
+                menu_sys_output_table_fixture(c, seed);
+                // Channel and its state bit, both steered.
+                let channel = seed % 8;
+                c.g[A0][0] = sx(channel);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                c.g[A2][0] = sx(DATA + 0x2000);
+                let state = DEBUG_STATE_TABLE + channel * 8;
+                c.bus.write32(state, DATA + 0x3000);
+                let flags = c.bus.read32(state + 4) & !1 | (seed / 8 % 2);
+                c.bus.write32(state + 4, flags);
+                let _ = &mut r;
+            },
+        );
+    }
+
+    #[test]
+    fn debug_vprintf_events() {
+        check_events(
+            debug_vprintf_generated,
+            debug_vprintf_hand,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5c_78, 0);
+                c.bus.write32(DATA + 0x1000, 0x6E69_616C);
+                c.bus.write32(DATA + 0x1004, 0x0000_0074);
+                menu_sys_debug_fixture(c, seed, 1);
+                menu_sys_output_table_fixture(c, seed);
+                // Channel 0, forced enabled so the loop always runs.
+                c.g[A0][0] = sx(0);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                c.g[A2][0] = sx(DATA + 0x2000);
+                c.bus.write32(DEBUG_STATE_TABLE + 4, 1);
+                schedule(c, &mut r, seed, 0x003e_5c78)
+            },
+        );
+    }
+
+    #[test]
+    fn debug_init_channels_matches() {
+        check(
+            ee::s14::f_003e5b60__generated,
+            debug_init_channels,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5b_60, 1);
+                let _ = &mut r;
+                menu_sys_debug_fixture(c, seed, (seed % 2) as u64);
+            },
+        );
+    }
+
+    #[test]
+    fn debug_init_channels_events() {
+        check_events(
+            debug_init_channels_generated,
+            debug_init_channels_hand,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e5b_60, 1);
+                menu_sys_debug_fixture(c, seed, 0);
+                // Land the first unwind on each loop head in turn.
+                let mode = schedule(c, &mut r, seed, 0x003e_5b60);
+                c.next_event = c.cycles + [30, 200, 540, 700][(seed % 4) as usize];
+                mode
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_message_page_dtor_matches() {
+        check(
+            ee::s09::f_002d3f78__generated,
+            menu_sys_message_page_dtor,
+            50,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2d3f_78, 1);
+                menu_sys_dtor_fixture(c, seed, sx(seed as u32 * 3 + 1));
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_vector_item_dtor_matches() {
+        check(
+            ee::s09::f_002d3ed0__generated,
+            menu_sys_vector_item_dtor,
+            50,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2d3e_d0, 1);
+                menu_sys_dtor_fixture(c, seed, sx(seed as u32 * 3 + 1));
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_color_item_dtor_matches() {
+        check(
+            ee::s09::f_002d3e20__generated,
+            menu_sys_color_item_dtor,
+            50,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2d3e_20, 1);
+                menu_sys_dtor_fixture(c, seed, sx(seed as u32 * 3 + 1));
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_message_page_ctor_matches() {
+        check(
+            ee::s09::f_002d1740__generated,
+            menu_sys_message_page_ctor,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d17_40, 4);
+                menu_sys_composite_fixture(c, &mut r, DATA + 0x2000, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_message_page_ctor_2_matches() {
+        check(
+            ee::s09::f_002d17f0__generated,
+            menu_sys_message_page_ctor_2,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d17_f0, 4);
+                menu_sys_composite_fixture(c, &mut r, DATA + 0x2000, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_color_item_ctor_matches() {
+        check(
+            ee::s09::f_002d02b0__generated,
+            menu_sys_color_item_ctor,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d02_b0, 8);
+                menu_sys_composite_fixture(c, &mut r, DATA + 0x2000, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn menu_sys_vector_item_ctor_matches() {
+        check(
+            ee::s09::f_002d05a8__generated,
+            menu_sys_vector_item_ctor,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d05_a8, 8);
+                menu_sys_composite_fixture(c, &mut r, DATA + 0x2000, seed);
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {
@@ -47473,6 +49622,60 @@ pub(crate) mod callee {
     pub(crate) const DEBUG_PRINTF: Callee = Callee {
         addr: 0x003e_5d30,
         f: ee::s14::Debug_Printf,
+    };
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_BACK_ITEM_CTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_COLOR_CHANNEL_ITEM_CTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_COLOR_SWATCH_ITEM_CTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_FLOAT_ITEM_CTOR_2;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_GROUP_ITEM_ADD_ITEM;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_GROUP_ITEM_CTOR_2;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_GROUP_ITEM_HANDLE_INPUT_2;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_ITEM_DTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_LABEL_ITEM_CTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_PAGE_CTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_PAGE_DTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_PAGE_INSERT_ITEM;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_SPACER_ITEM_CTOR;
+    pub(crate) use crate::game::util::menu::callee::MENU_SYS_VECTOR_LABEL_ITEM_CTOR;
+
+    pub const MENU_SYS_GROUP_ITEM_HANDLE_INPUT: Callee = Callee {
+        addr: 0x002c_fa08,
+        f: ee::s09::MenuSysGroupItem_HandleInput,
+    };
+
+    pub const MENU_SYS_ITEM_DRAW_ROW: Callee = Callee {
+        addr: 0x002c_a988,
+        f: ee::s09::MenuSysItem_DrawRow,
+    };
+
+    pub const DEBUG_SET_CHANNEL_FLAG: Callee = Callee {
+        addr: 0x003e_5a78,
+        f: ee::s14::f_003e5a78,
+    };
+
+    pub const DEBUG_SET_CHANNEL_STATE: Callee = Callee {
+        addr: 0x003e_5aa8,
+        f: ee::s14::f_003e5aa8,
+    };
+
+    pub const DEBUG_INIT_CHANNELS: Callee = Callee {
+        addr: 0x003e_5b60,
+        f: ee::s14::f_003e5b60,
+    };
+
+    pub const DEBUG_VPRINTF: Callee = Callee {
+        addr: 0x003e_5c78,
+        f: ee::s14::f_003e5c78,
+    };
+
+    pub const DEBUG_ENABLE_CHANNEL: Callee = Callee {
+        addr: 0x003e_5ef8,
+        f: ee::s14::f_003e5ef8,
+    };
+
+    pub const DEBUG_ENABLE_OUTPUT: Callee = Callee {
+        addr: 0x003e_5dc8,
+        f: ee::s14::f_003e5dc8,
     };
 }
 
