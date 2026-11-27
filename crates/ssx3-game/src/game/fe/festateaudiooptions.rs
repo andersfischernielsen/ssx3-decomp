@@ -72,7 +72,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (
         0x0019_6f50,
-        cfe_state_request_line_transition_in_2,
+        cfe_state_request_line_transition_in,
         "cFEStateRequestLine_TransitionIn",
     ),
 ];
@@ -1632,55 +1632,12 @@ pub fn cfe_state_request_line_init(c: &mut Cpu) {
     })
 }
 
-/// `int cFEStateRequestLine_TransitionIn(self, int first_time)` (0x196f50):
-/// on the first transition in, refreshes the scroll arrows, the button text
-/// and the help text; returns 0.
-#[allow(unreachable_code, unused_assignments, unused_mut, unused_variables)]
-#[cfg(test)] // not installed: its test runs away in unbounded real callees
-#[allow(dead_code)]
-pub fn cfe_state_request_line_transition_in(c: &mut Cpu) {
-    guest(c, |c| {
-        'b_196f84: {
-            c.cycles += 5;
-            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
-            let t = c.g[A1][0] == 0u64;
-            c.g[S0][0] = c.g[A0][0];
-            if t {
-                break 'b_196f84;
-            } else {
-                c.cycles += 8;
-                c.g[RA][0] = sx(0x00196f6c);
-                call_ptr(c, 0x00197db8, 0x00196f6c)?;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[RA][0] = sx(0x00196f78);
-                c.g[A1][0] = 0u64;
-                call_ptr(c, 0x00198340, 0x00196f78)?;
-                c.g[A0][0] = c.g[S0][0];
-                c.g[RA][0] = sx(0x00196f84);
-                c.g[A1][0] = 0u64;
-                call_ptr(c, 0x001981f8, 0x00196f84)?;
-                break 'b_196f84;
-            }
-        }
-        c.cycles += 5;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[V0][0] = 0u64;
-        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-        c.pc = t;
-        return Ok(());
-    })
-}
-
 // ------------------------------------- cFEStateRequestLine_TransitionIn
 
 /// `int cFEStateRequestLine_TransitionIn(self, int first_time)` (0x196f50):
 /// on the first transition in, refreshes the scroll arrows, the button text
 /// and the help text; returns 0.
-pub fn cfe_state_request_line_transition_in_2(c: &mut Cpu) {
+pub fn cfe_state_request_line_transition_in(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 5;
         Frame::open(c, 0x20);
@@ -2236,7 +2193,7 @@ pub(crate) mod tests {
         oc1132_install_fakes();
         covered(
             ee::s02::f_00196f50__generated,
-            cfe_state_request_line_transition_in_2,
+            cfe_state_request_line_transition_in,
             90,
             &|c, seed| {
                 machine(c, seed, 0x196f50, 3);

@@ -753,6 +753,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_c530, snd_free_pan_tables, "SND_FreePanTables"),
     (0x003b_c6b8, snd_set_pitch_bend, "SND_SetPitchBend"),
     (0x003b_c770, snd_sinf, "SND_Sinf"),
+    (0x003b_c840, snd_cosf, "SND_Cosf"),
+    (0x003b_94b0, snd_midi_process_event, "SNDMIDI_ProcessEvent"),
+    (0x003c_2268, snd_iop_shutdown, "SND_IopShutdown"),
     (
         0x003b_c910,
         snd_timer_shutdown_callback,
@@ -45507,11 +45510,6 @@ pub fn snd_is_output_mode_supported(c: &mut Cpu) {
 /// channel), or the end-of-track meta event (stops the sequence once its notes
 /// are finished, else rewinds and retries); loops while the delta `ev` is 0
 /// and the sequence type (+0x28) is 3. Resumable dispatcher.
-///
-/// NOT REGISTERED: its test fixture never reached the handler calls in the
-/// generated body (no seed made the NotesFinished call), so the port has no
-/// passing coverage; kept for a later wave.
-#[allow(dead_code)]
 pub fn snd_midi_process_event(c: &mut Cpu) {
     if c.pc != 0x003b94b0 {
         return ee::s13::f_003b94b0__generated(c);
@@ -47672,12 +47670,6 @@ pub fn snd_sinf(c: &mut Cpu) {
 
 /// `SND_Cosf` (0x3bc840): cosine of f12, same reduction as [`snd_sinf`],
 /// then a six-term even polynomial. The result is f0.
-///
-/// Not installed: the differential test fails on seed 1 (a reduced or
-/// negative argument; seed 0 passes), and the op order could not be
-/// diagnosed without running cargo. Kept for a later round; the generated
-/// body stays in place.
-#[allow(dead_code)]
 pub fn snd_cosf(c: &mut Cpu) {
     c.cycles += 7;
     let two_pi = FpuF32(0x40c9_0fdb);
@@ -47718,7 +47710,6 @@ pub fn snd_cosf(c: &mut Cpu) {
     let c8 = FpuF32(0x310f_76c8);
     let t8 = x12 * c8; // mul_s(0,0,8)
     r = r - t7; // sub_s(2,2,3)
-    r = r - t7;
     let result = r + t8;
     abi::set_fret(c, result);
     c.f[1] = x8.0;
@@ -47733,6 +47724,284 @@ pub fn snd_cosf(c: &mut Cpu) {
     c.g[AT][0] = 0x310f_76c8;
     abi::set_fcc(c, false);
     abi::ret(c);
+}
+
+/// `SND_IopShutdown` (0x003c2268): the normal entry, converted from the generated body
+/// (a labelled-block body: every register, cycle and call kept). Tears the
+/// sound system down: unlocks, runs the service callbacks until the tick
+/// advances ten, closes the IOP semaphores, frees the buffers.
+pub fn snd_iop_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_3c22b4: {
+            c.cycles += 14;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+            c.g[V0][0] = 0x510000;
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S1][0] = c.g[V0][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5718));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[S3][0] = 0x510000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+            c.g[S2][0] = 0x510000;
+            c.g[V1][0] = c.lbu((c.g[V0][0] as u32).wrapping_add(0x176));
+            let t = c.g[V1][0] == 0u64;
+            c.g[S0][0] = c.g[V0][0];
+            if t {
+                break 'b_3c22b4;
+            } else {
+                'l_3c22a0: loop {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x003c22a8);
+                    Callee {
+                        addr: 0x003b58d8,
+                        f: ee::s13::SND_Unlock,
+                    }
+                    .call(c, 0x003c22a8)?;
+                    c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x176));
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c22a0);
+                        }
+                        continue 'l_3c22a0;
+                    } else {
+                        break 'b_3c22b4;
+                    }
+                }
+            }
+        }
+        'b_3c22f4: {
+            c.cycles += 7;
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x5718));
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x180));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x180));
+            c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xa));
+            c.g[V0][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+            if c.g[V0][0] == 0u64 {
+                c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x5300));
+                break 'b_3c22f4;
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = c.g[A0][0];
+                'l_3c22d8: loop {
+                    c.cycles += 6;
+                    c.g[RA][0] = sx(0x003c22e0);
+                    Callee {
+                        addr: 0x003c60e0,
+                        f: ee::s13::SND_RunServiceCallbacks,
+                    }
+                    .call(c, 0x003c22e0)?;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x180));
+                    c.g[V0][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c22d8);
+                        }
+                        continue 'l_3c22d8;
+                    } else {
+                        c.cycles += 1;
+                        c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x5300));
+                        break 'b_3c22f4;
+                    }
+                }
+            }
+        }
+        'b_3c2328: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1aa8));
+            let t = (c.g[V0][0] as i64) < 0;
+            c.g[A0][0] = 0x1;
+            if t {
+                break 'b_3c2328;
+            } else {
+                c.cycles += 7;
+                c.g[RA][0] = sx(0x003c2308);
+                c.g[A0][0] = 0x2;
+                call_ptr(c, 0x00424880, 0x003c2308)?;
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1aa8));
+                c.g[RA][0] = sx(0x003c2314);
+                c.g[A0][0] = 0x2;
+                call_ptr(c, 0x00423aa0, 0x003c2314)?;
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[A0][0] = 0x1;
+                if t {
+                    break 'b_3c2328;
+                } else {
+                    c.cycles += 3;
+                    c.g[RA][0] = sx(0x003c2324);
+                    c.g[A0][0] = 0x2;
+                    call_ptr(c, 0x004248e8, 0x003c2324)?;
+                    c.g[A0][0] = 0x1;
+                    break 'b_3c2328;
+                }
+            }
+        }
+        'b_3c2374: {
+            'b_3c2360: {
+                c.cycles += 10;
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x003c2334);
+                c.g[A2][0] = 0u64;
+                Callee {
+                    addr: 0x003c0b10,
+                    f: ee::s13::SND_IopCallRpc,
+                }
+                .call(c, 0x003c2334)?;
+                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2b20));
+                c.g[RA][0] = sx(0x003c2340);
+                c.g[A1][0] = c.g[SP][0];
+                call_ptr(c, 0x00423ca0, 0x003c2340)?;
+                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                c.g[V0][0] = 0x10;
+                let t = c.g[V1][0] != c.g[V0][0];
+
+                if t {
+                    break 'b_3c2360;
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003c2358);
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2b20));
+                    call_ptr(c, 0x00423bb0, 0x003c2358)?;
+                    let t = true;
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x5300));
+                    if t {
+                        break 'b_3c2374;
+                    } else {
+                        break 'b_3c2360;
+                    }
+                }
+            }
+            c.cycles += 5;
+            c.g[RA][0] = sx(0x003c2368);
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2b20));
+            call_ptr(c, 0x00423bf0, 0x003c2368)?;
+            c.g[RA][0] = sx(0x003c2370);
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2b20));
+            call_ptr(c, 0x00423bb0, 0x003c2370)?;
+            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x5300));
+            break 'b_3c2374;
+        }
+        c.cycles += 5;
+        c.g[S1][0] = 0u64;
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1aa4));
+        c.g[RA][0] = sx(0x003c2384);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xe8c));
+        call_ptr(c, 0x00423db0, 0x003c2384)?;
+        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+        'l_3c2388: loop {
+            c.cycles += 5;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            c.g[RA][0] = sx(0x003c2394);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+            call_ptr(c, 0x0042ad08, 0x003c2394)?;
+            if (c.g[S1][0] as i64) >= 0 {
+                c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c2388);
+                }
+                continue 'l_3c2388;
+            } else {
+                'b_3c23d0: {
+                    c.cycles += 8;
+                    c.g[A0][0] = 0u64;
+                    c.g[RA][0] = sx(0x003c23a8);
+                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x5300));
+                    call_ptr(c, 0x003cbc00, 0x003c23a8)?;
+                    c.g[RA][0] = sx(0x003c23b0);
+                    c.sb((c.g[S0][0] as u32).wrapping_add(0x1aad), 0u64);
+                    Callee {
+                        addr: 0x003b58a0,
+                        f: ee::s13::SND_Lock,
+                    }
+                    .call(c, 0x003c23b0)?;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1ad4));
+                    if c.g[A0][0] == 0u64 {
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1af8));
+                        break 'b_3c23d0;
+                    } else {
+                        c.cycles += 5;
+                        c.g[RA][0] = sx(0x003c23c4);
+                        Callee {
+                            addr: 0x003b5e98,
+                            f: ee::s13::SND_MemFree,
+                        }
+                        .call(c, 0x003c23c4)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x1ad4), 0u64);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x1ad8), 0u64);
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1af8));
+                        break 'b_3c23d0;
+                    }
+                }
+                'b_3c23e8: {
+                    c.cycles += 2;
+                    if c.g[A0][0] == 0u64 {
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1b38));
+                        break 'b_3c23e8;
+                    } else {
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x003c23e0);
+                        Callee {
+                            addr: 0x003b5e98,
+                            f: ee::s13::SND_MemFree,
+                        }
+                        .call(c, 0x003c23e0)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x1af8), 0u64);
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1b38));
+                        break 'b_3c23e8;
+                    }
+                }
+                'b_3c23fc: {
+                    c.cycles += 2;
+                    let t = c.g[A0][0] == 0u64;
+
+                    if t {
+                        break 'b_3c23fc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x003c23f8);
+                        Callee {
+                            addr: 0x003b5e98,
+                            f: ee::s13::SND_MemFree,
+                        }
+                        .call(c, 0x003c23f8)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x1b38), 0u64);
+                        break 'b_3c23fc;
+                    }
+                }
+                c.cycles += 14;
+                c.g[RA][0] = sx(0x003c2404);
+                call_ptr(c, 0x003c8018, 0x003c2404)?;
+                c.g[RA][0] = sx(0x003c240c);
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1aa0));
+                Callee {
+                    addr: 0x003b5e98,
+                    f: ee::s13::SND_MemFree,
+                }
+                .call(c, 0x003c240c)?;
+                c.g[RA][0] = sx(0x003c2414);
+                Callee {
+                    addr: 0x003b58d8,
+                    f: ee::s13::SND_Unlock,
+                }
+                .call(c, 0x003c2414)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.g[V0][0] = 0u64;
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    });
 }
 
 /// `SND_TimerShutdownCallback` (0x3bc910): the timer's exit handler, which
@@ -73868,6 +74137,245 @@ pub(crate) mod tests {
             let range = [2.0f32, 20.0, 1000.0][(seed % 3) as usize];
             c.f[12] = r.f32(range);
         });
+    }
+
+    /// `SND_Cosf`: as `snd_sinf_matches`.
+    #[test]
+    fn snd_cosf_matches() {
+        check(ee::s13::f_003bc840__generated, snd_cosf, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x1146_c840, 0);
+            let range = [2.0f32, 20.0, 1000.0][(seed % 3) as usize];
+            c.f[12] = r.f32(range);
+        });
+    }
+
+    /// `SNDMIDI_ProcessEvent`: a sequence record at `0x50a120 + 0x70 * seq`
+    /// (stream pointer at +8, counter at +0x27, type at +0x28, handle at
+    /// +0x10, channel words from +0x30), whose stream holds the end-of-track
+    /// event, note on/off, control change, pitch bend and program change.
+    /// The handlers are gated fakes.
+    fn oc1140_midi_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x003b_94b0, 8);
+        c.bus.write32(OC1139_CTRL, OC1139_MAGIC);
+        c.bus.write32(OC1139_CTRL + OC1139_NF_MAIL, seed / 3 % 2);
+        let seq = seed % 4;
+        let rec = 0x0050_a120 + 0x70 * seq;
+        let stream = DATA_m3 + 0x4000;
+        for k in 0..0x40 {
+            let v = r.next_u32();
+            c.bus.write32(stream + 4 * k, v);
+        }
+        for k in 0..0x1c {
+            let v = r.next_u32();
+            c.bus.write32(rec + 4 * k, v);
+        }
+        // The stream holds `delta, status, data` records; the entry looks at
+        // the status and data of the record the pointer is on.
+        let kinds = [0x90u8, 0x80, 0xb0, 0xe0, 0xc0, 0xf0, 0xa0];
+        for e in 0..8u32 {
+            let at = stream + 3 * e;
+            let status = match (seed / 7 + e) % 9 {
+                0..=6 => kinds[((seed / 7 + e) % 7) as usize] | (r.next_u32() as u8 & 0xf),
+                _ => 0xf0 | (r.next_u32() as u8 & 0xf),
+            };
+            let data = if status & 0xf0 == 0xf0 {
+                0x2f - ((seed / 5 + e) as u8 & 1)
+            } else {
+                r.next_u32() as u8
+            };
+            c.bus.write8(
+                at,
+                if e % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u8 & 3
+                },
+            );
+            c.bus.write8(at + 1, status);
+            c.bus.write8(at + 2, data);
+        }
+        c.bus.write32(rec + 8, stream);
+        c.bus.write32(rec + 0x10, r.next_u32());
+        // Counter (decremented first): 1 reaches the event arm.
+        c.bus
+            .write8(rec + 0x27, [1u8, 1, 0, 2][(seed / 6 % 4) as usize]);
+        c.bus
+            .write8(rec + 0x28, [3u8, 3, 1][(seed / 24 % 3) as usize]);
+        c.g[A0][0] = seq as u64;
+        c.g[S2][0] = r.next_u32() as u64 & 1;
+        c.pc = 0x003b_94b0;
+    }
+
+    #[test]
+    fn snd_midi_process_event_matches() {
+        oc1139_hook();
+        fakes::check_reaching(
+            ee::s13::f_003b94b0__generated,
+            snd_midi_process_event,
+            600,
+            &[
+                0x003b_952c,
+                0x003b_953c,
+                0x003b_960c,
+                0x003b_9624,
+                0x003b_9638,
+                0x003b_964c,
+                0x003b_9664,
+                0x003b_9674,
+            ],
+            &oc1140_midi_fixture,
+        );
+    }
+    /// The shutdown's callees answer only while this word of the machine
+    /// holds the magic (otherwise the body they replaced runs).
+    const IOPSD_CTRL: u32 = DATA_m3 + 0x0023_0000;
+
+    const IOPSD_MAGIC: u32 = 0x1268_c0de;
+
+    /// The SND channel table block the shutdown reads (`0x510000 - 0x5718`).
+    const IOPSD_STATE: u32 = 0x0050_a8e8;
+
+    macro_rules! iopsd_fake {
+        ($fake:ident, $prev:ident, $target:expr, $generated:path, $effect:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(IOPSD_CTRL) != IOPSD_MAGIC {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                fakes::fake_call(c, $target);
+                let effect: fn(&mut Cpu) = $effect;
+                effect(c);
+            }
+        };
+    }
+
+    // `SND_Unlock` lets the lock count (the byte at +0x176) run down.
+    iopsd_fake!(
+        iopsd_fake_unlock,
+        IOPSD_PREV_UNLOCK,
+        0x003b_58d8,
+        ee::s13::f_003b58d8__generated,
+        |c| {
+            let b = c.bus.read8(IOPSD_STATE + 0x176);
+            if b != 0 {
+                c.bus.write8(IOPSD_STATE + 0x176, b - 1);
+            }
+        }
+    );
+    // `SND_RunServiceCallbacks` advances the tick word (+0x180).
+    iopsd_fake!(
+        iopsd_fake_service,
+        IOPSD_PREV_SERVICE,
+        0x003c_60e0,
+        ee::s13::f_003c60e0__generated,
+        |c| {
+            let t = c.bus.read32(IOPSD_STATE + 0x180);
+            c.bus.write32(IOPSD_STATE + 0x180, t.wrapping_add(1));
+        }
+    );
+    iopsd_fake!(
+        iopsd_fake_rpc,
+        IOPSD_PREV_RPC,
+        0x003c_0b10,
+        ee::s13::f_003c0b10__generated,
+        |_c| {}
+    );
+    iopsd_fake!(
+        iopsd_fake_lock,
+        IOPSD_PREV_LOCK,
+        0x003b_58a0,
+        ee::s13::f_003b58a0__generated,
+        |_c| {}
+    );
+    iopsd_fake!(
+        iopsd_fake_free,
+        IOPSD_PREV_FREE,
+        0x003b_5e98,
+        ee::s13::f_003b5e98__generated,
+        |_c| {}
+    );
+    iopsd_fake!(
+        iopsd_fake_mixer,
+        IOPSD_PREV_MIXER,
+        0x003c_8018,
+        ee::s14::f_003c8018__generated,
+        |_c| {}
+    );
+
+    fn iopsd_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58D8),
+            iopsd_fake_unlock,
+            &IOPSD_PREV_UNLOCK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003C60E0),
+            iopsd_fake_service,
+            &IOPSD_PREV_SERVICE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003C0B10),
+            iopsd_fake_rpc,
+            &IOPSD_PREV_RPC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58A0),
+            iopsd_fake_lock,
+            &IOPSD_PREV_LOCK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B5E98),
+            iopsd_fake_free,
+            &IOPSD_PREV_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003C8018),
+            iopsd_fake_mixer,
+            &IOPSD_PREV_MIXER,
+        );
+    }
+
+    /// `SND_IopShutdown`: the lock count (0 to 2), the tick word (some that
+    /// wrap past the target so the service loop is skipped), the IOP
+    /// semaphore handle (negative or not), the buffers (null or not), and
+    /// unwinds at the callees. Callees are gated fakes; the IOP syscalls run.
+    fn iopsd_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x003c_2268, 40);
+        c.bus.write32(IOPSD_CTRL, IOPSD_MAGIC);
+        c.pc = 0x003c_2268;
+        let blk = 0x0050_ad00;
+        for k in 0..0x800u32 {
+            let v = if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(blk + 4 * k, v);
+        }
+        // Handle words: some negative, some small positive.
+        c.bus.write32(
+            blk + 0x1aa8,
+            [0x1u32, 0xffff_ffff, 0x7, 0x0][(seed % 4) as usize],
+        );
+        c.bus.write8(IOPSD_STATE + 0x176, (seed % 3) as u8);
+        let tick = if seed % 5 == 0 {
+            0xffff_fff8
+        } else {
+            r.next_u32() & 0xffff
+        };
+        c.bus.write32(IOPSD_STATE + 0x180, tick);
+        c.bus.write32(0x0051_2b20, r.next_u32());
+    }
+
+    #[test]
+    fn snd_iop_shutdown_matches() {
+        iopsd_hook();
+        check(
+            ee::s13::f_003c2268__generated,
+            snd_iop_shutdown,
+            400,
+            &iopsd_fixture,
+        );
     }
 
     /// `SND_TimerShutdownCallback`: the shutdown call is a fake (gated).
