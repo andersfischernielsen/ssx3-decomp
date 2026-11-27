@@ -50804,6 +50804,302 @@ pub(crate) mod tests {
             libmpeg_events_at(c, seed, 0x0040_8278, at)
         });
     }
+
+    // ---------------------------------------------- libmpeg live fixtures
+
+    /// [`check_lohi`], then the listed hardware words must match too: the
+    /// DMAC and IPU registers the bodies write sit outside RAM, so the
+    /// machine comparison never sees them.
+    pub(crate) fn check_hw(
+        generated: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+        regs: &[u32],
+    ) {
+        check_lohi(generated, hand, seeds, setup);
+        for seed in 0..seeds {
+            let mut a = crate::difftest::fresh();
+            let mut b = crate::difftest::fresh();
+            setup(&mut a, seed);
+            setup(&mut b, seed);
+            crate::difftest::run_generated(&mut a, generated);
+            hand(&mut b);
+            for &r in regs {
+                let (x, y) = (a.bus.read32(r), b.bus.read32(r));
+                assert_eq!(x, y, "seed {seed}: hardware word {r:#x}");
+            }
+        }
+    }
+
+    /// Distinct words at guest address 0 (bit 8 set, the busy bit the DMA
+    /// polls test): a hardware address that lost its high half reads or
+    /// writes here instead, which the RAM comparison then sees, and a poll
+    /// of it never ends.
+    pub(crate) fn mark_page_zero(c: &mut Cpu) {
+        let mut o = 0u32;
+        while o < 0x40 {
+            c.bus.write32(o, 0x0bad_0100 | o);
+            o += 4;
+        }
+    }
+
+    /// The DMAC and IPU words the decoder's waits and copies write.
+    pub(crate) const LIBMPEG_HW: [u32; 13] = [
+        0x1000_f520, // D_ENABLER
+        0x1000_b000, // D3_CHCR (fromIPU)
+        0x1000_b020, // D3_QWC
+        0x1000_b400, // D4_CHCR (toIPU)
+        0x1000_b420, // D4_QWC
+        0x1000_2010, // IPU_CTRL
+        0x1000_d000, // D8_CHCR (fromSPR)
+        0x1000_d010, // D8_MADR
+        0x1000_d020, // D8_QWC
+        0x1000_d080, // D8_SADR
+        0x1000_d400, // D9_CHCR (toSPR)
+        0x1000_d410, // D9_MADR
+        0x1000_d420, // D9_QWC
+    ];
+
+    /// The Wait-BDEC fixture with the channel and enable words read back:
+    /// both halves write D_ENABLE (suspend set, then cleared from a fresh
+    /// read), clear the IPU channels and their counts, and reset the IPU.
+    #[test]
+    fn libmpeg_wait_bdec_hw_matches() {
+        check_hw(
+            ee::s15::f_00405b70__generated,
+            libmpeg_wait_bdec,
+            216,
+            &|c, seed| {
+                mpeg2_bdec_setup(c, seed);
+                mark_page_zero(c);
+            },
+            &LIBMPEG_HW,
+        );
+    }
+
+    /// Raw-copy fixture over real buffers: the copy params' source word
+    /// (`+0x0`) and the sys object's destination (`+0xd8`) point at
+    /// prefilled picture and output buffers with junk in the masked high
+    /// nibble, the width (`+0x10`, 1-2) and row count (`+0xc`, 0-2) are
+    /// small, and the sys words `+0x174` (frame structure 3 or a field),
+    /// `+0xe0` (field offset 0, 0x20, 0x40) and `+0xe4` (output stride
+    /// 1-2) steer the three set-up arms and the second field pass. The
+    /// copies go through the scratchpad DMA channels, so the destination
+    /// rows are what the RAM comparison checks.
+    pub(crate) fn mpeg2_raw_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_raw_setup(c, seed);
+        mark_page_zero(c);
+        let sys = DATA + 0x4000;
+        let prm = DATA + 0x6000;
+        let src = DATA + 0x1_0000;
+        let dst = DATA + 0x2_0000;
+        let mut o = 0u32;
+        while o < 0x1000 {
+            c.bus.write32(
+                src + o * 4,
+                0x5c00_0000 | o ^ seed.wrapping_mul(0x9e37_79b9),
+            );
+            c.bus.write32(
+                dst + o * 4,
+                0x0d00_0000 | o ^ seed.wrapping_mul(0x85eb_ca6b),
+            );
+            o += 1;
+        }
+        c.bus.write32(prm, src | 0xf000_0000);
+        c.bus.write32(sys + 0xd8, dst | 0x7000_0000);
+        c.bus.write32(sys + 0x174, [3, 1, 2][(seed % 3) as usize]);
+        c.bus
+            .write32(sys + 0xe0, [0, 0x20, 0x40][(seed / 3 % 3) as usize]);
+        c.bus.write32(sys + 0xe4, 1 + seed / 9 % 2);
+        c.bus.write32(prm + 0xc, seed / 18 % 3);
+        c.bus.write32(prm + 0x10, 1 + seed / 54 % 2);
+    }
+
+    #[test]
+    fn libmpeg_copy_output_raw_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_raw_live_setup(c, seed);
+        };
+        check_hw(
+            ee::s15::f_00408278__generated,
+            libmpeg_copy_output_raw,
+            108,
+            setup,
+            &LIBMPEG_HW,
+        );
+        // The copies really move rows: some destination word changes.
+        let mut moved = false;
+        for seed in [18 + 1, 36 + 4, 54 + 18 + 7] {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let before = c.bus.read32(DATA + 0x2_0000);
+            crate::difftest::run_generated(&mut c, ee::s15::f_00408278__generated);
+            moved |= c.bus.read32(DATA + 0x2_0000) != before;
+        }
+        assert!(moved, "no seed copied a row");
+    }
+
+    /// Prediction-block fixture in the decoder's own ranges, as
+    /// `FormPredictions` calls it: block height 16 or 8 (`t1`), field
+    /// shift 0/1 (stack `+0x10`), small signed motion vectors (stack `+0x0`
+    /// x, `+0x8` y, odd and negative ones included, so the round-to-zero
+    /// halvings matter), the table select (stack `+0x18`, 0/1), the
+    /// direction and parity args (`a2`, `t0`, 0/1), small block positions
+    /// (`a3`, `t2`, `t3`), slot 0 (`+0x810`) with 0-2 blocks already queued
+    /// (`+0x6bc`), and the game image for the two DMA-tag tables at
+    /// 0x453280 and 0x4532a0. The queued block records land inside the
+    /// state, so every field is compared.
+    pub(crate) fn mpeg2_pred_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_pred_setup(c, seed);
+        elf_image(c);
+        let state = DATA + 0x4000;
+        let h = |k: u32| seed.wrapping_mul(0x85eb_ca6b) ^ k.wrapping_mul(0xc2b2_ae35);
+        c.bus.write32(state + 0x810, 0);
+        c.bus.write32(state + 0x6bc, seed % 3);
+        let sp = c.g[SP][0] as u32;
+        c.bus.write32(sp + 0x10, seed / 3 % 2);
+        c.bus.write32(sp + 0x18, seed / 6 % 2);
+        c.bus.write32(sp, (h(1) >> 7) % 64 - 32);
+        c.bus.write32(sp + 0x8, (h(2) >> 9) % 64 - 32);
+        c.g[T1][0] = [16, 8][(seed / 12 % 2) as usize];
+        c.g[A2][0] = (h(3) >> 3 & 1) as u64;
+        c.g[T0][0] = (h(4) >> 5 & 1) as u64;
+        c.g[A3][0] = ((h(5) >> 4) % 45) as u64;
+        c.g[T2][0] = ((h(6) >> 6) % 0x2d0) as u64;
+        c.g[T3][0] = ((h(7) >> 8) % 0x1e0) as u64;
+    }
+
+    #[test]
+    fn libmpeg_setup_pred_block_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_pred_live_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404758__generated,
+            libmpeg_setup_pred_block,
+            384,
+            setup,
+        );
+    }
+
+    /// Reference-frame fixture with the rotation flags in range: the
+    /// picture structure (`+0x174`) and coding type (`+0x150`) 0-3, the
+    /// decoded-field sum `+0xa0 + +0xa4` 0-5 around the 2/4 limit, the
+    /// pending words `+0xe8`, `+0x1a4`, `+0x1a8` and the `+0x1c4` slot 0
+    /// or set, and the slot buffers' `+0x28` state flags 0-3.
+    pub(crate) fn mpeg2_ref_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_ref_setup(c, seed);
+        let state = DATA + 0x4000;
+        let h = |k: u32| (seed.wrapping_mul(0x85eb_ca6b) ^ k.wrapping_mul(0xc2b2_ae35)) >> 9;
+        c.bus.write32(state + 0x174, seed % 4);
+        c.bus.write32(state + 0x150, seed / 4 % 4);
+        c.bus.write32(state + 0xa0, h(1) % 3);
+        c.bus.write32(state + 0xa4, h(2) % 4);
+        c.bus.write32(state + 0xe8, h(3) & 1);
+        c.bus.write32(state + 0x1a4, h(4) & 1);
+        c.bus.write32(state + 0x1a8, h(5) & 1);
+        if h(6) & 1 == 0 {
+            c.bus.write32(state + 0x1c4, 0);
+        }
+        let mut f = 0u32;
+        while f < 3 {
+            c.bus
+                .write32(DATA + 0x6800 + f * 0x40 + 0x28, h(10 + f) % 4);
+            f += 1;
+        }
+    }
+
+    #[test]
+    fn libmpeg_setup_ref_frames_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_ref_live_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00407f20__generated,
+            libmpeg_setup_ref_frames,
+            512,
+            setup,
+        );
+    }
+
+    /// Prediction fixture in the decoder's own ranges: motion type 1-3
+    /// (`t0`), the macroblock-type direction bits 0x8/0x4 (`a3`, with the
+    /// other bits set too), picture structure and coding type 1-3
+    /// (`+0x174`, `+0x150`), small signed motion vectors at `t1` and
+    /// field-select words 0/1 at `t2`, small block positions (`a1`, `a2`),
+    /// slot 0 with nothing queued, the reference slots `+0x1b8..+0x1dc`
+    /// pointing at reference records with small fields, and the game
+    /// image for the prediction-block tables. `SetupPredBlock` (the real
+    /// body) queues each prediction inside the state, so the queued
+    /// records are compared.
+    pub(crate) fn mpeg2_form_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_form_setup(c, seed);
+        elf_image(c);
+        let state = DATA + 0x4000;
+        let mb = DATA + 0x6400;
+        let fp = DATA + 0x6500;
+        let h = |k: u32| (seed.wrapping_mul(0x85eb_ca6b) ^ k.wrapping_mul(0xc2b2_ae35)) >> 7;
+        c.bus.write32(state + 0x810, 0);
+        c.bus.write32(state + 0x6bc, 0);
+        c.bus.write32(state + 0x174, 1 + seed / 3 % 3);
+        c.bus.write32(state + 0x150, 1 + seed / 9 % 3);
+        let mut k = 0u32;
+        while k < 10 {
+            let r = DATA + 0x6c00 + k * 0x20;
+            c.bus.write32(r, 0x20 + h(40 + k) % 0x40);
+            c.bus.write32(r + 0x10, 0x30 + h(50 + k) % 0x40);
+            c.bus.write32(state + 0x1b8 + 4 * k, r);
+            k += 1;
+        }
+        let mut o = 0u32;
+        while o < 8 {
+            c.bus.write32(mb + o * 4, h(o) % 64 - 32);
+            o += 1;
+        }
+        let mut o = 0u32;
+        while o < 4 {
+            c.bus.write32(fp + o * 4, h(20 + o) & 1);
+            o += 1;
+        }
+        c.g[T0][0] = (1 + seed % 3) as u64;
+        c.g[A3][0] = ([0x8, 0x4, 0xc, 0x0][(seed / 27 % 4) as usize] | 0x13) as u64;
+        c.g[A1][0] = (h(30) % 45 * 16) as u64;
+        c.g[A2][0] = (h(31) % 30 * 16) as u64;
+    }
+
+    #[test]
+    fn libmpeg_form_predictions_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_form_live_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404050__generated,
+            libmpeg_form_predictions,
+            432,
+            setup,
+        );
+    }
+
+    /// The real-IPU macroblock fixture with IPU_CTRL's decode-format bits
+    /// (intra-DC precision, alternate scan, intra VLC format, quantiser
+    /// scale type) preset from the seed: the body rewrites only the picture
+    /// coding type field and must keep the rest, which the IPU decode and
+    /// the IPU_CTRL readback then check.
+    #[test]
+    fn libmpeg_decode_macroblock_ctrl_matches() {
+        check_hw(
+            ee::s15::f_004065d0__generated,
+            libmpeg_decode_macroblock,
+            432,
+            &|c, seed| {
+                mpeg2_mb_stream_setup(c, seed);
+                let bits = (seed.wrapping_mul(0x27d4_eb2f) >> 11) & 0xf3;
+                c.bus.write32(0x1000_2010, bits << 16);
+            },
+            &LIBMPEG_HW,
+        );
+    }
 }
 
 pub(crate) mod callee {

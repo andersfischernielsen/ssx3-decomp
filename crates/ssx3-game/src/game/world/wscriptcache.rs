@@ -15391,6 +15391,93 @@ pub(crate) mod tests {
         );
     }
 
+    /// A sequence-error code (0x1b4, the last code below the extension
+    /// range) ahead of the picture: the scan files it with the other
+    /// unknown codes, past the end/GOP tests, and keeps scanning.
+    #[test]
+    fn mpeg2_get_hdr_error_code() {
+        let err_pic: &[u8] = &[
+            0x00, 0x00, 0x00, 0x01, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_stream_setup(c, seed, err_pic);
+        };
+        check(ee::s13::f_003b13d8__generated, mpeg2_get_hdr, 8, setup);
+        require_paths(ee::s13::f_003b13d8__generated, 8, &[790], setup);
+    }
+
+    /// Every picture coding type 1-4 (I, P, B, D) after the temporal
+    /// reference: P and B read the forward vector fields, B the backward
+    /// ones too, I and D neither; then the extra-bit stop and a picture
+    /// start code the extension scan stops at.
+    #[test]
+    fn mpeg2_picture_header_coding_types() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let pct = 1 + seed % 4;
+            let h = seed.wrapping_mul(0x9e37_79b9);
+            let mut f = vec![(10, h >> 7), (3, pct), (16, h >> 13)];
+            if pct == 2 || pct == 3 {
+                f.push((1, h >> 3));
+                f.push((3, 1 + h % 7));
+            }
+            if pct == 3 {
+                f.push((1, h >> 5));
+                f.push((3, 1 + (h >> 9) % 7));
+            }
+            f.push((1, 0));
+            let bytes = mpeg2_bits(&f, &[0x00, 0x00, 0x01, 0x00]);
+            mpeg2_stream_setup(c, seed, &bytes);
+        };
+        check(
+            ee::s13::f_003b17a8__generated,
+            mpeg2_picture_header,
+            32,
+            setup,
+        );
+        let mut seen = std::collections::BTreeMap::new();
+        for seed in 0..4 {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s13::f_003b17a8__generated);
+            seen.insert(1 + seed % 4, c.cycles - before);
+        }
+        // I and D read no vector fields; P reads one pair, B two.
+        assert_eq!(seen[&1], seen[&4], "I vs D: {seen:?}");
+        assert!(seen[&2] > seen[&1] && seen[&3] > seen[&2], "{seen:?}");
+    }
+
+    /// Vertical size 2800 and 2801 around the slice header's 2800 limit:
+    /// above it the slice vertical position extension (3 bits) is read.
+    #[test]
+    fn mpeg2_slice_header_size_limit() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bitstream_setup(c, seed);
+            let state = DATA + 0x1000;
+            c.bus.write32(state + 0x420, 0xabcd_1234);
+            c.bus.write32(0x51_0000 - 0x6b08, 2800 + seed % 2);
+            c.bus.write32(state + 0x424, seed / 2 % 2);
+            c.bus.write32(state + 0x428, 0);
+            c.bus.write32(DATA + 0x1004, 0);
+            c.bus.write32(DATA + 0x1008, 0x100);
+        };
+        check(
+            ee::s13::f_003b1878__generated,
+            mpeg2_slice_header,
+            16,
+            setup,
+        );
+        let total = |seed: u32| {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s13::f_003b1878__generated);
+            c.cycles - before
+        };
+        assert!(total(1) > total(0), "2801 must read the extension bits");
+    }
+
     /// A sequence header after its start code: size, aspect, rate,
     /// bitrate, marker, VBV and constrained fields from seed hashes, the
     /// load-intra flag at bit 62 and the load-non-intra flag after it
