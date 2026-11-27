@@ -17,7 +17,6 @@ pub(crate) use crate::game::dirtysock::tagsunk::lw;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
-pub(crate) use crate::game::fe::feasyncfile::p as p_3;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateload::at as at_2;
 pub(crate) use crate::game::intersect::riderspheretree::sw_reg;
@@ -1019,56 +1018,6 @@ pub fn vu0_set_signed_unit_vector(c: &mut Cpu) {
     c.vu0().vnop();
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
     abi::ret(c);
-}
-
-/// `void PS2ExecMan_v03(self)` (0x31a920): shut down the PS2 exec manager's
-/// interrupts, threads and semaphores.
-pub fn ps2_exec_man_v03(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 45;
-        let frame = Frame::open(c, 0x30);
-        frame.save(c, S1, 0x10);
-        let this = c.g[A0][0];
-        c.g[S1][0] = this;
-        frame.save(c, S0, 0x20);
-        frame.save_ra(c, 0);
-        c.g[A0][0] = 0x3;
-        call_ptr(c, 0x0042_4880, 0x0031_a93c)?;
-        c.g[S0][0] = 0x10000;
-        c.g[A0][0] = 0x3;
-        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
-        c.g[A1][0] = Addr(p_3(c.g[S0][0] as u32, 0x4290)).lw(c);
-        call_ptr(c, 0x0042_3aa0, 0x0031_a950)?;
-        c.g[A0][0] = 0x3;
-        call_ptr(c, 0x0042_48e8, 0x0031_a958)?;
-        c.g[V1][0] = 0x1;
-        c.sw(p_3(c.g[S1][0] as u32, 0x20), c.g[V1][0]);
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4044)).lw(c);
-        call_ptr(c, 0x0042_3dc0, 0x0031_a968)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4034)).lw(c);
-        call_ptr(c, 0x0042_3dc0, 0x0031_a970)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4030)).lw(c);
-        call_ptr(c, 0x0042_3bf0, 0x0031_a988)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4030)).lw(c);
-        call_ptr(c, 0x0042_3bb0, 0x0031_a990)?;
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4040)).lw(c);
-        call_ptr(c, 0x0042_3bf0, 0x0031_a998)?;
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4040)).lw(c);
-        call_ptr(c, 0x0042_3bb0, 0x0031_a9a0)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x4034)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9a8)?;
-        c.g[A0][0] = Addr(p_3(c.g[S0][0] as u32, 0x4044)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9b0)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0x18)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9b8)?;
-        c.g[A0][0] = Addr(p_3(c.g[S1][0] as u32, 0xc)).lw(c);
-        call_ptr(c, 0x0042_3db0, 0x0031_a9c0)?;
-        frame.restore(c, S0, 0x20);
-        frame.restore(c, S1, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
 }
 
 // ---------------------------------------------------------------------------

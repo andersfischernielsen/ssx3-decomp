@@ -90,6 +90,14 @@ pub fn logged_returns(c: &mut Cpu) -> Vec<u32> {
         .collect()
 }
 
+/// The target of every call logged on this machine.
+pub fn logged_targets(c: &mut Cpu) -> Vec<u32> {
+    let n = c.bus.read32(LOG_COUNT);
+    (0..n)
+        .map(|i| c.bus.read32(LOG_START + 0x220 * i))
+        .collect()
+}
+
 /// The `miss` hook: a call to `target` returning to `ra`.
 pub fn fake_call(c: &mut Cpu, target: u32) {
     let ra = c.g[RA][0] as u32;

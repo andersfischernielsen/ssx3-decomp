@@ -20,7 +20,6 @@ pub(crate) use crate::game::fe::feasyncfile::gpa;
 pub(crate) use crate::game::fe::feasyncfile::gpn;
 pub(crate) use crate::game::fe::feasyncfile::lh_3 as lh_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_4;
-pub(crate) use crate::game::fe::feasyncfile::p as p_4;
 pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_2;
 pub(crate) use crate::game::fe::fepopupmisc::lh;
 pub(crate) use crate::game::fe::fepopupmisc::lw_2 as lw;
@@ -724,97 +723,6 @@ pub fn vd_create_texture_sink(c: &mut Cpu) {
         frame.restore(c, 17, 0x30);
         frame.restore(c, 18, 0x20);
         frame.restore(c, 19, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void VidEnginePlayer_Render(self, int force)` (0x253890): drive the
-/// player object's present or its frame-advance method.
-pub fn vid_engine_player_render(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x20);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        c.g[V0][0] = Addr(p_4(r32(c, S0), 0x38)).lw(c);
-        if c.g[V0][0] != 0 {
-            c.cycles += 3;
-            c.g[A2][0] = Addr(p_4(r32(c, S0), 0x3c)).lw(c);
-            let no_obj = c.g[A2][0] == 0;
-            c.g[A3][0] = c.g[A2][0];
-            if !no_obj {
-                // 1: the object's vtable slot (a3 + delta); 2: the player's
-                // own word field; 3: the object's other slot.
-                let mut via: u32;
-                c.cycles += 2;
-                if c.g[A1][0] != 0 {
-                    c.g[V0][0] = Addr(p_4(r32(c, A3), 4)).lw(c);
-                    via = 1;
-                } else {
-                    c.cycles += 3;
-                    c.g[V0][0] = Addr(p_4(r32(c, S0), 8)).lw(c);
-                    if c.g[V0][0] != 0 {
-                        c.g[V0][0] = Addr(p_4(r32(c, A3), 4)).lw(c);
-                        via = 1;
-                    } else {
-                        c.cycles += 3;
-                        c.g[V0][0] = Addr(p_4(r32(c, S0), 0x40)).lw(c);
-                        if c.g[V0][0] != 0 {
-                            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
-                            via = 2;
-                        } else {
-                            c.cycles += 3;
-                            c.g[V0][0] = Addr(p_4(r32(c, S0), 4)).lw(c);
-                            if c.g[V0][0] != 0 {
-                                c.g[V0][0] = Addr(p_4(r32(c, A3), 4)).lw(c);
-                                via = 1;
-                            } else {
-                                c.cycles += 1;
-                                c.g[V0][0] = Addr(r32(c, S0)).lw(c);
-                                via = 2;
-                            }
-                        }
-                        if via == 2 {
-                            c.cycles += 2;
-                            if c.g[V0][0] == 0 {
-                                c.g[V0][0] = Addr(p_4(r32(c, A2), 4)).lw(c);
-                                via = 3;
-                            } else {
-                                c.cycles += 1;
-                                c.g[V0][0] = Addr(p_4(r32(c, A3), 4)).lw(c);
-                                via = 1;
-                            }
-                        }
-                    }
-                }
-                if via == 1 {
-                    c.cycles += 6;
-                    c.g[A0][0] = Addr(p_4(r32(c, V0), 0x28)).lh(c);
-                    c.g[V1][0] = Addr(p_4(r32(c, V0), 0x2c)).lw(c);
-                    let present = r32(c, V1);
-                    c.g[A0][0] = sx(p_4(r32(c, A3), r32(c, A0)));
-                    call_ptr(c, present, 0x00253904)?;
-                    frame.restore(c, S0, 0x10);
-                } else {
-                    if via != 0 {
-                        c.cycles += 6;
-                        c.g[A1][0] = Addr(p_4(r32(c, S0), 0xc)).lw(c);
-                        c.g[A0][0] = Addr(p_4(r32(c, V0), 0x20)).lh(c);
-                        c.g[V1][0] = Addr(p_4(r32(c, V0), 0x24)).lw(c);
-                        let advance = r32(c, V1);
-                        c.g[A0][0] = sx(p_4(r32(c, A2), r32(c, A0)));
-                        call_ptr(c, advance, 0x00253920)?;
-                        Addr(p_4(r32(c, S0), 0x40)).sw(c, 0);
-                    }
-                    c.cycles += 1;
-                    frame.restore(c, S0, 0x10);
-                }
-            }
-        }
-        c.cycles += 3;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
