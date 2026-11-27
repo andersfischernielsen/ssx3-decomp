@@ -6,8 +6,12 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::dirtysock::tagsunk::gp_8 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
@@ -27,6 +31,7 @@ pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::movie::movieplayer::at as at_2;
 pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -111,6 +116,60 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0020_a430,
         cov_state_overlay_shutdown,
         "cOVStateOverlay_Shutdown",
+    ),
+    (
+        0x001f_7298,
+        oc989_enter_lodge_shutdown,
+        "OVScreenEnterLodge_Shutdown",
+    ),
+    (
+        0x001f_75a0,
+        oc989_bc_start_on_widget_action,
+        "OVScreenBCStart_OnWidgetAction",
+    ),
+    (
+        0x001f_7800,
+        oc989_bc_fail_on_widget_action,
+        "OVScreenBCFail_OnWidgetAction",
+    ),
+    (
+        0x001f_7958,
+        ov_screen_top_times_init,
+        "OVScreenTopTimes_Init",
+    ),
+    (
+        0x0022_0eb8,
+        ov_screen_enter_lodge_dtor,
+        "OVScreenEnterLodge_dtor",
+    ),
+    (
+        0x0022_0ee0,
+        ov_screen_enter_lodge_ctor,
+        "OVScreenEnterLodge_ctor",
+    ),
+    (0x0022_0f48, ov_screen_bc_start_ctor, "OVScreenBCStart_ctor"),
+    (
+        0x0022_0fa8,
+        ov_screen_bc_start_ctor_2,
+        "OVScreenBCStart_ctor_2",
+    ),
+    (0x0022_1018, ov_screen_bc_start_dtor, "OVScreenBCStart_dtor"),
+    (0x0022_1040, ov_screen_bc_fail_ctor, "OVScreenBCFail_ctor"),
+    (
+        0x0022_10a0,
+        ov_screen_bc_fail_ctor_2,
+        "OVScreenBCFail_ctor_2",
+    ),
+    (0x0022_1110, ov_screen_bc_fail_dtor, "OVScreenBCFail_dtor"),
+    (
+        0x0022_1138,
+        ov_screen_top_times_dtor,
+        "OVScreenTopTimes_dtor",
+    ),
+    (
+        0x0022_1160,
+        ov_screen_top_times_ctor,
+        "OVScreenTopTimes_ctor",
     ),
 ];
 
@@ -1083,6 +1142,1178 @@ pub fn ov_screen_top_times_on_activate(c: &mut Cpu) {
     })
 }
 
+/// `void OVScreenTopTimes_Init(cOVScreenTopTimes* self)` (0x001f7958): builds the
+/// "top times" pause overlay. Adds the two UI screens (title and list), runs the
+/// overlay base init, then fills the header text from the current event type
+/// (`0x535bc8+0x4a`: peak events use their name text, event 5 a formatted track
+/// name, others the track name plus the mode name from `0x535bc8+0x48`), shows or
+/// hides the full/short layout objects by mode, and writes five rows of
+/// score-holder name, owner and score (min:sec format in the full layout). Ends
+/// with the front-end confirmation sound. Every register, cycle and call is kept
+/// as in the generated body (its straight conversion: calls through `call_ptr`,
+/// the mode and event jump tables as `match`).
+pub fn ov_screen_top_times_init(c: &mut Cpu) {
+    if c.pc != 0x001f7958 {
+        return ee::s04::f_001f7958__generated(c);
+    }
+    guest(c, |c| 'l_1f7958: loop {
+        'b_1f79c8: {
+            c.cycles += 24;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x220));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x1f0));
+            c.g[S2][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x210));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x200));
+            c.g[A0][0] = 0x470000;
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x1e0));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xaf0));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x1d0));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x1c0));
+            c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x1b0));
+            c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x1a0));
+            c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x190));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x180), c.g[RA][0]);
+            c.sw((c.g[S2][0] as u32).wrapping_add(0xa0), 0u64);
+            c.g[RA][0] = sx(0x001f799c);
+            c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+            call_ptr(c, 0x00317670, 0x001f799c)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f79b0);
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00397cc0, 0x001f79b0)?;
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x40), c.g[V0][0]);
+            if t {
+                break 'b_1f79c8;
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x001f79c8);
+                c.g[A2][0] = 0u64;
+                call_ptr(c, 0x0039c870, 0x001f79c8)?;
+                break 'b_1f79c8;
+            }
+        }
+        'b_1f7a00: {
+            c.cycles += 11;
+            c.g[A0][0] = 0x470000;
+            c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+            c.g[RA][0] = sx(0x001f79d8);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1c88));
+            call_ptr(c, 0x00317670, 0x001f79d8)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f79ec);
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00397cc0, 0x001f79ec)?;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[V0][0];
+            if t {
+                break 'b_1f7a00;
+            } else {
+                c.cycles += 3;
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x001f7a00);
+                c.g[A2][0] = 0u64;
+                call_ptr(c, 0x0039c870, 0x001f7a00)?;
+                break 'b_1f7a00;
+            }
+        }
+        'b_1f7b90: {
+            'b_1f7acc: {
+                'b_1f7a90: {
+                    c.cycles += 22;
+                    c.g[V0][0] = 0x1;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[RA][0] = sx(0x001f7a10);
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x170), c.g[V0][0]);
+                    call_ptr(c, 0x0020a380, 0x001f7a10)?;
+                    c.g[RA][0] = sx(0x001f7a18);
+                    call_ptr(c, 0x0014dc80, 0x001f7a18)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x001f7a24);
+                    c.g[A1][0] = 0u64;
+                    call_ptr(c, 0x0014dd58, 0x001f7a24)?;
+                    c.g[RA][0] = sx(0x001f7a2c);
+                    c.g[S4][0] = c.g[V0][0];
+                    call_ptr(c, 0x0014dc80, 0x001f7a2c)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x001f7a38);
+                    c.g[A1][0] = 0x8;
+                    call_ptr(c, 0x0014dd58, 0x001f7a38)?;
+                    c.g[S5][0] = c.g[V0][0];
+                    c.g[V1][0] = 0x5;
+                    c.g[V0][0] = 0x530000;
+                    c.g[S6][0] = c.g[V0][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5bc8));
+                    c.g[A0][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x4a));
+                    let t = c.g[A0][0] == c.g[V1][0];
+                    c.g[A1][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x48));
+                    if t {
+                        break 'b_1f7a90;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < 5i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = (c.g[A1][0] < 0x6u64) as u64;
+                        if t {
+                            break 'b_1f7acc;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[A0][0] as i64) < 12i64) as u64;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = (c.g[A1][0] < 0x6u64) as u64;
+                            if t {
+                                break 'b_1f7acc;
+                            } else {
+                                c.cycles += 8;
+                                c.g[RA][0] = sx(0x001f7a78);
+                                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                                Callee {
+                                    addr: 0x001fd190,
+                                    f: ee::s04::FE_GetEventNameText,
+                                }
+                                .call(c, 0x001f7a78)?;
+                                c.g[S4][0] = c.g[S0][0];
+                                c.g[A1][0] = c.g[V0][0];
+                                c.g[RA][0] = sx(0x001f7a88);
+                                c.g[A0][0] = c.g[S0][0];
+                                call_ptr(c, 0x002c2508, 0x001f7a88)?;
+                                let t = true;
+                                c.g[A0][0] = 0x470000;
+                                if t {
+                                    break 'b_1f7b90;
+                                } else {
+                                    break 'b_1f7a90;
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 15;
+                c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x150));
+                c.g[A1][0] = 0x470000;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xae0));
+                c.g[RA][0] = sx(0x001f7aa4);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x002c2540, 0x001f7aa4)?;
+                c.g[A0][0] = c.g[S4][0];
+                c.g[RA][0] = sx(0x001f7ab0);
+                c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                call_ptr(c, 0x00144bf0, 0x001f7ab0)?;
+                c.g[S4][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = c.g[V0][0];
+                c.g[RA][0] = sx(0x001f7ac4);
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x002c26d0, 0x001f7ac4)?;
+                let t = true;
+                c.g[A0][0] = 0x470000;
+                if t {
+                    break 'b_1f7b90;
+                } else {
+                    break 'b_1f7acc;
+                }
+            }
+            'b_1f7b54: {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[S3][0] = 0u64;
+                if t {
+                    break 'b_1f7b54;
+                } else {
+                    'b_1f7b2c: {
+                        'b_1f7b20: {
+                            'b_1f7b10: {
+                                'b_1f7b00: {
+                                    c.cycles += 7;
+                                    c.g[V0][0] = 0x470000;
+                                    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xaa0));
+                                    c.g[V1][0] =
+                                        sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                                    let t = c.g[A0][0] as u32;
+                                    match t {
+                                        0x001f7958 => {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x001f7958);
+                                            }
+                                            continue 'l_1f7958;
+                                        }
+                                        0x001f7af0 => {
+                                            c.cycles += 4;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                                            c.g[A0][0] = 0x470000;
+                                            let t = true;
+                                            c.g[A0][0] =
+                                                sx((c.g[A0][0] as u32).wrapping_sub(0x1ab8));
+                                            if t {
+                                                break 'b_1f7b2c;
+                                            } else {
+                                                break 'b_1f7b00;
+                                            }
+                                        }
+                                        0x001f7b00 => {
+                                            break 'b_1f7b00;
+                                        }
+                                        0x001f7b10 => {
+                                            break 'b_1f7b10;
+                                        }
+                                        0x001f7b20 => {
+                                            break 'b_1f7b20;
+                                        }
+                                        0x001f7b54 => {
+                                            break 'b_1f7b54;
+                                        }
+                                        _ => {
+                                            c.jump_out(t, 0x001f7958, 0x001f7e68);
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                                c.g[A0][0] = 0x470000;
+                                let t = true;
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1c68));
+                                if t {
+                                    break 'b_1f7b2c;
+                                } else {
+                                    break 'b_1f7b10;
+                                }
+                            }
+                            c.cycles += 4;
+                            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                            c.g[A0][0] = 0x470000;
+                            let t = true;
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1c58));
+                            if t {
+                                break 'b_1f7b2c;
+                            } else {
+                                break 'b_1f7b20;
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                        c.g[A0][0] = 0x470000;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1c40));
+                        break 'b_1f7b2c;
+                    }
+                    c.cycles += 10;
+                    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
+                    c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
+                    c.g[RA][0] = sx(0x001f7b40);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    call_ptr(c, 0x00317670, 0x001f7b40)?;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+                    c.g[A0][0] = c.g[S0][0];
+                    let t = c.g[V1][0] as u32;
+                    c.g[RA][0] = sx(0x001f7b50);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, t, 0x001f7b50)?;
+                    c.g[S3][0] = c.g[V0][0];
+                    break 'b_1f7b54;
+                }
+            }
+            c.cycles += 15;
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x150));
+            c.g[A1][0] = 0x4a0000;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2400));
+            c.g[RA][0] = sx(0x001f7b68);
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x002c2540, 0x001f7b68)?;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[RA][0] = sx(0x001f7b74);
+            c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+            call_ptr(c, 0x00144bf0, 0x001f7b74)?;
+            c.g[S4][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A3][0] = c.g[S3][0];
+            c.g[RA][0] = sx(0x001f7b8c);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x002c26d0, 0x001f7b8c)?;
+            c.g[A0][0] = 0x470000;
+            break 'b_1f7b90;
+        }
+        'b_1f7ca4: {
+            'b_1f7c38: {
+                'b_1f7bc8: {
+                    c.cycles += 12;
+                    c.g[RA][0] = sx(0x001f7b98);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xad0));
+                    call_ptr(c, 0x00317670, 0x001f7b98)?;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x40));
+                    c.g[RA][0] = sx(0x001f7ba4);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0039d860, 0x001f7ba4)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x001f7bb0);
+                    c.g[A1][0] = c.g[S4][0];
+                    call_ptr(c, 0x003a0e90, 0x001f7bb0)?;
+                    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add(0x5bc8));
+                    c.g[V1][0] = c.lb((c.g[V0][0] as u32).wrapping_add(0x48));
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[V0][0] = 0x5;
+                    if t {
+                        break 'b_1f7bc8;
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V1][0] != c.g[V0][0] {
+                            c.g[A1][0] = 0x4a0000;
+                            break 'b_1f7c38;
+                        } else {
+                            break 'b_1f7bc8;
+                        }
+                    }
+                }
+                c.cycles += 28;
+                c.g[A1][0] = 0x4a0000;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2408));
+                c.g[RA][0] = sx(0x001f7bdc);
+                c.g[S0][0] = 0x470000;
+                call_ptr(c, 0x0039e948, 0x001f7bdc)?;
+                c.g[S1][0] = 0x470000;
+                c.g[A1][0] = 0x4a0000;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2410));
+                c.g[RA][0] = sx(0x001f7bf4);
+                c.g[S4][0] = c.g[S0][0];
+                call_ptr(c, 0x0039e8b8, 0x001f7bf4)?;
+                c.g[S3][0] = c.g[S1][0];
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x001f7c08);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xac0));
+                call_ptr(c, 0x0039e948, 0x001f7c08)?;
+                c.g[A1][0] = 0x470000;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x001f7c18);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xab0));
+                call_ptr(c, 0x0039e8b8, 0x001f7c18)?;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x001f7c24);
+                c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1608));
+                call_ptr(c, 0x0039e948, 0x001f7c24)?;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x001f7c30);
+                c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1618));
+                call_ptr(c, 0x0039e8b8, 0x001f7c30)?;
+                let t = true;
+                c.g[A1][0] = 0x4a0000;
+                if t {
+                    break 'b_1f7ca4;
+                } else {
+                    break 'b_1f7c38;
+                }
+            }
+            c.cycles += 27;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2408));
+            c.g[RA][0] = sx(0x001f7c48);
+            c.g[S0][0] = 0x470000;
+            call_ptr(c, 0x0039e8b8, 0x001f7c48)?;
+            c.g[S1][0] = 0x470000;
+            c.g[A1][0] = 0x4a0000;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2410));
+            c.g[RA][0] = sx(0x001f7c60);
+            c.g[S4][0] = c.g[S0][0];
+            call_ptr(c, 0x0039e948, 0x001f7c60)?;
+            c.g[S3][0] = c.g[S1][0];
+            c.g[A1][0] = 0x470000;
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x170), 0u64);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xac0));
+            c.g[RA][0] = sx(0x001f7c78);
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0039e8b8, 0x001f7c78)?;
+            c.g[A1][0] = 0x470000;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f7c88);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xab0));
+            call_ptr(c, 0x0039e948, 0x001f7c88)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f7c94);
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1608));
+            call_ptr(c, 0x0039e8b8, 0x001f7c94)?;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f7ca0);
+            c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1618));
+            call_ptr(c, 0x0039e948, 0x001f7ca0)?;
+            c.g[A1][0] = 0x4a0000;
+            break 'b_1f7ca4;
+        }
+        'b_1f7cf8: {
+            c.cycles += 14;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f7cb0);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2418));
+            call_ptr(c, 0x0039e948, 0x001f7cb0)?;
+            c.g[A1][0] = 0x4a0000;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f7cc0);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2420));
+            call_ptr(c, 0x0039e948, 0x001f7cc0)?;
+            c.g[A1][0] = 0x4a0000;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001f7cd0);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2090));
+            call_ptr(c, 0x0039e948, 0x001f7cd0)?;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x9f0));
+            if c.g[V0][0] == 0u64 {
+                c.g[S3][0] = 0x1;
+                break 'b_1f7cf8;
+            } else {
+                c.cycles += 7;
+                c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x1608));
+                c.g[RA][0] = sx(0x001f7ce8);
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0039e8b8, 0x001f7ce8)?;
+                c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1618));
+                c.g[RA][0] = sx(0x001f7cf4);
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0039e8b8, 0x001f7cf4)?;
+                c.g[S3][0] = 0x1;
+                break 'b_1f7cf8;
+            }
+        }
+        c.cycles += 6;
+        c.g[FP][0] = 0x4a0000;
+        c.g[S7][0] = 0x4a0000;
+        c.g[S4][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S6][0] = 0x4a0000;
+        c.g[V1][0] = 0x4a0000;
+        'l_1f7d10: loop {
+            'b_1f7e0c: {
+                'b_1f7df0: {
+                    c.cycles += 47;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x2428));
+                    c.g[RA][0] = sx(0x001f7d20);
+                    c.g[A2][0] = c.g[S3][0];
+                    call_ptr(c, 0x00417828, 0x001f7d20)?;
+                    c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
+                    c.g[RA][0] = sx(0x001f7d2c);
+                    c.g[A0][0] = c.g[SP][0];
+                    call_ptr(c, 0x00317670, 0x001f7d2c)?;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x40));
+                    c.g[RA][0] = sx(0x001f7d38);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0039d860, 0x001f7d38)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[RA][0] = sx(0x001f7d48);
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x00155208, 0x001f7d48)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x001f7d54);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x003a0c50, 0x001f7d54)?;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A2][0] = c.g[S3][0];
+                    c.g[RA][0] = sx(0x001f7d64);
+                    c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add(0x2430));
+                    call_ptr(c, 0x00417828, 0x001f7d64)?;
+                    c.g[RA][0] = sx(0x001f7d6c);
+                    c.g[A0][0] = c.g[SP][0];
+                    call_ptr(c, 0x00317670, 0x001f7d6c)?;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x40));
+                    c.g[RA][0] = sx(0x001f7d78);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0039d860, 0x001f7d78)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S5][0];
+                    c.g[RA][0] = sx(0x001f7d88);
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x00155190, 0x001f7d88)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x001f7d94);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x003a0c50, 0x001f7d94)?;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.g[A1][0] = sx((c.g[S7][0] as u32).wrapping_add(0x2438));
+                    c.g[RA][0] = sx(0x001f7da4);
+                    c.g[A2][0] = c.g[S3][0];
+                    call_ptr(c, 0x00417828, 0x001f7da4)?;
+                    c.g[RA][0] = sx(0x001f7dac);
+                    c.g[A0][0] = c.g[SP][0];
+                    call_ptr(c, 0x00317670, 0x001f7dac)?;
+                    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x40));
+                    c.g[RA][0] = sx(0x001f7db8);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0039d860, 0x001f7db8)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x170));
+                    c.g[V0][0] = 0x1;
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    if t {
+                        break 'b_1f7df0;
+                    } else {
+                        c.cycles += 9;
+                        c.g[RA][0] = sx(0x001f7dd4);
+                        c.g[A0][0] = c.g[S5][0];
+                        call_ptr(c, 0x00155130, 0x001f7dd4)?;
+                        c.g[RA][0] = sx(0x001f7ddc);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x0020a1a8, 0x001f7ddc)?;
+                        c.g[A1][0] = c.g[V0][0];
+                        c.g[RA][0] = sx(0x001f7de8);
+                        c.g[A0][0] = c.g[S4][0];
+                        call_ptr(c, 0x00417828, 0x001f7de8)?;
+                        let t = true;
+                        c.g[A0][0] = c.g[S0][0];
+                        if t {
+                            break 'b_1f7e0c;
+                        } else {
+                            break 'b_1f7df0;
+                        }
+                    }
+                }
+                c.cycles += 7;
+                c.g[RA][0] = sx(0x001f7df8);
+                c.g[A0][0] = c.g[S5][0];
+                call_ptr(c, 0x00155130, 0x001f7df8)?;
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S4][0];
+                c.g[RA][0] = sx(0x001f7e08);
+                c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_add(0x2138));
+                call_ptr(c, 0x00417828, 0x001f7e08)?;
+                c.g[A0][0] = c.g[S0][0];
+                break 'b_1f7e0c;
+            }
+            c.cycles += 6;
+            c.g[RA][0] = sx(0x001f7e14);
+            c.g[A1][0] = c.g[S4][0];
+            call_ptr(c, 0x003a0c50, 0x001f7e14)?;
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = ((c.g[S3][0] as i64) < 6i64) as u64;
+            let t = c.g[V0][0] != 0u64;
+            c.g[V1][0] = 0x4a0000;
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x001f7d10);
+                }
+                continue 'l_1f7d10;
+            } else {
+                c.cycles += 17;
+                c.g[RA][0] = sx(0x001f7e2c);
+                call_ptr(c, 0x0028b180, 0x001f7e2c)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[RA][0] = sx(0x001f7e38);
+                c.g[A1][0] = 0xe;
+                call_ptr(c, 0x00294f78, 0x001f7e38)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x210));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x200));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x1f0));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x1e0));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x1d0));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x1c0));
+                c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x1b0));
+                c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x1a0));
+                c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x190));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x180));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x220));
+                c.pc = t;
+                return Ok(());
+            }
+        }
+    });
+}
+
+/// `base + off` as a 32-bit guest address (the `off(reg)` operand).
+pub(crate) fn oc989_at(c: &Cpu, r: usize, off: u32) -> u32 {
+    (c.g[r][0] as u32).wrapping_add(off)
+}
+
+/// `gp + off` (negative offsets wrap, as the assembler's `-0x69c(gp)` does).
+pub(crate) fn oc989_gp(c: &Cpu, off: i32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_add(off as u32)
+}
+
+/// `void cOVScreenEnterLodge_Shutdown(cOVScreenEnterLodge* self)` (0x1f7298):
+/// clears the overlay's `+0x50` word and runs the overlay state shutdown.
+pub fn oc989_enter_lodge_shutdown(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        Addr(oc989_at(c, V0, 0x50)).sw(c, 0);
+        call_ptr(c, 0x0020_a430, 0x001f_72ac)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The `[gp+0xce8]` buy-attrib object's table update of the start screen
+/// (`0x530000` table of pointers indexed by the level `gp-0x69c`).
+pub(crate) fn oc989_bc_start_table(c: &mut Cpu) {
+    c.g[V0][0] = sx(0x0053_66e8);
+    c.g[A2][0] = 0x0044_0000;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x28f0));
+    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[A0][0] = 3;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let a0 = c.g[A0][0];
+    Addr(oc989_gp(c, -0x9f4)).sw(c, a0);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    let a1 = c.g[A1][0];
+    Addr(oc989_gp(c, -0x69c)).sw(c, a1);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+    let v1 = c.g[V1][0];
+    Addr(oc989_gp(c, -0x6a0)).sw(c, v1);
+}
+
+/// The `I` block of the start screen's message switch: `[gp+0xce8]` gets the
+/// attribute value, then one call (with a store on the zero path).
+pub(crate) fn oc989_bc_start_i_part(c: &mut Cpu) -> Flow {
+    c.cycles += 4;
+    c.g[A0][0] = Addr(oc989_gp(c, 0xce8)).lw(c);
+    call_ptr(c, 0x0030_b8c0, 0x001f_75e4)?;
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = Addr(oc989_at(c, S0, 0x9c)).lw(c);
+        c.cycles += 4;
+        c.g[A0][0] = Addr(oc989_gp(c, 0xce8)).lw(c);
+        let value = c.g[V0][0];
+        Addr(oc989_at(c, A0, 0x2a0)).sw(c, value);
+        call_ptr(c, 0x0030_b540, 0x001f_7608)?;
+        c.g[A1][0] = Addr(oc989_gp(c, -0x69c)).lw(c);
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = Addr(oc989_gp(c, 0xce8)).lw(c);
+        call_ptr(c, 0x0030_b6f8, 0x001f_75f4)?;
+        c.g[A1][0] = Addr(oc989_gp(c, -0x69c)).lw(c);
+    }
+    Ok(())
+}
+
+/// The `cycles += 19` tail of the start screen's message switch.
+pub(crate) fn oc989_bc_start_g_tail(c: &mut Cpu) -> Flow {
+    c.cycles += 19;
+    c.g[A0][0] = Addr(oc989_gp(c, 0xce8)).lw(c);
+    let value = c.g[V0][0];
+    Addr(oc989_at(c, A0, 0x2a0)).sw(c, value);
+    call_ptr(c, 0x0030_b658, 0x001f_7668)?;
+    c.g[A1][0] = Addr(oc989_gp(c, -0x69c)).lw(c);
+    oc989_bc_start_table(c);
+    Ok(())
+}
+
+/// The start screen's last block (the `cycles += 20` path): the table
+/// update, then two calls.
+pub(crate) fn oc989_bc_start_20(c: &mut Cpu) -> Flow {
+    c.cycles += 20;
+    oc989_bc_start_table(c);
+    call_ptr(c, 0x0028_b180, 0x001f_764c)?;
+    c.g[A0][0] = c.g[V0][0];
+    call_ptr(c, 0x0029_d6d0, 0x001f_7654)?;
+    Ok(())
+}
+
+/// The message switch of `OVScreenBCStart::OnWidgetAction`. Returns true when
+/// the function falls into its `cycles += 1` tail, false when it leaves at
+/// once.
+pub(crate) fn oc989_bc_start_switch(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = 5;
+    let is_five = c.g[A2][0] == c.g[V0][0];
+    c.g[V0][0] = 6;
+    if !is_five {
+        c.cycles += 2;
+        if c.g[A2][0] == c.g[V0][0] {
+            c.g[V0][0] = Addr(oc989_at(c, S0, 0x9c)).lw(c);
+            oc989_bc_start_g_tail(c)?;
+            return Ok(true);
+        }
+        c.cycles += 2;
+        return Ok(false);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(oc989_at(c, A1, 0x18)).lw(c);
+    if c.g[V0][0] != 0 {
+        c.g[V0][0] = Addr(oc989_at(c, S0, 0x9c)).lw(c);
+        oc989_bc_start_g_tail(c)?;
+        return Ok(true);
+    }
+    oc989_bc_start_i_part(c)?;
+    oc989_bc_start_20(c)?;
+    Ok(false)
+}
+
+/// `void OVScreenBCStart_OnWidgetAction(OVScreenBCStart* self, item, int msg)`
+/// (0x1f75a0): on a widget action for the first (5) or second (6) message,
+/// records the chosen value in the start screen's object at `[gp+0xce8]`.
+/// For `msg` 5 the item's `+0x18` word picks which of the two paths runs.
+pub fn oc989_bc_start_on_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let fall = if c.g[A1][0] == 0 {
+            true
+        } else {
+            oc989_bc_start_switch(c)?
+        };
+        if fall {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The table update of the fail screen (the `0x530000` pointer table).
+pub(crate) fn oc989_bc_fail_table(c: &mut Cpu) {
+    c.g[A0][0] = Addr(oc989_gp(c, -0x69c)).lw(c);
+    c.g[A1][0] = sx(0x0053_66e8);
+    c.g[A2][0] = sx(0x0044_28f0);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+    c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+    let level = c.g[A0][0];
+    Addr(oc989_gp(c, -0x69c)).sw(c, level);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+    let v1 = c.g[V1][0];
+    Addr(oc989_gp(c, -0x6a0)).sw(c, v1);
+}
+
+/// The `cycles += 20` block of the fail screen: two calls, the table update.
+pub(crate) fn oc989_bc_fail_twenty(c: &mut Cpu) -> Flow {
+    c.cycles += 20;
+    c.g[A0][0] = Addr(oc989_gp(c, 0xce8)).lw(c);
+    call_ptr(c, 0x0030_b658, 0x001f_78fc)?;
+    c.g[A0][0] = Addr(oc989_at(c, S0, 0x10)).lw(c);
+    c.g[A1][0] = 1;
+    c.g[A0][0] = sx(oc989_at(c, A0, 0x18));
+    call_ptr(c, 0x0039_f190, 0x001f_790c)?;
+    oc989_bc_fail_table(c);
+    Ok(())
+}
+
+/// The `A2 == 6` block of the fail screen: a hash lookup and one object call.
+pub(crate) fn oc989_bc_fail_h(c: &mut Cpu) -> Flow {
+    c.cycles += 9;
+    c.g[A0][0] = sx(0x0046_e050);
+    call_ptr(c, 0x0031_7670, 0x001f_78cc)?;
+    c.g[A0][0] = Addr(oc989_at(c, S0, 0x40)).lw(c);
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, 0x0039_c778, 0x001f_78d8)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = 0xffff;
+    let not_found = c.g[A1][0] != c.g[V0][0];
+    c.g[A1][0] &= 0xffff;
+    if not_found {
+        c.cycles += 3;
+        c.g[A0][0] = Addr(oc989_at(c, S0, 0x40)).lw(c);
+        c.g[A2][0] = 1;
+        call_ptr(c, 0x0039_c870, 0x001f_78f4)?;
+    }
+    Ok(())
+}
+
+/// The message switch of `OVScreenBCFail::OnWidgetAction`. Returns true when
+/// the function falls into its `cycles += 1` tail, false when it leaves at
+/// once.
+pub(crate) fn oc989_bc_fail_switch(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = 5;
+    let is_five = c.g[A2][0] == c.g[V0][0];
+    c.g[V0][0] = 6;
+    if !is_five {
+        c.cycles += 2;
+        c.g[A0][0] = 0x0047_0000;
+        if c.g[A2][0] != c.g[V0][0] {
+            c.cycles += 2;
+            return Ok(false);
+        }
+        oc989_bc_fail_h(c)?;
+        oc989_bc_fail_twenty(c)?;
+        return Ok(true);
+    }
+    c.cycles += 3;
+    c.g[A1][0] = Addr(oc989_at(c, A1, 0x18)).lw(c);
+    c.g[V0][0] = 2;
+    if c.g[A1][0] == 0 {
+        c.cycles += 28;
+        c.g[V0][0] = Addr(oc989_gp(c, 0xce8)).lw(c);
+        c.g[V1][0] = Addr(oc989_at(c, S0, 0x9c)).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        let value = c.g[V1][0];
+        Addr(oc989_at(c, V0, 0x2a0)).sw(c, value);
+        call_ptr(c, 0x0030_b6f8, 0x001f_7850)?;
+        c.g[A0][0] = Addr(oc989_at(c, S0, 0x10)).lw(c);
+        c.g[A1][0] = 1;
+        c.g[A0][0] = sx(oc989_at(c, A0, 0x18));
+        call_ptr(c, 0x0039_f190, 0x001f_7860)?;
+        oc989_bc_fail_table(c);
+        call_ptr(c, 0x0028_b180, 0x001f_789c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0029_d6d0, 0x001f_78a4)?;
+        return Ok(false);
+    }
+    c.cycles += 2;
+    if c.g[A1][0] != c.g[V0][0] {
+        oc989_bc_fail_twenty(c)?;
+        return Ok(true);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = 0x1d;
+    call_ptr(c, 0x0020_ab50, 0x001f_78bc)?;
+    Ok(false)
+}
+
+/// `void OVScreenBCFail_OnWidgetAction(OVScreenBCFail* self, item, int msg)`
+/// (0x1f7800): the fail screen's counterpart of the start screen's handler:
+/// message 5 with the item's `+0x18` word picks the path, message 6 looks up
+/// a widget by hash, and the rest of the work is the same table update.
+pub fn oc989_bc_fail_on_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let fall = if c.g[A1][0] == 0 {
+            true
+        } else {
+            oc989_bc_fail_switch(c)?
+        };
+        if fall {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_ENTERLODGE::~cOVState_ENTERLODGE` (0x220eb8): stores the
+/// ENTERLODGE vtable (`0x470000 + 0x4e08`) at `this+8`, then calls
+/// `UIState_dtor` (0x39e390) on `this`.
+pub fn ov_screen_enter_lodge_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x0047_0000u32.wrapping_add(0x4e08));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0039_e390, 0x0022_0ed4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_ENTERLODGE::cOVState_ENTERLODGE(this, engine, overlayId)`
+/// (0x220ee0): the base constructor `UIState_ctor` (0x39e2a0) with the engine
+/// argument, then the overlay id at `+0x98`, the vtable at `+8` (stored twice:
+/// the second value, `0x473760`, stays), zeroed words at `+0x48/+0x4c/+0x54`,
+/// and the 16-bit word at `+0x58` read from `0x4a2088`.
+pub fn ov_screen_enter_lodge_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0039_e2a0, 0x0022_0efc)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x98), c.g[S1][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4e08));
+        c.sw(this.wrapping_add(0x48), 0);
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x54), 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3760));
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        c.g[A0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2088));
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.sh(this.wrapping_add(0x58), c.g[A0][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_BIGCHALLENGE_START::cOVState_BIGCHALLENGE_START(this, engine,
+/// overlayId)` (0x220f48, `func_00220F48` in the reference): `UIState_ctor`
+/// with a zero engine argument, then the zeroed words, the BIGCHALLENGE_START
+/// vtable (`0x473688`) at `+8`, and the 16-bit word at `+0x58`.
+pub fn ov_screen_bc_start_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x0022_0f60)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x98), 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4e08));
+        c.sw(this.wrapping_add(0x48), 0);
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x54), 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3688));
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2088));
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.sh(this.wrapping_add(0x58), c.g[A0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_BIGCHALLENGE_START` constructor, the variant with the overlay id
+/// (0x220fa8): `UIState_ctor` with the engine argument, the overlay id at
+/// `+0x98`, the vtable at `+8`, zeroed words, the 16-bit word at `+0x58`, then
+/// `OVScreenBCStart_PopEventArg` (0x1f7548) on `this` (returns to 0x221000).
+pub fn ov_screen_bc_start_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0039_e2a0, 0x0022_0fc4)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x98), c.g[S1][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4e08));
+        c.sw(this.wrapping_add(0x48), 0);
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.g[V0][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x54), 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3688));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2088));
+        c.sw(this.wrapping_add(0x8), c.g[V0][0]);
+        c.sh(this.wrapping_add(0x58), c.g[V1][0]);
+        call_ptr(c, 0x001f_7548, 0x0022_1000)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_BIGCHALLENGE_START::~cOVState_BIGCHALLENGE_START` (0x221018):
+/// the BIGCHALLENGE_START vtable (`0x470000 + 0x4e08`) at `this+8`, then
+/// `UIState_dtor` (0x39e390) on `this`.
+pub fn ov_screen_bc_start_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x0047_0000u32.wrapping_add(0x4e08));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0039_e390, 0x0022_1034)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_BIGCHALLENGE_FAIL::cOVState_BIGCHALLENGE_FAIL(this)` (0x221040):
+/// `UIState_ctor` with a zero engine argument, then the zeroed words, the
+/// BIGCHALLENGE_FAIL vtable (`0x4735b0`) at `+8`, and the 16-bit word at `+0x58`.
+pub fn ov_screen_bc_fail_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x0022_1058)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x98), 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4e08));
+        c.sw(this.wrapping_add(0x48), 0);
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x54), 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x35b0));
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2088));
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.sh(this.wrapping_add(0x58), c.g[A0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cOVState_BIGCHALLENGE_FAIL` constructor, the variant with the overlay id
+/// (0x2210a0): as the BIGCHALLENGE_START variant, with the FAIL vtable
+/// (`0x4735b0`), then `OVScreenBCFail_PopEventArg` (0x1f7738) on `this`
+/// (returns to 0x2210f8).
+pub fn ov_screen_bc_fail_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0039_e2a0, 0x0022_10bc)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x98), c.g[S1][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4e08));
+        c.sw(this.wrapping_add(0x48), 0);
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.g[A1][0] = 0x004a_0000;
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.g[V0][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0x54), 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x35b0));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2088));
+        c.sw(this.wrapping_add(0x8), c.g[V0][0]);
+        c.sh(this.wrapping_add(0x58), c.g[V1][0]);
+        call_ptr(c, 0x001f_7738, 0x0022_10f8)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cUIState_cUIState` (0x39e2a0): the base constructor every overlay state runs first.
+pub(crate) const OV_STATE_BASE_CTOR: u32 = 0x0039_e2a0;
+
+/// `cUIState__cUIState` (0x39e390): the base destructor the overlay destructors run.
+pub(crate) const OV_STATE_BASE_DTOR: u32 = 0x0039_e390;
+
+/// `EventSelect_ctor` (0x2006b8): the event-select object the map overlay builds.
+pub(crate) const OV_EVENT_SELECT_CTOR: u32 = 0x0020_06b8;
+
+/// The address `lui 0x470000; addiu off` forms: a vtable or static in the
+/// 0x47xxxx data of the image (the overlay state vtables).
+pub(crate) fn ov_image_sym(off: u32) -> u64 {
+    let base: u32 = 0x0047_0000;
+    sx(base.wrapping_add(off))
+}
+
+/// Shared body of the overlay state destructors (0x221110, 0x221138, 0x221298):
+/// store the overlay vtable at `this+8` (`this` = `a0`), then run the base
+/// destructor with the same `a0`. `ret` is the return address of that call.
+pub(crate) fn ov_state_dtor_body(c: &mut Cpu, ret: u32) -> Flow {
+    c.cycles += 10;
+    let frame = Frame::open(c, 0x10);
+    frame.save_ra(c, 0);
+    c.g[V1][0] = c.g[A0][0];
+    c.g[V0][0] = ov_image_sym(0x4e08);
+    let vtable = c.g[V0][0];
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, vtable);
+    call_ptr(c, OV_STATE_BASE_DTOR, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cOVState_BIGCHALLENGE_FAIL::~` (0x221110): overlay vtable at `this+8`, then the base dtor.
+pub fn ov_screen_bc_fail_dtor(c: &mut Cpu) {
+    guest(c, |c| ov_state_dtor_body(c, 0x0022_112c));
+}
+
+/// `cOVState_TOPTIMES::~` (0x221138): the same destructor shape as the BC fail screen.
+pub fn ov_screen_top_times_dtor(c: &mut Cpu) {
+    guest(c, |c| ov_state_dtor_body(c, 0x0022_1154));
+}
+
+/// `cOVState_TOPTIMES::cOVState_TOPTIMES(this, engine, overlayId)` (0x221160):
+/// the base constructor with `overlayId` (a2), then the top-times vtables and
+/// fields (overlay id at +0x98, zeroed lists and counters, a halfword from the
+/// game image's table at `0x4a2088` into +0x58). Returns `this` in v0.
+pub fn ov_screen_top_times_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, OV_STATE_BASE_CTOR, 0x0022_117c)?;
+        let this = Addr(c.g[S0][0] as u32);
+        let overlay_id = c.g[S1][0];
+        this.off(0x98).sw(c, overlay_id);
+        this.off(0x48).sw(c, 0);
+        let vtable = ov_image_sym(0x4e08);
+        c.g[V1][0] = vtable;
+        this.off(0x8).sw(c, vtable);
+        c.g[A1][0] = 0x004a_0000;
+        this.off(0x4c).sw(c, 0);
+        this.off(0x54).sw(c, 0);
+        c.g[V1][0] = ov_image_sym(0x34d0);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        let halfword = Addr((c.g[A1][0] as u32).wrapping_add(0x2088)).lhu(c);
+        c.g[A0][0] = halfword;
+        let v1 = c.g[V1][0];
+        this.off(0x8).sw(c, v1);
+        this.off(0x58).sh(c, halfword);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1548,6 +2779,338 @@ pub(crate) mod tests {
                 // No screen: PlayObjectAnim takes its not-found path.
                 w(c, DATA + 0x40, 0);
                 c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine_rt;
+    use crate::difftest::Rng;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::oc982_machine;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::oc982_path_count;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::oc982_world;
+
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::OC982_SELF;
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// The game state bytes at `0x535bc8`: `+0x48` mode, `+0x49` flag, `+0x4a` event.
+    pub(crate) const OC982_STATE: u32 = 0x0053_5bc8;
+
+    // -- 0x001f7958 OVScreenTopTimes_Init ------------------------------------
+
+    pub(crate) fn top_times_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc982_machine(c, seed, 0x1f7958, 70);
+        oc982_world(c, &mut r);
+        // Event type (5, the peak events 6..11, others) and mode (0..7).
+        let ev = [5u8, 6, 9, 11, 0, 3, 12, 7][seed as usize % 8];
+        let mode = ((seed / 3) % 8) as u8;
+        c.bus.write8(OC982_STATE + 0x4a, ev);
+        c.bus.write8(OC982_STATE + 0x48, mode);
+        c.bus.write32(GAME_GP.wrapping_sub(0x9f0), (seed / 5) % 2);
+        c.g[A0][0] = OC982_SELF as u64;
+        c.pc = 0x001f_7958;
+    }
+
+    /// OVScreenTopTimes_Init with every callee faked (some seeds unwind inside
+    /// a call, some results are zero), over the event types and modes.
+    #[test]
+    fn ov_screen_top_times_init_matches() {
+        check(
+            ee::s04::f_001f7958__generated,
+            ov_screen_top_times_init,
+            96,
+            &top_times_setup,
+        );
+        assert!(
+            oc982_path_count(ee::s04::f_001f7958__generated, 96, &top_times_setup) >= 4,
+            "fixture reaches too few paths"
+        );
+    }
+
+    #[test]
+    fn oc989_enter_lodge_shutdown_matches() {
+        check(
+            ee::s04::f_001f7298__generated,
+            oc989_enter_lodge_shutdown,
+            24,
+            &|c, seed| {
+                machine_rt(c, seed, 0x001f_7298, 0);
+                elf_image(c);
+                c.bus.write32(DATA + 0x10, seed);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    #[test]
+    fn oc989_bc_start_on_widget_action_matches() {
+        check(
+            ee::s04::f_001f75a0__generated,
+            oc989_bc_start_on_widget_action,
+            24,
+            &|c, seed| {
+                machine_rt(c, seed, 0x001f_75a0, 0);
+                elf_image(c);
+                let this = DATA + 0x100;
+                let item = DATA + 0x200;
+                c.bus.write32(item + 0x18, seed % 2);
+                c.bus.write32(this + 0x9c, seed);
+                c.bus.write32(GAME_GP + 0xce8, DATA + 0x800);
+                c.bus.write32(GAME_GP.wrapping_sub(0x69c), 2 + seed % 3);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(item) };
+                c.g[A2][0] = [5u64, 6, 7][(seed % 3) as usize];
+            },
+        );
+    }
+
+    #[test]
+    fn oc989_bc_fail_on_widget_action_matches() {
+        check(
+            ee::s04::f_001f7800__generated,
+            oc989_bc_fail_on_widget_action,
+            24,
+            &|c, seed| {
+                machine_rt(c, seed, 0x001f_7800, 0);
+                elf_image(c);
+                let this = DATA + 0x100;
+                let item = DATA + 0x200;
+                c.bus.write32(item + 0x18, seed % 3);
+                c.bus.write32(this + 0x9c, seed);
+                c.bus.write32(this + 0x40, DATA + 0x500);
+                c.bus.write32(GAME_GP + 0xce8, DATA + 0x800);
+                c.bus.write32(GAME_GP.wrapping_sub(0x69c), 2 + seed % 3);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 5 == 0 { 0 } else { sx(item) };
+                c.g[A2][0] = [5u64, 6, 7][(seed % 3) as usize];
+            },
+        );
+    }
+
+    /// The fixture shared by the eight functions: scrambled registers, `this`
+    /// at `DATA + 0x100`, the engine (a1) and overlay id (a2) varied by seed.
+    pub(crate) fn object_fixture(c: &mut Cpu, seed: u32, salt: u64) -> u32 {
+        let mut r = machine(c, seed, salt, 0);
+        let this = DATA + 0x100;
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = (seed % 4) as u64;
+        c.g[A2][0] = if seed % 3 == 0 {
+            0
+        } else {
+            r.next_u32() as u64
+        };
+        this
+    }
+
+    /// The constructors' `_2` variants call a `PopEventArg` helper that pops
+    /// the global queue at `gp-0xce8`: an empty queue takes its fallback.
+    pub(crate) fn empty_pop_queue(c: &mut Cpu, queue: u32) {
+        c.bus.write32(GAME_GP + 0xce8, queue);
+        c.bus.write32(queue + 0x1c4, 0);
+    }
+
+    #[test]
+    fn ov_screen_enter_lodge_dtor_matches() {
+        check(
+            ee::s05::f_00220eb8__generated,
+            ov_screen_enter_lodge_dtor,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_0eb8);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_enter_lodge_ctor_matches() {
+        check(
+            ee::s05::f_00220ee0__generated,
+            ov_screen_enter_lodge_ctor,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_0ee0);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_bc_start_ctor_matches() {
+        check(
+            ee::s05::f_00220f48__generated,
+            ov_screen_bc_start_ctor,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_0f48);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_bc_start_ctor_2_matches() {
+        check(
+            ee::s05::f_00220fa8__generated,
+            ov_screen_bc_start_ctor_2,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_0fa8);
+                empty_pop_queue(c, DATA + 0x1000);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_bc_start_dtor_matches() {
+        check(
+            ee::s05::f_00221018__generated,
+            ov_screen_bc_start_dtor,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_1018);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_bc_fail_ctor_matches() {
+        check(
+            ee::s05::f_00221040__generated,
+            ov_screen_bc_fail_ctor,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_1040);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_bc_fail_ctor_2_matches() {
+        check(
+            ee::s05::f_002210a0__generated,
+            ov_screen_bc_fail_ctor_2,
+            200,
+            &|c, seed| {
+                object_fixture(c, seed, 0x0022_10a0);
+                empty_pop_queue(c, DATA + 0x200);
+            },
+        );
+    }
+
+    /// Gate word in the test machine's RAM: the callee fakes answer only when it
+    /// holds [`OC1004_MAGIC`] (otherwise they run the generated bodies).
+    pub(crate) const OC1004_GATE: u32 = DATA + 0x000f_0000;
+
+    pub(crate) const OC1004_MAGIC: u32 = 0x1004_c0de;
+
+    /// The overlay object every test passes as `this`.
+    pub(crate) const OC1004_THIS: u32 = DATA + 0x1000;
+
+    pub(crate) static OC1004_PREV_BASE_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1004_PREV_BASE_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1004_PREV_EVENT_SELECT: AtomicUsize = AtomicUsize::new(0);
+
+    /// Gated fake of the base constructor: logs the call and returns to `ra`.
+    pub(crate) fn oc1004_fake_base_ctor(c: &mut Cpu) {
+        if c.bus.read32(OC1004_GATE) != OC1004_MAGIC {
+            return fakes::fall_back(c, &OC1004_PREV_BASE_CTOR, ee::s13::f_0039e2a0__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, OV_STATE_BASE_CTOR, ret);
+    }
+
+    /// Gated fake of the base destructor.
+    pub(crate) fn oc1004_fake_base_dtor(c: &mut Cpu) {
+        if c.bus.read32(OC1004_GATE) != OC1004_MAGIC {
+            return fakes::fall_back(c, &OC1004_PREV_BASE_DTOR, ee::s13::f_0039e390__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, OV_STATE_BASE_DTOR, ret);
+    }
+
+    /// Gated fake of `EventSelect_ctor`.
+    pub(crate) fn oc1004_fake_event_select(c: &mut Cpu) {
+        if c.bus.read32(OC1004_GATE) != OC1004_MAGIC {
+            return fakes::fall_back(c, &OC1004_PREV_EVENT_SELECT, ee::s05::f_002006b8__generated);
+        }
+        let ret = c.g[RA][0] as u32;
+        fakes::fake(c, OV_EVENT_SELECT_CTOR, ret);
+    }
+
+    /// Hook the three fakes into their override slots (once per process).
+    pub(crate) fn oc1004_install_fakes() {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E2A0),
+            oc1004_fake_base_ctor,
+            &OC1004_PREV_BASE_CTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E390),
+            oc1004_fake_base_dtor,
+            &OC1004_PREV_BASE_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_002006B8),
+            oc1004_fake_event_select,
+            &OC1004_PREV_EVENT_SELECT,
+        );
+    }
+
+    /// Scrambled registers, the callee fakes armed, the overlay object filled
+    /// with random words and passed as `a0`. Every other seed makes an event
+    /// due at the first loop back edge.
+    pub(crate) fn oc1004_setup(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc1004_install_fakes();
+        let mut r = machine(c, seed, salt, calls);
+        c.bus.write32(OC1004_GATE, OC1004_MAGIC);
+        // The halfword the constructors copy from the image table at 0x4a2088.
+        c.bus.write32(0x004a_2088, r.next_u32());
+        fill(c, &mut r, OC1004_THIS, 0x40);
+        c.g[A0][0] = sx(OC1004_THIS);
+        if seed % 2 == 0 {
+            c.next_event = c.cycles;
+        }
+        r
+    }
+
+    #[test]
+    fn ov_screen_bc_fail_dtor_matches() {
+        covered(
+            ee::s05::f_00221110__generated,
+            ov_screen_bc_fail_dtor,
+            240,
+            &|c, seed| {
+                oc1004_setup(c, seed, 0x0022_1110, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_top_times_dtor_matches() {
+        covered(
+            ee::s05::f_00221138__generated,
+            ov_screen_top_times_dtor,
+            240,
+            &|c, seed| {
+                oc1004_setup(c, seed, 0x0022_1138, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_top_times_ctor_matches() {
+        covered(
+            ee::s05::f_00221160__generated,
+            ov_screen_top_times_ctor,
+            240,
+            &|c, seed| {
+                let mut r = oc1004_setup(c, seed, 0x0022_1160, 1);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
             },
         );
     }

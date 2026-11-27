@@ -126,6 +126,27 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001f_1338, hud_draw_rect, "HUD_DrawRect"),
     (0x001f_25e0, hud_draw_text_lerp_w, "HUD_DrawTextLerpW"),
     (0x001f_2db0, hud_draw_wrapped_text_w, "HUD_DrawWrappedTextW"),
+    (0x0021_cc40, ov_state_hud1p_dtor, "cOVStateHUD1P_dtor"),
+    (
+        0x0021_d070,
+        ov_screen_hiscore_list_ctor,
+        "OVScreenHiscoreList_ctor",
+    ),
+    (
+        0x0021_d0d0,
+        ov_screen_hiscore_list_ctor_2,
+        "OVScreenHiscoreList_ctor_2",
+    ),
+    (
+        0x0021_d138,
+        ov_screen_hiscore_list_dtor,
+        "OVScreenHiscoreList_dtor",
+    ),
+    (
+        0x0021_f660,
+        c_ov_state_hud1p_draw_race_time,
+        "cOVStateHUD1P_DrawRaceTime",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -22431,6 +22452,447 @@ pub fn hud_draw_rect(c: &mut Cpu) {
     })
 }
 
+/// HUD element table entry size (`elems + index * 0x24`).
+pub(crate) const RACE_TIME_ELEM_SIZE: u32 = 0x24;
+
+/// Element index of the race-time panel (`flag == 0`) and of the small variant.
+pub(crate) const RACE_TIME_ELEM: u32 = 0x42;
+
+pub(crate) const RACE_TIME_ELEM_SMALL: u32 = 0x1b;
+
+/// `self` fields: the two textures and the time font.
+pub(crate) const RACE_TIME_TEX: u32 = 0x4b4;
+
+pub(crate) const RACE_TIME_TEX_SMALL: u32 = 0x49c;
+
+pub(crate) const RACE_TIME_FONT: u32 = 0x42c;
+
+/// Mode byte (0 or 5: clock time, otherwise a points count), the per-rider
+/// value table and the two `sprintf` formats.
+#[cfg(test)]
+pub(crate) const RACE_TIME_MODE: u32 = 0x0053_5c10;
+
+#[cfg(test)]
+pub(crate) const RACE_TIME_VALUES: u32 = 0x0053_6640;
+
+#[cfg(test)]
+pub(crate) const RACE_TIME_FMT_CLOCK: u32 = 0x0046_ed68;
+
+#[cfg(test)]
+pub(crate) const RACE_TIME_FMT_COUNT: u32 = 0x004a_2138;
+
+/// Text colour (16 bytes) copied into the font.
+#[cfg(test)]
+pub(crate) const RACE_TIME_COLOUR: u32 = 0x004c_8808;
+
+/// `void cOVStateHUD1P::DrawRaceTime(self, elems, rider, x, flag)`
+/// (0x0021f660): draws the race-time sprite panel (`HUD_DrawSprite`, element
+/// 0x42, or the small element 0x1b when `flag != 0`); with `flag == 0` it also
+/// prints the rider's time (`h:mm:ss`, or a points count in other modes) in
+/// the HUD font, centred on the panel with the shared colour.
+/// Args: a0 `self`, a1 element table, a2 rider (index at +0), a3 `x`, t0 `flag`.
+pub fn c_ov_state_hud1p_draw_race_time(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x150);
+        let sp0 = sp(c);
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = Addr(gp.wrapping_sub(0x848)).lw(c); // world
+        frame.save(c, S3, 0x110);
+        frame.save(c, S4, 0x100);
+        c.g[S3][0] = c.g[A3][0]; // x
+        frame.save(c, S6, 0xe0);
+        c.g[S4][0] = c.g[A0][0]; // self
+        frame.save(c, FP, 0xc0);
+        c.g[S6][0] = c.g[T0][0]; // flag
+        frame.save(c, S0, 0x140);
+        c.g[FP][0] = c.g[A2][0]; // rider
+        frame.save(c, S1, 0x130);
+        frame.save(c, S2, 0x120);
+        frame.save(c, S5, 0xf0);
+        frame.save(c, S7, 0xd0);
+        frame.save_ra(c, 0xb0);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+        c.g[V1][0] = Addr(c.g[FP][0] as u32).lw(c);
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xc)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[A0][0] = RACE_TIME_ELEM as u64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[S5][0] = Addr((c.g[S4][0] as u32).wrapping_add(RACE_TIME_TEX)).lw(c);
+        let small = c.g[S6][0] != 0;
+        c.g[S7][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x28)).lw(c); // rider object
+        if small {
+            c.cycles += 2;
+            c.g[S5][0] = Addr((c.g[S4][0] as u32).wrapping_add(RACE_TIME_TEX_SMALL)).lw(c);
+            c.g[A0][0] = RACE_TIME_ELEM_SMALL as u64;
+        }
+
+        // The sprite: position / size / scale of the element, aligned, drawn.
+        c.cycles += 60;
+        c.g[S0][0] = RACE_TIME_ELEM_SIZE as u64;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.mult(0, V0, A0, S0);
+        c.g[S2][0] = sx(sp0.wrapping_add(0x20)); // &a
+        c.swc1(0, sp0.wrapping_add(0x4)); // scale = (1, 1)
+        c.swc1(0, sp0);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32)); // element
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x001e_91f8, 0x0021_f6f8)?; // HUD_GetElemPos(e, &a)
+        c.g[S1][0] = sx(sp0.wrapping_add(0x30)); // &size
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x001e_9220, 0x0021_f70c)?; // HUD_GetElemSize(e, &size, tex)
+        c.g[A1][0] = sx(sp0.wrapping_add(0x40)); // &sc
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x001e_9290, 0x0021_f718)?; // HUD_GetElemScale(e, &sc)
+        c.lwc1(0, sp0.wrapping_add(0x30));
+        c.g[T3][0] = c.g[S3][0]; // x
+        c.lwc1(1, sp0.wrapping_add(0x34));
+        c.g[S3][0] = sx(sp0.wrapping_add(0x10)); // &p
+        c.lwc1(2, sp0.wrapping_add(0x40));
+        c.g[A2][0] = c.g[S2][0];
+        c.lwc1(3, sp0.wrapping_add(0x44));
+        c.g[T0][0] = c.g[SP][0];
+        c.mul_s(0, 0, 2); // size *= sc
+        c.g[A3][0] = c.g[S1][0];
+        c.mul_s(1, 1, 3);
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.swc1(0, sp0.wrapping_add(0x30));
+        c.swc1(1, sp0.wrapping_add(0x34));
+        c.g[T2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x21)).lb(c);
+        c.g[T1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x20)).lb(c);
+        call_ptr(c, 0x001f_10f8, 0x0021_f760)?; // HUD_AlignElemPos(self, &p, &a, &size, &scale, ax, ay, x)
+        c.g[S2][0] = sx(sp0.wrapping_add(0x50)); // &colour
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        call_ptr(c, 0x001e_91a8, 0x0021_f770)?; // HUD_GetElemColor(e, &colour)
+        c.g[V0][0] = Addr(gp.wrapping_sub(0x854)).lw(c); // renderer
+        c.g[T0][0] = !0x3e0u64; // clears the layer bits
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x22)).lb(c);
+        c.g[A1][0] = c.g[S5][0];
+        c.g[T2][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xe84)).lw(c); // draw state
+        c.g[A2][0] = c.g[S3][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
+        c.g[A3][0] = c.g[S1][0];
+        c.g[V0][0] = Addr((c.g[T2][0] as u32).wrapping_add(0x8)).lw(c);
+        c.g[V1][0] &= 0x3e0;
+        c.g[T1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S4][0];
+        c.g[V0][0] &= c.g[T0][0];
+        c.g[V0][0] |= c.g[V1][0];
+        c.g[T0][0] = c.g[SP][0];
+        let state = (c.g[T2][0] as u32).wrapping_add(0x8);
+        let word = c.g[V0][0];
+        Addr(state).sw(c, word); // state flags with the element's layer
+        call_ptr(c, 0x001f_1190, 0x0021_f7b4)?; // HUD_DrawSprite(self, tex, &p, &size, &scale, &colour)
+        let small = c.g[S6][0] != 0;
+        frame.restore(c, S0, 0x140);
+        if !small {
+            c.cycles += 19;
+            call_ptr(c, 0x0014_dc80, 0x0021_f7c4)?; // cBE_getBE()
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0014_dd58, 0x0021_f7d0)?; // BELibrary_GetInterface(be, 0)
+            c.g[A1][0] = Addr((c.g[S7][0] as u32).wrapping_add(0x6c0)).lw(c);
+            c.g[V0][0] = 0x0053_0000;
+            c.g[S0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x5c10)).lb(c); // mode
+            c.g[V1][0] = sx((c.g[S7][0] as u32).wrapping_add(0x6c0)); // being
+            c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x38)).lh(c);
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x3c)).lw(c);
+            let method = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, method, 0x0021_f7f0)?; // being->getAIIndex()
+            c.g[V1][0] = 0x0053_0000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6640));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            let mode_zero = c.g[S0][0] == 0;
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c); // value
+            let clock = if mode_zero {
+                true
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x5;
+                if c.g[S0][0] != c.g[V0][0] {
+                    c.g[A2][0] = Addr((c.g[FP][0] as u32).wrapping_add(0x7c)).lw(c);
+                    false
+                } else {
+                    true
+                }
+            };
+            if clock {
+                // value / 60 ticks to seconds -> h:mm:ss
+                c.cycles += 7;
+                c.mtc1(V1, 0);
+                c.cvt_s_w(0, 0);
+                c.lwc1(1, gp.wrapping_sub(0x5344));
+                c.g[V1][0] = 0xe10;
+                c.g[V0][0] = 0xe10;
+                c.cycles += 18;
+                c.g[A3][0] = 0x3c;
+                c.mul_s(0, 0, 1);
+                c.g[V0][0] = 0x3c;
+                c.g[S0][0] = sx(sp0.wrapping_add(0x60)); // buf
+                c.cvt_w_s(1, 0);
+                c.mfc1(A2, 1);
+                c.g[A1][0] = 0x0047_0000;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1298));
+                c.div(0, A2, V1); // t / 3600
+                c.g[A2][0] = c.lo[0];
+                c.g[V0][0] = c.hi[0];
+                c.div(0, V0, A3); // rem / 60
+                c.g[A3][0] = c.lo[0];
+                c.g[T0][0] = c.hi[0];
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0041_7828, 0x0021_f870)?; // sprintf(buf, fmt, h, m, s)
+                c.g[A1][0] = c.g[S0][0];
+            } else {
+                // value + rider->points
+                c.cycles += 7;
+                c.g[S0][0] = sx(sp0.wrapping_add(0x60));
+                c.g[A1][0] = 0x004a_0000;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2138));
+                c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                call_ptr(c, 0x0041_7828, 0x0021_f890)?; // sprintf(buf, fmt, n)
+                c.g[A1][0] = c.g[S0][0];
+            }
+
+            // Centre the text on the panel (p += (size.x * 0.5, size.y)), shared
+            // colour, draw, then restore the font scale.
+            c.cycles += 59;
+            c.lwc1(0, sp0.wrapping_add(0x30));
+            c.g[V1][0] = 0x004d_0000;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(AT, 1);
+            c.lwc1(2, sp0.wrapping_add(0x10));
+            c.mul_s(0, 0, 1);
+            c.lwc1(3, sp0.wrapping_add(0x14));
+            c.lwc1(4, sp0.wrapping_add(0x40));
+            c.lwc1(1, sp0.wrapping_add(0x44));
+            c.lwc1(5, sp0.wrapping_add(0x34));
+            c.add_s(2, 2, 0);
+            c.lwc1(6, gp.wrapping_sub(0x5340));
+            c.add_s(3, 3, 5);
+            c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(RACE_TIME_FONT)).lw(c);
+            c.mul_s(1, 1, 6);
+            c.swc1(2, sp0.wrapping_add(0x10));
+            c.mul_s(4, 4, 6);
+            c.swc1(3, sp0.wrapping_add(0x14));
+            c.swc1(1, sp0.wrapping_add(0x44));
+            c.swc1(4, sp0.wrapping_add(0x40));
+            let font = c.g[V0][0] as u32;
+            c.lwc1(0, font.wrapping_add(0x30));
+            c.lwc1(2, font.wrapping_add(0x34));
+            c.mul_s(0, 0, 4);
+            c.swc1(0, font.wrapping_add(0x38));
+            c.lwc1(1, sp0.wrapping_add(0x44));
+            c.mul_s(2, 2, 1);
+            c.swc1(2, font.wrapping_add(0x3c));
+            c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x77f8));
+            let src = c.g[A3][0] as u32;
+            c.ldl(2, src.wrapping_add(0x7));
+            c.ldr(2, src);
+            c.ldl(4, src.wrapping_add(0xf));
+            c.ldr(4, src.wrapping_add(0x8));
+            c.sdl(2, sp0.wrapping_add(0xa7));
+            c.sdr(2, sp0.wrapping_add(0xa0));
+            c.sdl(4, sp0.wrapping_add(0xaf));
+            c.sdr(4, sp0.wrapping_add(0xa8));
+            c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(RACE_TIME_FONT)).lw(c);
+            c.ldl(3, sp0.wrapping_add(0xa7));
+            c.ldr(3, sp0.wrapping_add(0xa0));
+            c.ldl(4, sp0.wrapping_add(0xaf));
+            c.ldr(4, sp0.wrapping_add(0xa8));
+            let font = c.g[V0][0] as u32;
+            c.sdl(3, font.wrapping_add(0x47));
+            c.sdr(3, font.wrapping_add(0x40));
+            c.sdl(4, font.wrapping_add(0x4f));
+            c.sdr(4, font.wrapping_add(0x48));
+            c.g[A0][0] = Addr((c.g[S4][0] as u32).wrapping_add(RACE_TIME_FONT)).lw(c);
+            c.lwc1(12, sp0.wrapping_add(0x10));
+            c.lwc1(13, sp0.wrapping_add(0x14));
+            call_ptr(c, 0x0039_2908, 0x0021_f958)?; // Font_DrawTextCentered(font, x, y, buf)
+            c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(RACE_TIME_FONT)).lw(c);
+            c.lwc1(1, sp0);
+            let font = c.g[V0][0] as u32;
+            c.lwc1(0, font.wrapping_add(0x30));
+            c.lwc1(2, font.wrapping_add(0x34));
+            c.mul_s(0, 0, 1);
+            c.swc1(0, font.wrapping_add(0x38));
+            c.lwc1(1, sp0.wrapping_add(0x4));
+            c.mul_s(2, 2, 1);
+            c.swc1(2, font.wrapping_add(0x3c));
+            frame.restore(c, S0, 0x140);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x130);
+        frame.restore(c, S2, 0x120);
+        frame.restore(c, S3, 0x110);
+        frame.restore(c, S4, 0x100);
+        frame.restore(c, S5, 0xf0);
+        frame.restore(c, S6, 0xe0);
+        frame.restore(c, S7, 0xd0);
+        frame.restore(c, FP, 0xc0);
+        frame.restore_ra(c, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cOVStateHUD1P_dtor(cOVStateHUD1P *self, int flags)` (0x21cc40): sets
+/// the HUD state vtable (0x474160) at `+8`, destroys the HUD radar meters of
+/// the rider array (`+0x48`, `0x8c` bytes each, back from `+0x160`) with
+/// `HUDMeter_dtor(meter + 8, 2)`, then runs the UIState destructor with
+/// `flags`.
+pub fn ov_state_hud1p_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = sx(0x0047_4160);
+        frame.save(c, 17, 0x30);
+        frame.save(c, 19, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, 16, 0x40);
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x48));
+        frame.save(c, 18, 0x20);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        // The rider meter array pointer (`self + 0x48`) is not null.
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x160));
+            let no_meters = c.g[V1][0] == c.g[S0][0];
+            c.g[S2][0] = c.g[V1][0];
+            if !no_meters {
+                c.cycles += 2;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x8c));
+                loop {
+                    c.cycles += 5;
+                    c.g[A1][0] = 0x2;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                    Callee {
+                        addr: 0x0020_eb08,
+                        f: ee::s05::f_0020eb08,
+                    }
+                    .call(c, 0x0021_cc94)?;
+                    let more = c.g[S2][0] != c.g[S0][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x8c));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0021_cc88);
+                    }
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S3][0];
+        call_ptr(c, 0x0039_e390, 0x0021_cca8)?;
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore(c, 18, 0x20);
+        frame.restore(c, 19, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The one-call destructors of the menu states: `this->vtable = vtable` (the word
+/// at +8), then `UIState_dtor(this)` (0x39e390) returning to `ret_to`. Frame of
+/// 0x10 holding `ra`, as gcc emits for a base-class destructor.
+pub(crate) fn oc1002_vtable_dtor(c: &mut Cpu, vtable: u32, ret_to: u32) -> Flow {
+    c.cycles += 10;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = 0x0047_0000;
+    frame.save_ra(c, 0);
+    c.g[V1][0] = c.g[A0][0];
+    c.g[V0][0] = sx(vtable);
+    c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+    call_ptr(c, 0x0039_e390, ret_to)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// The stores that finish an `OVScreen*` constructor after its `UIState_ctor`
+/// returned (`this` in s0): the overlay id at +0x98, the flags at +0x48, +0x4c and
+/// +0x54 cleared, the overlay vtable (0x474e08) at +8, then the screen's own
+/// vtable (`0x470000 + screen_vt_off`) at +8 and the chat-buffer init word from
+/// 0x4a2088 at +0x58. Leaves `v0 = this`, `v1` the screen vtable, `a1 = 0x4a0000`.
+pub(crate) fn oc1002_ov_screen_init(c: &mut Cpu, ov_id: u64, screen_vt_off: u32) {
+    let this = c.g[S0][0] as u32;
+    c.sw(this.wrapping_add(0x98), ov_id);
+    c.sw(this.wrapping_add(0x48), 0);
+    c.sw(
+        this.wrapping_add(0x8),
+        sx(0x0047_0000u32.wrapping_add(0x4e08)),
+    );
+    c.g[A1][0] = 0x004a_0000;
+    c.sw(this.wrapping_add(0x4c), 0);
+    c.sw(this.wrapping_add(0x54), 0);
+    c.g[V1][0] = sx(0x0047_0000u32.wrapping_add(screen_vt_off));
+    c.g[V0][0] = c.g[S0][0];
+    c.g[A0][0] = Addr(0x004a_0000u32.wrapping_add(0x2088)).lhu(c);
+    c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+    c.sh(this.wrapping_add(0x58), c.g[A0][0]);
+}
+
+/// `OVScreenHiscoreList` constructor `(this)` (0x21d070): the `UIState`
+/// constructor with overlay id 0 (a1), then the hi-score list vtable (0x473b78).
+pub fn ov_screen_hiscore_list_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x0021_d088)?;
+        oc1002_ov_screen_init(c, 0, 0x3b78);
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `OVScreenHiscoreList` constructor `(this, engine, overlayId)` (0x21d0d0):
+/// as the multiplayer one, with the hi-score list vtable (0x473b78).
+pub fn ov_screen_hiscore_list_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 17, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0039_e2a0, 0x0021_d0ec)?;
+        let ov_id = c.g[S1][0];
+        oc1002_ov_screen_init(c, ov_id, 0x3b78);
+        frame.restore(c, 17, 0x10);
+        frame.restore(c, 16, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `OVScreenHiscoreList::~OVScreenHiscoreList(this)` (0x21d138): installs the
+/// overlay vtable (0x474e08) and runs the `UIState` destructor.
+pub fn ov_screen_hiscore_list_dtor(c: &mut Cpu) {
+    guest(c, |c| oc1002_vtable_dtor(c, 0x0047_4e08, 0x0021_d154))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -25263,6 +25725,278 @@ pub(crate) mod tests {
                 c.bus.write32(world + 0x10d8, vt);
                 c.bus.write16(vt + 0x238, r.next_u32() as u16);
                 c.bus.write32(vt + 0x23c, fakes::FAKE);
+            },
+        );
+    }
+
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::RA as DT_RA;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::oc1000_arm;
+
+    pub(crate) use crate::game::fe::fepopupmisc::tests::oc1000_install_fakes;
+
+    pub(crate) use crate::game::fe::fepopupmisc::tests::SEEDS_12 as SEEDS_6;
+
+    /// `cOVStateHUD1P_DrawRaceTime`: element 0x42 (flag 0: sprite plus time
+    /// text) or 0x1b (flag 1: sprite only); the texture present or missing;
+    /// every mode byte (0 and 5: `h:mm:ss`, others: value + rider points;
+    /// the clock value positive, negative and huge); the real element
+    /// getters, `HUD_AlignElemPos`, `HUD_DrawSprite`, `Font_MeasureText`,
+    /// `Font_DrawText`, `sprintf`, `cBE_getBE`/`GetInterface` and a real
+    /// `getAIIndex` (reads a word of the being); renderer methods are fakes
+    /// and some seeds unwind there.
+    #[test]
+    fn c_ov_state_hud1p_draw_race_time_matches() {
+        const HUD: u32 = DATA + 0x2000;
+        const RIDER: u32 = DATA + 0x3000;
+        const WORLD: u32 = DATA + 0x3800;
+        const ELEMS: u32 = DATA + 0x4000;
+        const RIDER_OBJ: u32 = DATA + 0x5000;
+        const BEING_VT: u32 = DATA + 0x5800;
+        const BE_LIB: u32 = DATA + 0x6000;
+        const RENDERER: u32 = DATA + 0x7000;
+        const DRAW_STATE: u32 = DATA + 0x7800;
+        const TEX: u32 = DATA + 0x7c00;
+        const FONT_AT: u32 = DATA + 0x8000;
+        const RENDERER_VT: u32 = DATA + 0x9000;
+        const GLYPHS: u32 = DATA + 0xa000;
+        const CODES: u32 = DATA + 0xa800;
+        check(
+            ee::s05::f_0021f660__generated,
+            c_ov_state_hud1p_draw_race_time,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x21_f660, 4);
+                c.pc = 0x0021_f660;
+                let gp = |off: i32| GAME_GP.wrapping_add(off as u32);
+                let small = seed % 4 == 0;
+                let index = r.next_u32() % 4;
+                // The rider (index, points), world -> race -> slots -> object.
+                c.bus.write32(RIDER, index);
+                c.bus.write32(RIDER + 0x7c, r.next_u32() % 2000);
+                c.bus.write32(gp(-0x848), WORLD);
+                c.bus.write32(WORLD + 0x84, DATA + 0x3900);
+                c.bus.write32(DATA + 0x3900 + 0xc, DATA + 0x3a00);
+                c.bus.write32(DATA + 0x3a00 + 0x28 + 4 * index, RIDER_OBJ);
+                // The being (+0x6c0): vtable slot 7 = a real word getter on
+                // this + 0x20, which holds the AI index.
+                let ai = r.next_u32() % 8;
+                c.bus.write32(RIDER_OBJ + 0x6c0, BEING_VT);
+                c.bus.write16(BEING_VT + 0x38, 0x20);
+                c.bus.write32(BEING_VT + 0x3c, GET_WORD);
+                c.bus.write32(RIDER_OBJ + 0x6e0, ai);
+                // Mode byte and the per-rider value table.
+                let mode = [0u8, 5, 1, 2, 0xff, 5][(seed / 4 % 6) as usize];
+                c.bus.write8(RACE_TIME_MODE, mode);
+                for k in 0..8 {
+                    let v = match r.next_u32() % 6 {
+                        0 => 0xffff_ff00 | (r.next_u32() & 0xff),   // negative
+                        1 => 0x7fff_0000 | (r.next_u32() & 0xffff), // huge
+                        2 => 216_000 + r.next_u32() % 40,           // around an hour
+                        _ => r.next_u32() % 600_000,
+                    };
+                    c.bus.write32(RACE_TIME_VALUES + 4 * k, v);
+                }
+                put_cstr(c, RACE_TIME_FMT_CLOCK, b"%d:%02d:%02d");
+                put_cstr(c, RACE_TIME_FMT_COUNT, b"%d pts");
+                c.bus.write32(gp(-0x5344), rider_ind_f(1.0 / 60.0));
+                c.bus
+                    .write32(gp(-0x5340), rider_ind_f(rider_ind_uf(&mut r, 0.5, 2.5)));
+                for k in 0..4 {
+                    c.bus.write32(RACE_TIME_COLOUR + 4 * k, r.next_u32());
+                }
+                // BELibrary and its interface 0 (a fake method).
+                c.bus.write32(gp(-0x1f04), DATA + 0x30_0000);
+                c.bus.write32(gp(-0x1efc), 0);
+                c.bus.write32(0x0053_08a8, BE_LIB);
+                c.bus.write32(BE_LIB + 4, BE_LIB + 0x100);
+                c.bus.write16(BE_LIB + 0x100 + 8, 0);
+                c.bus.write32(BE_LIB + 0x100 + 0xc, FAKE);
+                // The renderer (draw state and two fake methods).
+                c.bus.write32(gp(-0x854), RENDERER);
+                c.bus.write32(gp(0x2a90), RENDERER);
+                c.bus.write32(RENDERER + 0xe84, DRAW_STATE);
+                c.bus.write32(DRAW_STATE + 8, r.next_u32());
+                c.bus.write32(RENDERER + 0x10d8, RENDERER_VT);
+                for (i, off) in [0x238u32, 0x280].into_iter().enumerate() {
+                    c.bus
+                        .write16(RENDERER_VT + off, (r.next_u32() as u16) & 0xfc);
+                    c.bus.write32(RENDERER_VT + off + 4, FAKE + 0x10 * i as u32);
+                }
+                // The HUD: textures and the time font (glyph table, codes).
+                let tex = if seed % 7 == 3 { 0 } else { TEX };
+                c.bus.write32(HUD + RACE_TIME_TEX, tex);
+                c.bus.write32(HUD + RACE_TIME_TEX_SMALL, tex);
+                c.bus.write32(TEX, r.next_u32() % 64);
+                for j in 1..8 {
+                    c.bus
+                        .write32(TEX + 4 * j, rider_ind_f(rider_ind_uf(&mut r, 0.0, 64.0)));
+                }
+                c.bus.write32(HUD + RACE_TIME_FONT, FONT_AT);
+                fill(c, &mut r, FONT_AT, 0x20);
+                for i in 0..8 {
+                    c.bus.write32(
+                        FONT_AT + 0x18 + 4 * i,
+                        rider_ind_f(rider_ind_uf(&mut r, 0.5, 30.0)),
+                    );
+                }
+                for i in 0..2 {
+                    let v = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        rider_ind_f(rider_ind_uf(&mut r, 0.0, 3.0))
+                    };
+                    c.bus.write32(FONT_AT + 0x28 + 4 * i, v);
+                }
+                let n = 1 + r.next_u32() % 40;
+                let mut code = 0;
+                for i in 0..n {
+                    code += 1 + r.next_u32() % 6;
+                    c.bus.write16(CODES + 2 * i, code as u16);
+                }
+                fill(c, &mut r, GLYPHS, 0x400);
+                c.bus.write32(FONT_AT, n);
+                c.bus.write32(FONT_AT + 4, CODES);
+                c.bus.write32(FONT_AT + 8, GLYPHS + 12 * (r.next_u32() % 8));
+                c.bus.write32(FONT_AT + 0xc, r.next_u32() % 64);
+                c.bus.write32(FONT_AT + 0x10, 64 + r.next_u32() % 128);
+                // The two panel elements.
+                rider_ind_elem(c, &mut r, ELEMS + RACE_TIME_ELEM_SIZE * RACE_TIME_ELEM);
+                rider_ind_elem(
+                    c,
+                    &mut r,
+                    ELEMS + RACE_TIME_ELEM_SIZE * RACE_TIME_ELEM_SMALL,
+                );
+                c.g[A0][0] = sx(HUD);
+                c.g[A1][0] = sx(ELEMS);
+                c.g[A2][0] = sx(RIDER);
+                c.g[A3][0] = (r.next_u32() % 640) as u64;
+                c.g[T0][0] = small as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ov_state_hud1p_dtor_matches() {
+        oc1000_install_fakes();
+        check_events(
+            ee::s05::f_0021cc40__generated,
+            ov_state_hud1p_dtor,
+            SEEDS_6,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x21cc40, 0);
+                oc1000_arm(c);
+                // Seed 0 of 4: `self + 0x48` wraps to zero, a null meter
+                // array, so the function skips the whole meter loop.
+                let this = if seed % 4 == 0 {
+                    0xffff_ffb8
+                } else {
+                    DATA + 0x100
+                };
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed & 1) as u64;
+                fill(c, &mut r, DATA + 0x100, 0x80);
+                schedule(c, &mut r, seed, 0x0021_cc40)
+            },
+        );
+    }
+
+    /// Gate word of this module's callee fakes (its own machine RAM only).
+    pub(crate) const OC1002_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1002_MAGIC: u32 = 0x1002_6a7e;
+
+    /// The screen object the constructors and destructors write into.
+    pub(crate) const OC1002_OBJ: u32 = DATA + 0x20_1000;
+
+    pub(crate) static OC1002_PREV_UI_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1002_PREV_UI_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    /// `UIState_ctor` (0x39e2a0) while the gate is armed: logs and returns.
+    pub(crate) fn oc1002_fake_ui_ctor(c: &mut Cpu) {
+        if c.bus.read32(OC1002_CTRL) != OC1002_MAGIC {
+            return fakes::fall_back(c, &OC1002_PREV_UI_CTOR, ee::s13::f_0039e2a0__generated);
+        }
+        fakes::fake_call(c, 0x0039_e2a0);
+    }
+
+    /// `UIState_dtor` (0x39e390) while the gate is armed: logs and returns.
+    pub(crate) fn oc1002_fake_ui_dtor(c: &mut Cpu) {
+        if c.bus.read32(OC1002_CTRL) != OC1002_MAGIC {
+            return fakes::fall_back(c, &OC1002_PREV_UI_DTOR, ee::s13::f_0039e390__generated);
+        }
+        fakes::fake_call(c, 0x0039_e390);
+    }
+
+    pub(crate) fn oc1002_install_fakes() {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E2A0),
+            oc1002_fake_ui_ctor,
+            &OC1002_PREV_UI_CTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E390),
+            oc1002_fake_ui_dtor,
+            &OC1002_PREV_UI_DTOR,
+        );
+    }
+
+    pub(crate) fn oc1002_arm(c: &mut Cpu) {
+        c.bus.write32(OC1002_CTRL, OC1002_MAGIC);
+    }
+
+    /// `OVScreenHiscoreList_ctor` (0x21d070): `UIState_ctor` with a1 = 0.
+    #[test]
+    fn ov_screen_hiscore_list_ctor_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_0021d070__generated,
+            ov_screen_hiscore_list_ctor,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1002_0070, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[RA][0] = DT_RA as u64;
+            },
+        );
+    }
+
+    /// `OVScreenHiscoreList_ctor_2` (0x21d0d0): `UIState_ctor` with the overlay id from a2.
+    #[test]
+    fn ov_screen_hiscore_list_ctor_2_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_0021d0d0__generated,
+            ov_screen_hiscore_list_ctor_2,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1002_00d0, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[RA][0] = DT_RA as u64;
+            },
+        );
+    }
+
+    /// `OVScreenHiscoreList_dtor` (0x21d138): vtable store, `UIState_dtor` call.
+    #[test]
+    fn ov_screen_hiscore_list_dtor_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_0021d138__generated,
+            ov_screen_hiscore_list_dtor,
+            80,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1002_0138, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[RA][0] = DT_RA as u64;
             },
         );
     }

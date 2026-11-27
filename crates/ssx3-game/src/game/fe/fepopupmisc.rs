@@ -56,6 +56,8 @@ use crate::game::fe::festateoptions::FE_UI_STATE_CTOR;
 use crate::game::fe::festateoptions::FE_UI_STATE_DTOR;
 pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_5;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
+pub(crate) use crate::game::fe::ovstatehud::oc1002_ov_screen_init;
+pub(crate) use crate::game::fe::ovstatehud::oc1002_vtable_dtor;
 pub(crate) use crate::game::fe::ovstates::at as at_6;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;
@@ -1080,6 +1082,76 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001e_64a8,
         ov_screen_freestyle_standings_update_2,
         "OVScreenFreestyleStandings_Update",
+    ),
+    (
+        0x0021_cae0,
+        ov_screen_message_center_dtor,
+        "OVScreenMessageCenter_dtor",
+    ),
+    (
+        0x0021_cb40,
+        ov_state_view_popup_dtor,
+        "cOVState_ViewPopup_dtor",
+    ),
+    (
+        0x0021_cce0,
+        ov_screen_freestyle_standings_dtor,
+        "OVScreenFreestyleStandings_dtor",
+    ),
+    (
+        0x0021_cd08,
+        ov_screen_freestyle_standings_ctor,
+        "OVScreenFreestyleStandings_ctor",
+    ),
+    (
+        0x0021_cd70,
+        ov_screen_final_standings_dtor,
+        "OVScreenFinalStandings_dtor",
+    ),
+    (
+        0x0021_cd98,
+        ov_screen_final_standings_ctor,
+        "OVScreenFinalStandings_ctor",
+    ),
+    (
+        0x0021_ce00,
+        ov_screen_peak_challenge_results_dtor,
+        "OVScreenPeakChallengeResults_dtor",
+    ),
+    (
+        0x0021_ce28,
+        ov_screen_peak_challenge_results_ctor,
+        "OVScreenPeakChallengeResults_ctor",
+    ),
+    (
+        0x0021_ce90,
+        ov_screen_finish_ov_dtor,
+        "OVScreenFinishOv_dtor",
+    ),
+    (
+        0x0021_ceb8,
+        ov_screen_finish_ov_ctor,
+        "OVScreenFinishOv_ctor",
+    ),
+    (
+        0x0021_cf38,
+        ov_screen_finish_ov2_dtor,
+        "OVScreenFinishOv2_dtor",
+    ),
+    (
+        0x0021_cf60,
+        ov_screen_finish_ov2_ctor,
+        "OVScreenFinishOv2_ctor",
+    ),
+    (
+        0x0021_cfe0,
+        ov_screen_multiplayer_standings_dtor,
+        "OVScreenMultiplayerStandings_dtor",
+    ),
+    (
+        0x0021_d008,
+        ov_screen_multiplayer_standings_ctor,
+        "OVScreenMultiplayerStandings_ctor",
     ),
 ];
 
@@ -22152,6 +22224,293 @@ pub fn ov_screen_freestyle_standings_update_2(c: &mut Cpu) {
     });
 }
 
+/// `void OVScreenMessageCenter_dtor(OVScreenMessageCenter *self)` (0x21cae0):
+/// sets the message-center vtable (0x474e08) at `+8` and runs the UIState
+/// destructor.
+pub fn ov_screen_message_center_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x0047_4e08);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0039_e390, 0x0021_cafc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cOVState_ViewPopup_dtor(cOVState_ViewPopup *self)` (0x21cb40): sets
+/// the view-popup state vtable (0x474248) at `+8` and runs the UIState
+/// destructor.
+pub fn ov_state_view_popup_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x0047_4248);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0039_e390, 0x0021_cb5c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void OVScreenFreestyleStandings_dtor(OVScreenFreestyleStandings *self)`
+/// (0x21cce0): the same body as the message-center destructor (vtable
+/// 0x474e08 at `+8`, then the UIState destructor).
+pub fn ov_screen_freestyle_standings_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x0047_4e08);
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0039_e390, 0x0021_ccfc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `OVScreenFreestyleStandings *OVScreenFreestyleStandings_ctor(
+/// OVScreenFreestyleStandings *self, int a1, int a2)` (0x21cd08): runs the
+/// UIState constructor, stores `a2` at `+0x98`, clears the words at `+0x48`,
+/// `+0x4c` and `+0x54`, sets the standings vtable (0x474088) at `+8` and the
+/// halfword at `+0x58` from the table at 0x4a2088. Returns `self` in `v0`.
+pub fn ov_screen_freestyle_standings_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 17, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0039_e2a0, 0x0021_cd24)?;
+        let this = c.g[S0][0] as u32;
+        c.sw(this.wrapping_add(0x98), c.g[S1][0]);
+        c.sw(this.wrapping_add(0x48), 0);
+        c.sw(this.wrapping_add(0x8), sx(0x0047_4e08));
+        c.g[A1][0] = 0x4a_0000;
+        c.sw(this.wrapping_add(0x4c), 0);
+        c.sw(this.wrapping_add(0x54), 0);
+        c.g[V1][0] = sx(0x0047_4088);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, 17, 0x10);
+        c.g[A0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2088));
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.sh(this.wrapping_add(0x58), c.g[A0][0]);
+        frame.restore(c, 16, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The game's global block (`0x470000`): the overlay vtables sit at fixed
+/// offsets from it.
+pub(crate) const OVST_GLOBALS: u32 = 0x0047_0000;
+
+/// The base `cOVState` vtable (`OVST_GLOBALS + 0x4e08`), stored at `+8` first.
+pub(crate) const OVST_VTABLE_BASE: u32 = OVST_GLOBALS + 0x4e08;
+
+/// The config block (`0x4a0000`): its halfword at `+0x2088` goes to `+0x58`.
+pub(crate) const OVST_CONFIG_BLOCK: u32 = 0x004a_0000;
+
+/// The name string the finish overlays hash (`OVST_GLOBALS - 0x1cc0`).
+pub(crate) const OVST_NAME: u32 = OVST_GLOBALS - 0x1cc0;
+
+/// `cUIState` constructor (0x39e2a0), `cUIState` destructor (0x39e390), and
+/// the string hash (0x317670), all called through the function table.
+pub(crate) const OVST_UISTATE_CTOR: u32 = 0x0039_e2a0;
+
+pub(crate) const OVST_UISTATE_DTOR: u32 = 0x0039_e390;
+
+pub(crate) const OVST_STR_HASH: u32 = 0x0031_7670;
+
+/// The destructor body shared by the four overlay `_dtor`s: stores the base
+/// vtable at `+8` of `this` (`a0`), runs the `cUIState` destructor returning to
+/// `ret_addr`, and returns to the caller.
+pub(crate) fn ov_state_dtor_body(c: &mut Cpu, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = u64::from(OVST_VTABLE_BASE);
+        let vtable = c.g[V0][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(8)).sw(c, vtable);
+        call_ptr(c, OVST_UISTATE_DTOR, ret_addr)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The constructor body of the two standings overlays (`this` in `a0`, overlay
+/// id in `a2`): runs the `cUIState` constructor returning to `base_ret`, then
+/// stores the overlay id at `+0x98`, the vtables (base, then `final_vtable`)
+/// at `+8`, zeroes at `+0x48`, `+0x4c`, `+0x54`, and the config halfword at
+/// `+0x58`.
+pub(crate) fn ov_state_ctor_standings_body(c: &mut Cpu, base_ret: u32, final_vtable: u32) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, OVST_UISTATE_CTOR, base_ret)?;
+        let this = c.g[S0][0] as u32;
+        let overlay = c.g[S1][0];
+        Addr(this).off(0x98).sw(c, overlay);
+        Addr(this).off(0x48).sw(c, 0);
+        Addr(this).off(8).sw(c, u64::from(OVST_VTABLE_BASE));
+        c.g[A1][0] = u64::from(OVST_CONFIG_BLOCK);
+        Addr(this).off(0x4c).sw(c, 0);
+        Addr(this).off(0x54).sw(c, 0);
+        c.g[V1][0] = u64::from(final_vtable);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        let config = Addr((c.g[A1][0] as u32).wrapping_add(0x2088)).lhu(c);
+        c.g[A0][0] = config;
+        let vtable = c.g[V1][0];
+        Addr(this).off(8).sw(c, vtable);
+        Addr(this).off(0x58).sh(c, config);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The constructor body of the two finish overlays (`this` in `a0`, overlay id
+/// in `a2`): runs the `cUIState` constructor returning to `base_ret`, stores
+/// the overlay id at `+0x98`, the base vtable at `+8`, zeroes at `+0x48` and
+/// `+0x4c`, `+0x54` (then `+0xa0` = 1 and the config halfword at `+0x58`), then
+/// sets the vtable to `vtable` and stores `StrHash(OVST_NAME, 1)` at `+0xc`
+/// (the hash call returns to `name_ret`).
+pub(crate) fn ov_state_ctor_finish_body(c: &mut Cpu, base_ret: u32, name_ret: u32, vtable: u32) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, OVST_UISTATE_CTOR, base_ret)?;
+        let this = c.g[S0][0] as u32;
+        let overlay = c.g[S1][0];
+        Addr(this).off(0x98).sw(c, overlay);
+        Addr(this).off(0x48).sw(c, 0);
+        Addr(this).off(8).sw(c, u64::from(OVST_VTABLE_BASE));
+        c.g[A2][0] = u64::from(OVST_CONFIG_BLOCK);
+        Addr(this).off(0x4c).sw(c, 0);
+        Addr(this).off(0x54).sw(c, 0);
+        c.g[V0][0] = u64::from(vtable);
+        c.g[A1][0] = 1;
+        c.g[A0][0] = u64::from(OVST_NAME);
+        let config = Addr((c.g[A2][0] as u32).wrapping_add(0x2088)).lhu(c);
+        c.g[V1][0] = config;
+        let one = c.g[A1][0];
+        Addr(this).off(0xa0).sw(c, one);
+        Addr(this).off(0x58).sh(c, config);
+        let vt = c.g[V0][0];
+        Addr(this).off(8).sw(c, vt);
+        call_ptr(c, OVST_STR_HASH, name_ret)?;
+        let hash = c.g[V0][0];
+        let this_after = c.g[S0][0] as u32;
+        Addr(this_after).off(0xc).sw(c, hash);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `OVScreenFinalStandings::~OVScreenFinalStandings` (0x21cd70).
+pub fn ov_screen_final_standings_dtor(c: &mut Cpu) {
+    ov_state_dtor_body(c, 0x0021_cd8c);
+}
+
+/// `OVScreenFinalStandings::OVScreenFinalStandings` (0x21cd98): the standings
+/// overlay constructor with the `0x473fb0` vtable.
+pub fn ov_screen_final_standings_ctor(c: &mut Cpu) {
+    ov_state_ctor_standings_body(c, 0x0021_cdb4, OVST_GLOBALS + 0x3fb0);
+}
+
+/// `OVScreenPeakChallengeResults::~OVScreenPeakChallengeResults` (0x21ce00).
+pub fn ov_screen_peak_challenge_results_dtor(c: &mut Cpu) {
+    ov_state_dtor_body(c, 0x0021_ce1c);
+}
+
+/// `OVScreenPeakChallengeResults::OVScreenPeakChallengeResults` (0x21ce28): the
+/// standings constructor with the `0x473ed8` vtable.
+pub fn ov_screen_peak_challenge_results_ctor(c: &mut Cpu) {
+    ov_state_ctor_standings_body(c, 0x0021_ce44, OVST_GLOBALS + 0x3ed8);
+}
+
+/// `OVScreenFinishOv::~OVScreenFinishOv` (0x21ce90).
+pub fn ov_screen_finish_ov_dtor(c: &mut Cpu) {
+    ov_state_dtor_body(c, 0x0021_ceac);
+}
+
+/// `OVScreenFinishOv::OVScreenFinishOv` (0x21ceb8): the finish constructor
+/// with the `0x473e00` vtable.
+pub fn ov_screen_finish_ov_ctor(c: &mut Cpu) {
+    ov_state_ctor_finish_body(c, 0x0021_ced4, 0x0021_cf1c, OVST_GLOBALS + 0x3e00);
+}
+
+/// `OVScreenFinishOv2::~OVScreenFinishOv2` (0x21cf38).
+pub fn ov_screen_finish_ov2_dtor(c: &mut Cpu) {
+    ov_state_dtor_body(c, 0x0021_cf54);
+}
+
+/// `OVScreenFinishOv2::OVScreenFinishOv2` (0x21cf60): the finish constructor
+/// with the `0x473d28` vtable.
+pub fn ov_screen_finish_ov2_ctor(c: &mut Cpu) {
+    ov_state_ctor_finish_body(c, 0x0021_cf7c, 0x0021_cfc4, OVST_GLOBALS + 0x3d28);
+}
+
+/// `OVScreenMultiplayerStandings::~OVScreenMultiplayerStandings(this)` (0x21cfe0):
+/// installs the overlay vtable (0x474e08) and runs the `UIState` destructor.
+pub fn ov_screen_multiplayer_standings_dtor(c: &mut Cpu) {
+    guest(c, |c| oc1002_vtable_dtor(c, 0x0047_4e08, 0x0021_cffc))
+}
+
+/// `OVScreenMultiplayerStandings` constructor `(this, engine, overlayId)`
+/// (0x21d008): the `UIState` constructor, then the overlay id (a2) and the
+/// screen's vtable (0x473c50, the tournament standings).
+pub fn ov_screen_multiplayer_standings_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 17, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, 0x0039_e2a0, 0x0021_d024)?;
+        let ov_id = c.g[S1][0];
+        oc1002_ov_screen_init(c, ov_id, 0x3c50);
+        frame.restore(c, 17, 0x10);
+        frame.restore(c, 16, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -30993,6 +31352,291 @@ pub(crate) mod tests {
                 let _ = oc973_machine(c, seed, 0x1e64a8, 1);
                 c.pc = 0x001e_64a8;
                 c.g[A0][0] = sx(OC973_SELF);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::ovstatehud::tests::oc1002_arm;
+
+    pub(crate) use crate::game::fe::ovstatehud::tests::oc1002_install_fakes;
+
+    pub(crate) use crate::game::fe::ovstatehud::tests::OC1002_OBJ;
+
+    /// Gate word of the oc1000 fakes (a fixture address of this machine only).
+    pub(crate) const GATE: u32 = DATA + 0x0020_1000;
+
+    pub(crate) const MAGIC_2: u32 = 0x0c10_0d00;
+
+    pub(crate) const SEEDS_12: u32 = 200;
+
+    pub(crate) static OC1000_PREV_39E2A0: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1000_PREV_39E390: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1000_PREV_20EB08: AtomicUsize = AtomicUsize::new(0);
+
+    /// The gated fake for a shared callee: logs the call like `fake_call`
+    /// while the gate word is set, else runs the previous body.
+    pub(crate) fn oc1000_gated(
+        c: &mut Cpu,
+        target: u32,
+        prev: &AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) {
+        if c.bus.read32(GATE) != MAGIC_2 {
+            return fakes::fall_back(c, prev, generated);
+        }
+        fakes::fake_call(c, target);
+    }
+
+    pub(crate) fn oc1000_fake_39e2a0(c: &mut Cpu) {
+        oc1000_gated(
+            c,
+            0x0039_e2a0,
+            &OC1000_PREV_39E2A0,
+            ee::s13::f_0039e2a0__generated,
+        )
+    }
+
+    pub(crate) fn oc1000_fake_39e390(c: &mut Cpu) {
+        oc1000_gated(
+            c,
+            0x0039_e390,
+            &OC1000_PREV_39E390,
+            ee::s13::f_0039e390__generated,
+        )
+    }
+
+    pub(crate) fn oc1000_fake_20eb08(c: &mut Cpu) {
+        oc1000_gated(
+            c,
+            0x0020_eb08,
+            &OC1000_PREV_20EB08,
+            ee::s05::f_0020eb08__generated,
+        )
+    }
+
+    pub(crate) fn oc1000_install_fakes() {
+        use std::ptr::addr_of_mut;
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E2A0),
+            oc1000_fake_39e2a0,
+            &OC1000_PREV_39E2A0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039E390),
+            oc1000_fake_39e390,
+            &OC1000_PREV_39E390,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_0020EB08),
+            oc1000_fake_20eb08,
+            &OC1000_PREV_20EB08,
+        );
+    }
+
+    /// Turn the shared-callee fakes on for this machine.
+    pub(crate) fn oc1000_arm(c: &mut Cpu) {
+        c.bus.write32(GATE, MAGIC_2);
+    }
+
+    /// Scramble the machine (the `calls` fake unwinds at a random call) and
+    /// arm the shared-callee fakes; the caller sets `self` in `a0`.
+    pub(crate) fn oc1000_object(c: &mut Cpu, seed: u32, salt: u64, calls: u32) {
+        machine(c, seed, salt, calls);
+        oc1000_arm(c);
+    }
+
+    #[test]
+    fn ov_screen_message_center_dtor_matches() {
+        oc1000_install_fakes();
+        covered(
+            ee::s05::f_0021cae0__generated,
+            ov_screen_message_center_dtor,
+            SEEDS_12,
+            &|c, seed| {
+                oc1000_object(c, seed, 0x21cae0, 1);
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x10);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_state_view_popup_dtor_matches() {
+        oc1000_install_fakes();
+        covered(
+            ee::s05::f_0021cb40__generated,
+            ov_state_view_popup_dtor,
+            SEEDS_12,
+            &|c, seed| {
+                oc1000_object(c, seed, 0x21cb40, 1);
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x10);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_freestyle_standings_dtor_matches() {
+        oc1000_install_fakes();
+        covered(
+            ee::s05::f_0021cce0__generated,
+            ov_screen_freestyle_standings_dtor,
+            SEEDS_12,
+            &|c, seed| {
+                oc1000_object(c, seed, 0x21cce0, 1);
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x10);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_freestyle_standings_ctor_matches() {
+        oc1000_install_fakes();
+        covered(
+            ee::s05::f_0021cd08__generated,
+            ov_screen_freestyle_standings_ctor,
+            SEEDS_12,
+            &|c, seed| {
+                oc1000_object(c, seed, 0x21cd08, 1);
+                c.g[A0][0] = sx(DATA + 0x100 + (seed % 4) * 0x10);
+                c.g[A1][0] = seed as u64;
+                c.g[A2][0] = (seed as u64).wrapping_mul(0x9e37) ^ 0x5a5a;
+                c.bus.write16(0x4a_2088, seed as u16);
+            },
+        );
+    }
+
+    /// A zeroed overlay object at `DATA+0x1000` (the base destructor's lists
+    /// take their short path), `a1` = 0 so no `operator_delete` runs.
+    pub(crate) fn ov_state_dtor_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        machine_rt(c, seed, salt, 0);
+        c.g[A0][0] = sx(DATA + 0x1000);
+        c.g[A1][0] = 0;
+    }
+
+    /// A zeroed overlay object, the engine pointer in `a1` (stored, not read),
+    /// a random overlay id in `a2`, and the config halfword the constructor
+    /// copies into `+0x58`.
+    pub(crate) fn ov_state_ctor_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine_rt(c, seed, salt, 0);
+        c.g[A0][0] = sx(DATA + 0x1000);
+        c.g[A1][0] = sx(DATA + 0x3000);
+        c.g[A2][0] = sx(r.next_u32());
+        c.bus
+            .write16(OVST_CONFIG_BLOCK + 0x2088, (r.next_u32() & 0xffff) as u16);
+    }
+
+    #[test]
+    fn ov_screen_final_standings_dtor_matches() {
+        check(
+            ee::s05::f_0021cd70__generated,
+            ov_screen_final_standings_dtor,
+            200,
+            &|c, seed| ov_state_dtor_fixture(c, seed, 0x0021_cd70),
+        );
+    }
+
+    #[test]
+    fn ov_screen_final_standings_ctor_matches() {
+        check(
+            ee::s05::f_0021cd98__generated,
+            ov_screen_final_standings_ctor,
+            200,
+            &|c, seed| ov_state_ctor_fixture(c, seed, 0x0021_cd98),
+        );
+    }
+
+    #[test]
+    fn ov_screen_peak_challenge_results_dtor_matches() {
+        check(
+            ee::s05::f_0021ce00__generated,
+            ov_screen_peak_challenge_results_dtor,
+            200,
+            &|c, seed| ov_state_dtor_fixture(c, seed, 0x0021_ce00),
+        );
+    }
+
+    #[test]
+    fn ov_screen_peak_challenge_results_ctor_matches() {
+        check(
+            ee::s05::f_0021ce28__generated,
+            ov_screen_peak_challenge_results_ctor,
+            200,
+            &|c, seed| ov_state_ctor_fixture(c, seed, 0x0021_ce28),
+        );
+    }
+
+    #[test]
+    fn ov_screen_finish_ov_dtor_matches() {
+        check(
+            ee::s05::f_0021ce90__generated,
+            ov_screen_finish_ov_dtor,
+            200,
+            &|c, seed| ov_state_dtor_fixture(c, seed, 0x0021_ce90),
+        );
+    }
+
+    #[test]
+    fn ov_screen_finish_ov_ctor_matches() {
+        check(
+            ee::s05::f_0021ceb8__generated,
+            ov_screen_finish_ov_ctor,
+            200,
+            &|c, seed| ov_state_ctor_fixture(c, seed, 0x0021_ceb8),
+        );
+    }
+
+    #[test]
+    fn ov_screen_finish_ov2_dtor_matches() {
+        check(
+            ee::s05::f_0021cf38__generated,
+            ov_screen_finish_ov2_dtor,
+            200,
+            &|c, seed| ov_state_dtor_fixture(c, seed, 0x0021_cf38),
+        );
+    }
+
+    #[test]
+    fn ov_screen_finish_ov2_ctor_matches() {
+        check(
+            ee::s05::f_0021cf60__generated,
+            ov_screen_finish_ov2_ctor,
+            200,
+            &|c, seed| ov_state_ctor_fixture(c, seed, 0x0021_cf60),
+        );
+    }
+
+    /// `OVScreenMultiplayerStandings_dtor` (0x21cfe0): vtable store, `UIState_dtor` call.
+    #[test]
+    fn ov_screen_multiplayer_standings_dtor_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_0021cfe0__generated,
+            ov_screen_multiplayer_standings_dtor,
+            80,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1002_0001, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[RA][0] = DT_RA as u64;
+            },
+        );
+    }
+
+    /// `OVScreenMultiplayerStandings_ctor` (0x21d008): `UIState_ctor`, then the stores.
+    #[test]
+    fn ov_screen_multiplayer_standings_ctor_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_0021d008__generated,
+            ov_screen_multiplayer_standings_ctor,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1002_0008, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[RA][0] = DT_RA as u64;
             },
         );
     }

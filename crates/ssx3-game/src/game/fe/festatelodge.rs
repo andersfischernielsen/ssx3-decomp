@@ -11,6 +11,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::fepopupmisc::oc969_sw_reg;
 pub(crate) use crate::game::fe::festatebonusmaterial::widget_range_notify;
+pub(crate) use crate::game::fe::ovstatehud::oc1002_vtable_dtor;
 pub(crate) use crate::game::sound::bankmonitor::p;
 use crate::guest::Addr;
 use ssx3_ee as ee;
@@ -81,6 +82,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001f_4728,
         cfe_state_buy_attrib_ctor,
         "cFEStateBuyAttrib_ctor",
+    ),
+    (0x0022_0d70, fe_state_lodge_dtor, "cFEStateLodge_dtor"),
+    (
+        0x0022_0dd0,
+        fe_state_lodge_rider_detail_dtor,
+        "cFEStateLodgeRiderDetail_dtor",
     ),
 ];
 
@@ -2091,6 +2098,18 @@ pub fn cfe_state_buy_attrib_ctor(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateLodge::~cFEStateLodge(this)` (0x220d70): installs the front-end
+/// state vtable (0x46d0d0) and runs the `UIState` destructor.
+pub fn fe_state_lodge_dtor(c: &mut Cpu) {
+    guest(c, |c| oc1002_vtable_dtor(c, 0x0046_d0d0, 0x0022_0d8c))
+}
+
+/// `cFEStateLodgeRiderDetail::~cFEStateLodgeRiderDetail(this)` (0x220dd0): the
+/// same shape as [`fe_state_lodge_dtor`] (vtable 0x46d0d0, return 0x220dec).
+pub fn fe_state_lodge_rider_detail_dtor(c: &mut Cpu) {
+    guest(c, |c| oc1002_vtable_dtor(c, 0x0046_d0d0, 0x0022_0dec))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2725,6 +2744,47 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0x10, field);
                 c.bus.write32(field, inner);
                 c.bus.write32(inner, seed);
+            },
+        );
+    }
+
+    use crate::difftest::RA as DT_RA;
+    pub(crate) use crate::game::fe::ovstatehud::tests::oc1002_arm;
+
+    pub(crate) use crate::game::fe::ovstatehud::tests::oc1002_install_fakes;
+
+    pub(crate) use crate::game::fe::ovstatehud::tests::OC1002_OBJ;
+
+    /// `cFEStateLodge_dtor` (0x220d70): vtable store, `UIState_dtor` call.
+    #[test]
+    fn fe_state_lodge_dtor_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_00220d70__generated,
+            fe_state_lodge_dtor,
+            80,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1002_0d70, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[RA][0] = DT_RA as u64;
+            },
+        );
+    }
+
+    /// `cFEStateLodgeRiderDetail_dtor` (0x220dd0): vtable store, `UIState_dtor` call.
+    #[test]
+    fn fe_state_lodge_rider_detail_dtor_matches() {
+        oc1002_install_fakes();
+        fakes::covered(
+            ee::s05::f_00220dd0__generated,
+            fe_state_lodge_rider_detail_dtor,
+            80,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1002_0dd0, 1);
+                oc1002_arm(c);
+                c.g[A0][0] = sx(OC1002_OBJ);
+                c.g[RA][0] = DT_RA as u64;
             },
         );
     }

@@ -338,6 +338,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_reset_music_state,
         "SSXAudioSystem_ResetMusicState",
     ),
+    (0x0028_be08, snd_bank_man_link_banks, "SndBankMan_LinkBanks"),
+    (
+        0x0028_be38,
+        snd_bank_man_unlink_bank,
+        "SndBankMan_UnlinkBank",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5876,6 +5882,57 @@ pub fn oc817_ssx_audio_system_set_countdown_value(c: &mut Cpu) {
     ret(c);
 }
 
+/// `SndBank_Link` (0x28b6c8).
+pub(crate) const SNDBANK_LINK_CALLEE: Callee = Callee {
+    addr: 0x0028_b6c8,
+    f: ee::s07::SndBank_Link,
+};
+
+/// `SndBank_Unlink` (0x28b730).
+pub(crate) const SNDBANK_UNLINK_CALLEE: Callee = Callee {
+    addr: 0x0028_b730,
+    f: ee::s07::SndBank_Unlink,
+};
+
+/// `void SndBankMan_LinkBanks(SndBankMan* self, int i, int j)` (0x28be08):
+/// link bank `i` after bank `j` in the `0x60`-byte bank array at `self+0xacc`.
+pub fn snd_bank_man_link_banks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x60;
+        c.mult(0, V1, A1, V0);
+        frame.save_ra(c, 0);
+        let bank_array = Addr(crate::abi::arg(c, 0).wrapping_add(0xacc)).lw(c);
+        c.g[A3][0] = bank_array;
+        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(bank_array as u32));
+        c.mult(0, V1, A2, V0);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(bank_array as u32));
+        SNDBANK_LINK_CALLEE.call(c, 0x0028_be2c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SndBankMan_UnlinkBank(SndBankMan* self, int i)` (0x28be38): unlink
+/// bank `i` from the bank array at `self+0xacc`.
+pub fn snd_bank_man_unlink_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x60;
+        frame.save_ra(c, 0);
+        c.mult(0, A1, A1, V0);
+        let bank_array = Addr(crate::abi::arg(c, 0).wrapping_add(0xacc)).lw(c);
+        c.g[A0][0] = sx((bank_array as u32).wrapping_add(c.g[A1][0] as u32));
+        SNDBANK_UNLINK_CALLEE.call(c, 0x0028_be54)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9053,6 +9110,60 @@ pub(crate) mod tests {
             &|c, seed| {
                 oc817_leaf_setup(c, seed);
                 c.g[A1][0] = sx(0x1000 + seed * 0x77);
+            },
+        );
+    }
+
+    #[test]
+    fn snd_bank_man_link_banks_matches() {
+        check(
+            ee::s07::f_0028be08__generated,
+            snd_bank_man_link_banks,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_be08, 0);
+                let bank = DATA + 0x1000;
+                let array = DATA + 0x2000;
+                c.g[A0][0] = bank as u64;
+                c.g[A1][0] = (seed % 3) as u64;
+                c.g[A2][0] = ((seed / 3) % 3) as u64;
+                c.bus.write32(bank + 0xacc, array);
+                for k in 0..4u32 {
+                    let node = array + 0x60 * k;
+                    let prev = if seed % 2 == 0 { 0 } else { DATA + 0x3000 };
+                    c.bus.write32(node + 0x18, prev);
+                    c.bus.write32(node + 0x1c, DATA + 0x3800);
+                    let data = if seed % 3 == 0 { 0 } else { r.next_u32() };
+                    c.bus.write32(node + 0x8, data);
+                    c.bus.write32(node + 0x10, r.next_u32());
+                    c.bus.write32(node + 0x14, r.next_u32());
+                    c.bus.write32(node + 0xc, r.next_u32());
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn snd_bank_man_unlink_bank_matches() {
+        check(
+            ee::s07::f_0028be38__generated,
+            snd_bank_man_unlink_bank,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0028_be38, 0);
+                let bank = DATA + 0x1000;
+                let array = DATA + 0x2000;
+                c.g[A0][0] = bank as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.bus.write32(bank + 0xacc, array);
+                let node = array + 0x60 * (seed % 4);
+                let (next, prev) = match seed % 3 {
+                    0 => (0, DATA + 0x600),
+                    1 => (DATA + 0x400, DATA + 0x400),
+                    _ => (DATA + 0x400, DATA + 0x500),
+                };
+                c.bus.write32(node + 0x18, next);
+                c.bus.write32(node + 0x1c, prev);
             },
         );
     }

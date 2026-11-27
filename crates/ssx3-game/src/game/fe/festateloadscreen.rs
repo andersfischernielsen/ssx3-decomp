@@ -24,6 +24,9 @@ pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::p_6 as p_2;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::open;
+pub(crate) use crate::game::fe::festateloadhint::oc1009_base_minus;
+pub(crate) use crate::game::fe::festateloadhint::oc1009_ea;
+pub(crate) use crate::game::fe::festateloadhint::oc1009_gp_minus;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 pub(crate) use crate::game::main::gamestate::gw;
@@ -127,6 +130,28 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0023_4750,
         cgf_event_start_state_lose_focus,
         "GameStatePreRaceLoad_Exit",
+    ),
+    (0x0023_3438, fe_load_screen_load, "cFELoadScreen_Load"),
+    (
+        0x0023_3640,
+        fe_load_screen_load_pictures,
+        "cFELoadScreen_LoadPictures",
+    ),
+    (
+        0x0023_3ad0,
+        game_module_request_overlay_state_global,
+        "GameModule_RequestOverlayStateGlobal",
+    ),
+    (0x0023_3b28, game_state_load_state, "GameState_LoadState"),
+    (
+        0x0023_3bb0,
+        game_state_quit_load_state,
+        "GameStateQuit_LoadState",
+    ),
+    (
+        0x0023_3bf0,
+        game_state_idle_load_state,
+        "GameStateIdle_LoadState",
     ),
 ];
 
@@ -2389,10 +2414,483 @@ pub fn cgf_event_start_state_lose_focus(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// cFELoadScreen_Load (0x233438)
+// ---------------------------------------------------------------------------
+
+/// Offsets of the load-screen state object (`this`).
+pub(crate) const FE_LOAD_SCREEN_UI_ENGINE: u32 = 0xc;
+
+pub(crate) const FE_LOAD_SCREEN_STATE: u32 = 0x18;
+
+/// `void cFELoadScreen_Load(cFELoadScreen* this)` (0x233438): builds the
+/// loading screen. Calls the app object's vtable slot (`+0x10d8`), creates the
+/// UI engine (`this+0xc`, 0x70 bytes, `cUIEngine_loadFile`), copies two config
+/// words into it, gives it a 0x1c-byte helper object, then picks one of three
+/// screens (0x27: plain, no saved picture state or no mode byte: picture type
+/// 1, else picture type 2), loads its pictures (`LoadPictures`), adds the screen
+/// to the engine's list (`engine+0x18`) and marks `this+0x18 = -1`.
+pub fn fe_load_screen_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 59;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = c.lw(oc1009_gp_minus(c, 0x854));
+        frame.save(c, S0, 0x30);
+        c.g[A1][0] = 0x100;
+        frame.save(c, S2, 0x10);
+        frame.save(c, S1, 0x20);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(oc1009_ea(c.g[A2][0], 0x10d8));
+        c.g[A0][0] = c.lh(oc1009_ea(c.g[V0][0], 0x160));
+        c.g[V1][0] = c.lw(oc1009_ea(c.g[V0][0], 0x164));
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx(oc1009_ea(c.g[A2][0], c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_346c)?;
+        // engine = new cUIEngine (0x70 bytes)
+        c.g[A1][0] = 0x0048_0000;
+        c.g[A2][0] = 0x100;
+        c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4968);
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x70;
+        call_ptr(c, 0x0031_7d70, 0x0023_3484)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_7b08, 0x0023_348c)?;
+        c.g[A1][0] = 0x0048_0000;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4050);
+        c.sw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE), c.g[V0][0]);
+        call_ptr(c, 0x0039_7c40, 0x0023_34a0)?;
+        // copy two config words of the game object into the engine
+        c.g[T0][0] = c.lw(oc1009_gp_minus(c, 0x848));
+        c.g[A1][0] = 0x0048_0000;
+        c.g[T1][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+        c.g[A0][0] = 0x1c;
+        c.g[V0][0] = c.lw(oc1009_ea(c.g[T0][0], 0x88));
+        c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4040);
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0;
+        c.sw(oc1009_ea(c.g[T1][0], 0x8), c.g[V0][0]);
+        c.g[V1][0] = c.lw(oc1009_ea(c.g[T0][0], 0x8c));
+        c.g[V0][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+        c.sw(oc1009_ea(c.g[V0][0], 0x10), c.g[V1][0]);
+        // helper object (0x1c bytes) at engine+0xc
+        call_ptr(c, 0x0031_7d70, 0x0023_34d4)?;
+        c.g[V1][0] = 0x0047_0000;
+        c.g[A0][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+        c.g[V1][0] = oc1009_base_minus(c.g[V1][0] as u32, 0x2e30);
+        c.sb(oc1009_ea(c.g[V0][0], 0x4), 0);
+        c.sw(oc1009_ea(c.g[V0][0], 0x8), c.g[V1][0]);
+        c.sw(oc1009_ea(c.g[V0][0], 0x18), 0);
+        c.sw(oc1009_ea(c.g[V0][0], 0xc), 0);
+        c.sw(oc1009_ea(c.g[V0][0], 0x10), 0);
+        c.sw(oc1009_ea(c.g[V0][0], 0x14), 0);
+        c.sw(oc1009_ea(c.g[A0][0], 0xc), c.g[V0][0]);
+        c.g[V0][0] = c.lw(oc1009_gp_minus(c, 0x848));
+        c.g[S0][0] = c.lw(oc1009_ea(c.g[V0][0], 0xc0));
+        call_ptr(c, 0x0014_dc80, 0x0023_3508)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0023_3514)?;
+        c.g[V1][0] = c.lw(oc1009_gp_minus(c, 0x172c));
+        c.g[V0][0] = 0x27;
+        // Which screen: 0 = id 0x27 (plain), 1 = picture type 1, 2 = picture type 2.
+        let kind;
+        if c.g[V1][0] != c.g[V0][0] {
+            c.g[V0][0] = c.lw(oc1009_ea(c.g[S0][0], 0x9c));
+            c.cycles += 2;
+            let no_state = c.g[V0][0] == 0;
+            c.g[V0][0] = 0x0053_0000;
+            if no_state {
+                kind = 1;
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = c.lb(oc1009_ea(c.g[V0][0], 0x5c11));
+                let has_mode = c.g[V1][0] != 0;
+                c.g[A1][0] = 0x0048_0000;
+                kind = if has_mode { 2 } else { 1 };
+            }
+        } else {
+            kind = 0;
+        }
+        match kind {
+            0 => {
+                c.cycles += 15;
+                c.g[A1][0] = 0x0048_0000;
+                c.g[A0][0] = 0x48;
+                c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4030);
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0023_353c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_e2a0, 0x0023_3550)?;
+                c.g[V1][0] = 0x0048_0000;
+                c.g[V1][0] = oc1009_base_minus(c.g[V1][0] as u32, 0x3ac8);
+                c.sw(oc1009_ea(c.g[S0][0], 0x8), c.g[V1][0]);
+                c.cycles += 1;
+            }
+            1 => {
+                c.cycles += 21;
+                c.g[A1][0] = 0x0048_0000;
+                c.g[A0][0] = 0x4c;
+                c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4018);
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0023_358c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_e2a0, 0x0023_35a0)?;
+                c.g[V1][0] = 0x0048_0000;
+                c.sw(oc1009_ea(c.g[S0][0], 0x48), 0);
+                c.g[V1][0] = oc1009_base_minus(c.g[V1][0] as u32, 0x3928);
+                c.g[A0][0] = c.g[S2][0];
+                c.sw(oc1009_ea(c.g[S0][0], 0x8), c.g[V1][0]);
+                c.g[A1][0] = 1;
+                c.sw(oc1009_ea(c.g[S1][0], 0x48), c.g[S2][0]);
+                call_ptr(c, 0x0023_3640, 0x0023_35c0)?;
+            }
+            _ => {
+                c.cycles += 18;
+                c.g[A0][0] = 0x4c;
+                c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4000);
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, 0x0031_7d70, 0x0023_35dc)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A1][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = c.g[S0][0];
+                call_ptr(c, 0x0039_e2a0, 0x0023_35f0)?;
+                c.g[V1][0] = 0x0048_0000;
+                c.sw(oc1009_ea(c.g[S0][0], 0x48), 0);
+                c.g[V1][0] = oc1009_base_minus(c.g[V1][0] as u32, 0x39f8);
+                c.g[A0][0] = c.g[S2][0];
+                c.sw(oc1009_ea(c.g[S0][0], 0x8), c.g[V1][0]);
+                c.g[A1][0] = 2;
+                c.sw(oc1009_ea(c.g[S1][0], 0x48), c.g[S2][0]);
+                call_ptr(c, 0x0023_3640, 0x0023_3610)?;
+                c.cycles += 1;
+            }
+        }
+        // (screen kind 1 has no extra cycle: the generated block exits one step earlier)
+        c.g[A0][0] = c.lw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_UI_ENGINE));
+        // engine->screens.add(screen)
+        c.cycles += 11;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = sx(oc1009_ea(c.g[A0][0], 0x18));
+        call_ptr(c, 0x0039_f400, 0x0023_3620)?;
+        c.g[V0][0] = u64::MAX;
+        frame.restore(c, S0, 0x30);
+        c.sw(oc1009_ea(c.g[S2][0], FE_LOAD_SCREEN_STATE), c.g[V0][0]);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// cFELoadScreen_LoadPictures (0x233640)
+// ---------------------------------------------------------------------------
+
+/// `void cFELoadScreen_LoadPictures(cFELoadScreen* this, int type)` (0x233640):
+/// opens the `0x47bd78` big file (stack `cBigFile`), and loads the loading
+/// screen's rider picture(s). Type 1: one picture named from the rider's
+/// character id (player 0 or 1 depending on the load-screen options at
+/// `0x534b30`, else the local player's) into `this+0x10`; type 2 with two
+/// players (`0x535c11 == 2`): one picture per player into `this+0x10` and
+/// `this+0x14`. Closes the big file (`cBigFile::~cBigFile(2)`).
+pub fn fe_load_screen_load_pictures(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x110);
+        frame.save(c, S0, 0x100);
+        frame.save(c, S2, 0xe0);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0xd0);
+        frame.save(c, S7, 0x90);
+        frame.save(c, S1, 0xf0);
+        frame.save(c, S4, 0xc0);
+        frame.save(c, S5, 0xb0);
+        frame.save(c, S6, 0xa0);
+        frame.save_ra(c, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x0023_3674)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, 0x0014_dd58, 0x0023_3680)?;
+        c.g[S3][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dc80, 0x0023_3688)?;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_dd58, 0x0023_3694)?;
+        // stack cBigFile at sp+0x70
+        c.g[A0][0] = sx(oc1009_ea(c.g[SP][0], 0x70));
+        c.g[A1][0] = 0x0048_0000;
+        c.g[S7][0] = c.g[A0][0];
+        c.g[A1][0] = oc1009_base_minus(c.g[A1][0] as u32, 0x4288);
+        c.g[A2][0] = 0x100;
+        call_ptr(c, 0x0031_68b0, 0x0023_36ac)?;
+        c.g[V1][0] = 1;
+        let not_type1 = c.g[S0][0] != c.g[V1][0];
+        c.g[V0][0] = 2;
+        if !not_type1 {
+            // type 1: one picture
+            c.cycles += 10;
+            c.g[V1][0] = c.lw(oc1009_gp_minus(c, 0x848));
+            c.g[V0][0] = 0x0048_0000;
+            c.g[S1][0] = oc1009_base_minus(c.g[V0][0] as u32, 0x4270);
+            c.g[A1][0] = 7;
+            c.g[A0][0] = c.lw(oc1009_ea(c.g[V1][0], 0x78));
+            call_ptr(c, 0x0014_dd58, 0x0023_36d0)?;
+            c.g[V1][0] = 0x0053_0000;
+            c.g[V0][0] = c.lw(oc1009_ea(c.g[V1][0], 0x4b30));
+            let opt_off = c.g[V0][0] == 0;
+            c.g[A0][0] = sx(oc1009_ea(c.g[V1][0], 0x4b30));
+            if !opt_off {
+                // options on: rider index 0 or 1 by the alternate flag at +8
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(oc1009_ea(c.g[A0][0], 0x8));
+                let alt_off = c.g[V0][0] == 0;
+                c.g[S0][0] = 0x0044_0000;
+                c.g[A0][0] = c.g[S3][0];
+                if alt_off {
+                    c.cycles += 3;
+                    c.g[S0][0] = sx(oc1009_ea(c.g[S0][0], 0x2928));
+                    c.g[A1][0] = 1;
+                } else {
+                    c.cycles += 4;
+                    c.g[S0][0] = sx(oc1009_ea(c.g[S0][0], 0x2928));
+                    c.g[A1][0] = 0;
+                }
+                c.cycles += 11;
+                call_ptr(c, 0x0014_7398, 0x0023_3710)?;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A3][0] = c.lw(oc1009_gp_minus(c, 0x5b8));
+                c.g[V0][0] = sx(oc1009_ea(c.g[V0][0], c.g[S0][0] as u32));
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x0041_7828, 0x0023_372c)?;
+                c.g[A1][0] = 0x0300_0000;
+            } else {
+                c.cycles += 16;
+                c.g[S0][0] = 0x0044_0000;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[S0][0] = sx(oc1009_ea(c.g[S0][0], 0x2928));
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x0014_6e98, 0x0023_3748)?;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x0014_7398, 0x0023_3754)?;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[A3][0] = c.lw(oc1009_gp_minus(c, 0x5b8));
+                c.g[V0][0] = sx(oc1009_ea(c.g[V0][0], c.g[S0][0] as u32));
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, 0x0041_7828, 0x0023_3770)?;
+                c.g[A1][0] = 0x0300_0000;
+            }
+            // data = FileLoad(name, 0x3000100); this->tex = CreateTexture(data)
+            c.cycles += 19;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] |= 0x100;
+            call_ptr(c, 0x003e_2190, 0x0023_3780)?;
+            c.g[T2][0] = c.lw(oc1009_gp_minus(c, 0x854));
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A1][0] = c.lw(oc1009_ea(c.g[S0][0], 0x14));
+            c.g[A2][0] = 0x0048_0000;
+            c.g[V1][0] = c.lw(oc1009_ea(c.g[T2][0], 0x10d8));
+            c.g[A2][0] = oc1009_base_minus(c.g[A2][0] as u32, 0x4260);
+            c.g[A1][0] = sx(oc1009_ea(c.g[S0][0], c.g[A1][0] as u32));
+            c.g[A3][0] = 0;
+            c.g[A0][0] = c.lh(oc1009_ea(c.g[V1][0], 0x170));
+            c.g[T0][0] = 1;
+            c.g[V0][0] = c.lw(oc1009_ea(c.g[V1][0], 0x174));
+            c.g[T1][0] = u64::MAX;
+            let target = c.g[V0][0] as u32;
+            c.g[A0][0] = sx(oc1009_ea(c.g[T2][0], c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0023_37b8)?;
+            let no_data = c.g[S0][0] == 0;
+            c.sw(oc1009_ea(c.g[S2][0], 0x10), c.g[V0][0]);
+            if no_data {
+                c.cycles += 1;
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0031_7e98, 0x0023_37c8)?;
+            }
+            c.g[A0][0] = c.g[S7][0];
+        } else {
+            c.cycles += 2;
+            let not_type2 = c.g[S0][0] != c.g[V0][0];
+            c.g[A0][0] = c.g[S7][0];
+            if !not_type2 {
+                c.cycles += 4;
+                c.g[V0][0] = 0x0053_0000;
+                c.g[V1][0] = c.lb(oc1009_ea(c.g[V0][0], 0x5c11));
+                let not_two_players = c.g[V1][0] != c.g[S0][0];
+                c.g[V0][0] = 0x0044_0000;
+                if !not_two_players {
+                    c.cycles += 6;
+                    c.g[S2][0] = sx(oc1009_ea(c.g[S2][0], 0x10));
+                    c.g[S6][0] = sx(oc1009_ea(c.g[V0][0], 0x2928));
+                    c.g[S1][0] = 0;
+                    c.g[S5][0] = 0x0048_0000;
+                    c.g[S4][0] = 0x0048_0000;
+                    loop {
+                        c.cycles += 29;
+                        c.g[A0][0] = c.g[S3][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, 0x0014_7488, 0x0023_380c)?;
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[A3][0] = c.lw(oc1009_gp_minus(c, 0x5b4));
+                        c.g[V0][0] = sx(oc1009_ea(c.g[V0][0], c.g[S6][0] as u32));
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[A2][0] = c.lw(c.g[V0][0] as u32);
+                        c.g[A1][0] = oc1009_base_minus(c.g[S5][0] as u32, 0x4270);
+                        call_ptr(c, 0x0041_7828, 0x0023_3828)?;
+                        c.g[A1][0] = 0x0300_0000;
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[A1][0] |= 0x100;
+                        call_ptr(c, 0x003e_2190, 0x0023_3838)?;
+                        c.g[T2][0] = c.lw(oc1009_gp_minus(c, 0x854));
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[A1][0] = c.lw(oc1009_ea(c.g[S0][0], 0x14));
+                        c.g[A2][0] = oc1009_base_minus(c.g[S4][0] as u32, 0x4260);
+                        c.g[V1][0] = c.lw(oc1009_ea(c.g[T2][0], 0x10d8));
+                        c.g[A3][0] = 0;
+                        c.g[A1][0] = sx(oc1009_ea(c.g[S0][0], c.g[A1][0] as u32));
+                        c.g[T0][0] = 1;
+                        c.g[A0][0] = c.lh(oc1009_ea(c.g[V1][0], 0x170));
+                        c.g[T1][0] = u64::MAX;
+                        c.g[V0][0] = c.lw(oc1009_ea(c.g[V1][0], 0x174));
+                        let target = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx(oc1009_ea(c.g[T2][0], c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x0023_386c)?;
+                        let no_data = c.g[S0][0] == 0;
+                        c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                        if !no_data {
+                            c.cycles += 2;
+                            c.g[A0][0] = c.g[S0][0];
+                            call_ptr(c, 0x0031_7e98, 0x0023_387c)?;
+                        }
+                        c.cycles += 4;
+                        c.g[S1][0] = sx(oc1009_ea(c.g[S1][0], 1));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < 2) as u64;
+                        let again = c.g[V0][0] != 0;
+                        c.g[S2][0] = sx(oc1009_ea(c.g[S2][0], 4));
+                        if !again {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0023_3800);
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S7][0];
+                }
+            }
+        }
+        // cBigFile::~cBigFile(a0 = stack file, 2)
+        c.cycles += 13;
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_68e8, 0x0023_3898)?;
+        frame.restore(c, S0, 0x100);
+        frame.restore(c, S1, 0xf0);
+        frame.restore(c, S2, 0xe0);
+        frame.restore(c, S3, 0xd0);
+        frame.restore(c, S4, 0xc0);
+        frame.restore(c, S5, 0xb0);
+        frame.restore(c, S6, 0xa0);
+        frame.restore(c, S7, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `GameModule_RequestOverlayStateGlobal()` (0x233ad0): request the overlay
+/// state of the game module held in the global at `gp-0x488`.
+pub fn game_module_request_overlay_state_global(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0023_1278, 0x0023_3ae4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `GameState_LoadState(self, obj)` (0x233b28): the load-state hook of a
+/// game state. `obj` is the loader; its vtable (`*obj`) holds a half-word
+/// offset at `+0x10` (added to `obj` to make the `this` of the call) and the
+/// function at `+0x14`, called with `(this, self, 4)`.
+pub fn game_state_load_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = 0x4;
+        let obj = c.g[A3][0] as u32;
+        c.g[V1][0] = c.lw(obj);
+        let vt = c.g[V1][0] as u32;
+        c.g[A0][0] = c.lh(vt.wrapping_add(0x10));
+        c.g[V0][0] = c.lw(vt.wrapping_add(0x14));
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0023_3b50)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `GameStateQuit_LoadState(self, obj)` (0x233bb0): forwards to
+/// `GameState_LoadState` with the same arguments.
+pub fn game_state_quit_load_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(Callee {
+            addr: 0x0023_3b28,
+            f: ee::s06::f_00233b28,
+        }),
+        0x0023_3bc0,
+    )
+}
+
+/// `GameStateIdle_LoadState(self, obj)` (0x233bf0): forwards to
+/// `GameState_LoadState` with the same arguments.
+pub fn game_state_idle_load_state(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(Callee {
+            addr: 0x0023_3b28,
+            f: ee::s06::f_00233b28,
+        }),
+        0x0023_3c00,
+    )
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::fe::festateloadhint::tests::oc1016_install_fakes;
     pub(crate) use crate::game::fe::ovstatepause::tests::oc778_install_fakes;
 
     use crate::difftest::fakes;
@@ -3215,6 +3713,186 @@ pub(crate) mod tests {
                 c.bus.write32(a3 + 0x10, table);
                 c.bus.write32(table, DATA + 0xa_0000);
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festateloadhint::tests::oc1009_machine;
+    pub(crate) use crate::game::fe::festateloadhint::tests::oc1009_queue;
+
+    pub(crate) use crate::game::fe::festateloadhint::tests::OC1009_GOBJ;
+
+    /// Fixture objects.
+    pub(crate) const OC1009_APP: u32 = DATA + 0x21_1000;
+
+    pub(crate) const OC1009_APP_VT: u32 = DATA + 0x21_2000;
+
+    pub(crate) const OC1009_GM: u32 = DATA + 0x21_4000;
+
+    pub(crate) const OC1009_THIS: u32 = DATA + 0x21_0000;
+
+    /// The app object (`gp-0x854`) with its UI vtable: slots `+0x160` and
+    /// `+0x170` point at fake method addresses outside the function table.
+    pub(crate) fn oc1009_app_object(c: &mut Cpu, delta: u16) {
+        c.bus.write32(GAME_GP - 0x854, OC1009_APP);
+        c.bus.write32(OC1009_APP + 0x10d8, OC1009_APP_VT);
+        c.bus.write16(OC1009_APP_VT + 0x160, delta);
+        c.bus.write32(OC1009_APP_VT + 0x164, fakes::FAKE);
+        c.bus.write16(OC1009_APP_VT + 0x170, delta);
+        c.bus.write32(OC1009_APP_VT + 0x174, fakes::FAKE + 0x10);
+    }
+
+    /// `cFELoadScreen_Load`: the three screens (id 0x27; no saved state; two
+    /// players) and unwinds at every call.
+    #[test]
+    fn fe_load_screen_load_matches() {
+        check(
+            ee::s06::f_00233438__generated,
+            fe_load_screen_load,
+            120,
+            &|c, seed| {
+                let mut r = oc1009_machine(c, seed, 0x0023_3438, 14);
+                oc1009_app_object(c, (r.next_u32() % 0x40) as u16);
+                c.bus.write32(GAME_GP - 0x848, OC1009_GOBJ);
+                c.bus.write32(OC1009_GOBJ + 0x88, r.next_u32());
+                c.bus.write32(OC1009_GOBJ + 0x8c, r.next_u32());
+                c.bus.write32(OC1009_GOBJ + 0xc0, OC1009_GM);
+                let kind = seed % 4;
+                c.bus
+                    .write32(GAME_GP - 0x172c, if kind == 0 { 0x27 } else { 0x26 });
+                c.bus
+                    .write32(OC1009_GM + 0x9c, if kind == 1 { 0 } else { 1 });
+                c.bus.write8(0x0053_5c11, if kind == 3 { 2 } else { 0 });
+                c.g[A0][0] = OC1009_THIS as u64;
+            },
+        );
+    }
+
+    /// The rider-name tables the picture loader indexes with the (small) ids
+    /// its callees return, and the options record at `0x534b30`.
+    pub(crate) fn oc1009_lp_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = oc1009_machine(c, seed, salt, 22);
+        oc1009_app_object(c, (r.next_u32() % 0x40) as u16);
+        c.bus.write32(GAME_GP - 0x848, OC1009_GOBJ);
+        c.bus.write32(OC1009_GOBJ + 0x78, r.next_u32());
+        c.bus.write32(GAME_GP - 0x5b8, r.next_u32());
+        c.bus.write32(GAME_GP - 0x5b4, r.next_u32());
+        // the callee ids are small (they index a table)
+        let ids: Vec<u32> = (0..4).map(|_| 2 + r.next_u32() % 6).collect();
+        oc1009_queue(c, 0x0014_7398, &ids);
+        oc1009_queue(c, 0x0014_7488, &ids);
+        oc1009_queue(c, 0x0014_6e98, &ids);
+        // the picture data: present or missing, per call
+        let missing = |bit: u32| if (seed >> bit) & 1 == 1 { 1 } else { 0 };
+        oc1009_queue(c, 0x003e_2190, &[missing(3), missing(4)]);
+        let (on, alt) = ((seed >> 5) & 1, (seed >> 6) & 1);
+        c.bus.write32(0x0053_4b30, on);
+        c.bus.write32(0x0053_4b38, alt);
+        r
+    }
+
+    /// `cFELoadScreen_LoadPictures`: type 1 (options on/off, alternate rider
+    /// on/off), type 2 with one and two players, another type; present and
+    /// missing picture data.
+    #[test]
+    fn fe_load_screen_load_pictures_matches() {
+        check(
+            ee::s06::f_00233640__generated,
+            fe_load_screen_load_pictures,
+            320,
+            &|c, seed| {
+                let _r = oc1009_lp_setup(c, seed, 0x0023_3640);
+                let ty = [1u64, 1, 2, 3][(seed % 4) as usize];
+                c.g[A0][0] = OC1009_THIS as u64;
+                c.g[A1][0] = ty;
+                c.bus
+                    .write8(0x0053_5c11, if (seed >> 7) & 1 == 1 { 2 } else { 0 });
+            },
+        );
+    }
+
+    /// The gate of this module's call fakes, in each test's own RAM: the
+    /// magic at `OC1016_CTRL`, the zero mask at `+8` (bit n: call n returns 0)
+    /// and the result every fake returns when non-zero, at `+16`.
+    pub(crate) const OC1016_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1016_MAGIC: u32 = 0x1016_c0de;
+
+    /// A test machine with the callee fakes armed: `forced` (0 for none) is
+    /// the result of every fake, `mask` the calls that return 0.
+    pub(crate) fn oc1016_machine(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        calls: u32,
+        forced: u32,
+        mask: u64,
+    ) -> Rng {
+        oc1016_install_fakes();
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(OC1016_CTRL, OC1016_MAGIC);
+        c.bus.write64(OC1016_CTRL + 8, mask);
+        c.bus.write32(OC1016_CTRL + 16, forced);
+        r
+    }
+
+    /// The setup of the three load-state functions: `self` in a0, the loader
+    /// object pointer in a1 whose vtable has a half-word offset and the fake
+    /// call target (outside the table: the machine's miss hook).
+    pub(crate) fn load_state_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 8);
+        let this = DATA + 0x1000;
+        let slot = DATA + 0x2000;
+        let obj = DATA + 0x3000;
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(slot);
+        c.bus.write32(slot, obj);
+        c.bus.write16(obj + 0x10, (r.next_u32() & 0xffff) as u16);
+        c.bus.write32(obj + 0x14, fakes::FAKE);
+    }
+
+    #[test]
+    fn game_module_request_overlay_state_global_matches() {
+        check(
+            ee::s06::f_00233ad0__generated,
+            game_module_request_overlay_state_global,
+            200,
+            &|c, seed| {
+                oc1016_machine(c, seed, 0x233ad0, 4, 0, (seed % 2) as u64);
+                c.bus.write32(
+                    GAME_GP.wrapping_sub(0x488),
+                    DATA + 0x3000 + 0x100 * (seed % 3),
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn game_state_load_state_matches() {
+        check(
+            ee::s06::f_00233b28__generated,
+            game_state_load_state,
+            300,
+            &|c, seed| load_state_setup(c, seed, 0x233b28),
+        );
+    }
+
+    #[test]
+    fn game_state_quit_load_state_matches() {
+        check(
+            ee::s06::f_00233bb0__generated,
+            game_state_quit_load_state,
+            200,
+            &|c, seed| load_state_setup(c, seed, 0x233bb0),
+        );
+    }
+
+    #[test]
+    fn game_state_idle_load_state_matches() {
+        check(
+            ee::s06::f_00233bf0__generated,
+            game_state_idle_load_state,
+            200,
+            &|c, seed| load_state_setup(c, seed, 0x233bf0),
         );
     }
 }

@@ -23,6 +23,10 @@ pub(crate) use crate::game::fe::debugfe::gp;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::festateload::event_select_notify;
 pub(crate) use crate::game::fe::festateruleselect::POPUP_ACTIVE;
+pub(crate) use crate::game::fe::ovstateenterlodge::ov_image_sym;
+pub(crate) use crate::game::fe::ovstateenterlodge::ov_state_dtor_body;
+pub(crate) use crate::game::fe::ovstateenterlodge::OV_EVENT_SELECT_CTOR;
+pub(crate) use crate::game::fe::ovstateenterlodge::OV_STATE_BASE_CTOR;
 pub(crate) use crate::game::fe::ovstatehud::oc738_copy_blocks;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::main::ssxappdtor::p;
@@ -182,6 +186,25 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         event_select_refresh_event_list,
         "EventSelect_RefreshEventList",
     ),
+    (
+        0x0020_8518,
+        ov_screen_map_on_widget_created,
+        "OVScreenMap_OnWidgetCreated",
+    ),
+    (
+        0x0020_8538,
+        ov_screen_map_transition_in,
+        "OVScreenMap_TransitionIn",
+    ),
+    (
+        0x0020_85b8,
+        ovscreenmap_on_widget_action,
+        "OVScreenMap_OnWidgetAction",
+    ),
+    (0x0020_8658, ovscreenmap_post_input, "OVScreenMap_PostInput"),
+    (0x0022_11c8, ov_screen_map_ctor, "OVScreenMap_ctor"),
+    (0x0022_1228, ov_screen_map_ctor_2, "OVScreenMap_ctor_2"),
+    (0x0022_1298, ov_screen_map_dtor, "OVScreenMap_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14346,10 +14369,193 @@ pub fn event_select_handle_input(c: &mut Cpu) {
     c.pc = t;
 }
 
+/// Direct callees the generated bodies reach by name (not through a table).
+pub(crate) const MAP_EVENT_SELECT_WIDGET_CREATED: Callee = Callee {
+    addr: 0x0020_09d0,
+    f: ee::s05::f_002009d0,
+};
+
+pub(crate) const MAP_EVENT_SELECT_TRANSITION_IN: Callee = Callee {
+    addr: 0x0020_0a70,
+    f: ee::s05::f_00200a70,
+};
+
+/// `OVScreenMap_OnWidgetCreated(this)` (0x208518): `EventSelect_OnWidgetCreated(this + 0x9c)`.
+pub fn ov_screen_map_on_widget_created(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(abi::r32(c, A0).wrapping_add(0x9c));
+        MAP_EVENT_SELECT_WIDGET_CREATED.call(c, 0x0020_8528)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `OVScreenMap_TransitionIn(this)` (0x208538): `EventSelect_TransitionIn(this + 0x9c)`.
+pub fn ov_screen_map_transition_in(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(abi::r32(c, A0).wrapping_add(0x9c));
+        MAP_EVENT_SELECT_TRANSITION_IN.call(c, 0x0020_8548)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `OVScreenMap_OnWidgetAction` (0x2085b8): the map screen's widget action.
+/// Runs `EventSelect_OnWidgetAction` on the screen's event block (screen +0x9c).
+/// When that reports 1 (handled) the screen's flags at +0x1c lose their 0x3f00
+/// field and gain 0x780; otherwise the child at +0x10 gets a table call with
+/// `+0x18` as its argument.
+pub fn ovscreenmap_on_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9c));
+        Callee {
+            addr: 0x0020_18a8,
+            f: ee::s05::f_002018a8,
+        }
+        .call(c, 0x0020_85d0)?;
+        c.g[V1][0] = 1;
+        if c.g[V0][0] != c.g[V1][0] {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 10;
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x10)).lw(c);
+            c.g[A1][0] = 1;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+            call_ptr(c, 0x0039_f190, 0x0020_85ec)?;
+            let flags = (c.g[S0][0] as u32).wrapping_add(0x1c);
+            c.g[V1][0] = Addr(flags).lw(c);
+            c.g[V0][0] = !0x3f00u64;
+            c.g[V1][0] &= c.g[V0][0];
+            c.g[V1][0] |= 0x780;
+            Addr(flags).sw(c, c.g[V1][0]);
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `OVScreenMap_PostInput` (0x208658): forwards the post-input event of the
+/// map screen (screen +0x9c) to `EventSelect_PostInput`.
+pub fn ovscreenmap_post_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x9c));
+        Callee {
+            addr: 0x0020_2770,
+            f: ee::s05::f_00202770,
+        }
+        .call(c, 0x0020_8668)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cOVState_MAP::~` (0x221298): the same destructor shape again.
+pub fn ov_screen_map_dtor(c: &mut Cpu) {
+    guest(c, |c| ov_state_dtor_body(c, 0x0022_12b4));
+}
+
+/// `cOVState_MAP::cOVState_MAP` (0x2211c8, the one-argument form): the base
+/// constructor with engine 0, then the map vtables and fields. Returns `this`.
+pub fn ov_screen_map_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, OV_STATE_BASE_CTOR, 0x0022_11e0)?;
+        let this = Addr(c.g[S0][0] as u32);
+        this.off(0x98).sw(c, 0);
+        let vtable = ov_image_sym(0x4e08);
+        this.off(0x48).sw(c, 0);
+        c.g[V1][0] = vtable;
+        this.off(0x8).sw(c, vtable);
+        c.g[A1][0] = 0x004a_0000;
+        this.off(0x4c).sw(c, 0);
+        this.off(0x54).sw(c, 0);
+        c.g[V1][0] = ov_image_sym(0x33f8);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        let halfword = Addr((c.g[A1][0] as u32).wrapping_add(0x2088)).lhu(c);
+        c.g[A0][0] = halfword;
+        let v1 = c.g[V1][0];
+        this.off(0x8).sw(c, v1);
+        this.off(0x58).sh(c, halfword);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cOVState_MAP::cOVState_MAP(this, engine, overlayId)` (0x221228): the base
+/// constructor with the caller's arguments (overlay id saved from a2), the map
+/// vtables and fields, then `EventSelect_ctor` on `this+0x9c`. Returns `this`.
+pub fn ov_screen_map_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, OV_STATE_BASE_CTOR, 0x0022_1244)?;
+        let this = Addr(c.g[S0][0] as u32);
+        let overlay_id = c.g[S1][0];
+        this.off(0x98).sw(c, overlay_id);
+        let vtable = ov_image_sym(0x4e08);
+        this.off(0x48).sw(c, 0);
+        this.off(0x8).sw(c, vtable);
+        c.g[A1][0] = 0x004a_0000;
+        this.off(0x4c).sw(c, 0);
+        this.off(0x54).sw(c, 0);
+        let map_vtable = ov_image_sym(0x33f8);
+        c.g[V0][0] = map_vtable;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x9c));
+        let halfword = Addr((c.g[A1][0] as u32).wrapping_add(0x2088)).lhu(c);
+        c.g[V1][0] = halfword;
+        this.off(0x8).sw(c, map_vtable);
+        this.off(0x58).sh(c, halfword);
+        Callee {
+            addr: OV_EVENT_SELECT_CTOR,
+            f: ee::s05::f_002006b8,
+        }
+        .call(c, 0x0022_1280)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    pub(crate) use crate::game::fe::ovstatemap::tests::oc992_install_fakes;
     pub(crate) use crate::game::sound::bankmonitor::tests::oc774_install_fakes;
     pub(crate) use crate::game::ui::uimenu::tests::oc776_install_plain_fakes;
     pub(crate) use crate::game::visualfx::renderstateman::tests::oc758_install_fakes;
@@ -16911,5 +17117,117 @@ pub(crate) mod tests {
             seen.insert(c.cycles - before);
         }
         assert!(seen.len() >= min, "only {} paths: {seen:?}", seen.len());
+    }
+
+    pub(crate) use crate::game::fe::ovstateenterlodge::tests::oc1004_setup;
+
+    pub(crate) use crate::game::fe::ovstatemap::tests::oc992_base;
+    pub(crate) use crate::game::fe::ovstatemap::tests::oc992_force;
+
+    pub(crate) use crate::game::fe::ovstatemap::tests::OC992_O;
+    pub(crate) use crate::game::fe::ovstatemap::tests::OC992_P;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc991_machine;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::OC991_THIS;
+
+    #[test]
+    fn ov_screen_map_on_widget_created_matches() {
+        check(
+            ee::s05::f_00208518__generated,
+            ov_screen_map_on_widget_created,
+            40,
+            &|c, seed| {
+                let _r = oc991_machine(c, seed, 0x2085, 1);
+                c.g[A0][0] = sx(OC991_THIS);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_map_transition_in_matches() {
+        check(
+            ee::s05::f_00208538__generated,
+            ov_screen_map_transition_in,
+            40,
+            &|c, seed| {
+                let _r = oc991_machine(c, seed, 0x2085, 1);
+                c.g[A0][0] = sx(OC991_THIS);
+            },
+        );
+    }
+
+    #[test]
+    fn ovscreenmap_on_widget_action_matches() {
+        oc992_install_fakes();
+        check(
+            ee::s05::f_002085b8__generated,
+            ovscreenmap_on_widget_action,
+            200,
+            &|c, seed| {
+                let mut r = oc992_base(c, seed, 0x0992_2085);
+                c.pc = 0x0020_85b8;
+                c.g[A0][0] = sx(OC992_O);
+                c.bus.write32(OC992_O + 0x10, OC992_P);
+                c.bus.write32(OC992_O + 0x1c, r.next_u32());
+                // EventSelect_OnWidgetAction reports 0 or 1.
+                oc992_force(c, 0x0020_18a8, seed % 2);
+            },
+        );
+    }
+
+    #[test]
+    fn ovscreenmap_post_input_matches() {
+        oc992_install_fakes();
+        check(
+            ee::s05::f_00208658__generated,
+            ovscreenmap_post_input,
+            200,
+            &|c, seed| {
+                oc992_base(c, seed, 0x0992_8658);
+                c.pc = 0x0020_8658;
+                c.g[A0][0] = sx(OC992_O);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_map_dtor_matches() {
+        covered(
+            ee::s05::f_00221298__generated,
+            ov_screen_map_dtor,
+            240,
+            &|c, seed| {
+                oc1004_setup(c, seed, 0x0022_1298, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_map_ctor_matches() {
+        covered(
+            ee::s05::f_002211c8__generated,
+            ov_screen_map_ctor,
+            240,
+            &|c, seed| {
+                let mut r = oc1004_setup(c, seed, 0x0022_11c8, 1);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ov_screen_map_ctor_2_matches() {
+        covered(
+            ee::s05::f_00221228__generated,
+            ov_screen_map_ctor_2,
+            240,
+            &|c, seed| {
+                let mut r = oc1004_setup(c, seed, 0x0022_1228, 2);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
     }
 }

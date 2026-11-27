@@ -1,14 +1,21 @@
 //! `src/fe/ovstaterewardslist.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 pub(crate) use crate::game::dirtysock::tagsunk::at_3 as at;
 pub(crate) use crate::game::dirtysock::tagsunk::gp_5 as gp;
 pub(crate) use crate::game::dirtysock::tagsunk::sw;
 pub(crate) use crate::game::fe::feasyncfile::at_2;
+pub(crate) use crate::game::fe::ovstatepause::ov_base_fill_fields;
+pub(crate) use crate::game::fe::ovstatepause::OV_UI_STATE_CTOR;
+pub(crate) use crate::game::fe::ovstatetrophy::oc1015_dtor;
+pub(crate) use crate::game::fe::ovstatetrophy::OC1015_UI_DTOR;
+pub(crate) use crate::game::fe::ovstatetrophy::OC1015_VT_BASE;
 pub(crate) use crate::game::main::ssxappdtor::p as p_2;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
@@ -28,6 +35,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0020_0388,
         event_select_get_event_record,
         "EventSelect_GetEventRecord",
+    ),
+    (
+        0x0020_0288,
+        ov_screen_rewards_list_popup_on_widget_action,
+        "OVScreenRewardsListPopup_OnWidgetAction",
+    ),
+    (
+        0x0022_2100,
+        ov_screen_rewards_list_popup_ctor,
+        "OVScreenRewardsListPopup_ctor",
+    ),
+    (
+        0x0022_2160,
+        ov_screen_rewards_list_popup_ctor_2,
+        "OVScreenRewardsListPopup_ctor_2",
+    ),
+    (
+        0x0022_21c8,
+        ov_screen_rewards_list_popup_dtor,
+        "OVScreenRewardsListPopup_dtor",
     ),
 ];
 
@@ -631,6 +658,167 @@ pub fn event_select_get_event_record(c: &mut Cpu) {
     return;
 }
 
+/// `OVScreenRewardsListPopup_OnWidgetAction(this, data, kind)` (0x200288):
+/// the popup's action dispatch. Returns whether the body leaves through the
+/// one-cycle tail (`'b_200370`) rather than straight to the epilogue.
+pub fn ov_screen_rewards_list_popup_on_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        let no_data = c.g[S0][0] == 0;
+        c.g[S1][0] = c.g[A0][0];
+        let tail = no_data || widget_action(c, frame)?;
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The kind dispatch of the widget action (`'b_20033c`). Returns true when
+/// the body takes the `'b_200370` tail.
+pub(crate) fn widget_action(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = 0x5;
+    let kind_five = c.g[A2][0] == c.g[V0][0];
+    c.g[V0][0] = 0x6;
+    if kind_five {
+        widget_action_redraw(c, frame)?;
+        c.cycles += 5;
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+        c.g[A0][0] = sx(abi::r32(c, A0).wrapping_add(0x18));
+        call_ptr(c, 0x0039_f400, 0x0020_0334)?;
+        return Ok(false);
+    }
+    c.cycles += 2;
+    if c.g[A2][0] == c.g[V0][0] {
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+        return widget_action_notify(c);
+    }
+    c.cycles += 2;
+    Ok(false)
+}
+
+/// Kind 5 (`'b_200328`): two float fields (1.0f) and a zeroed pair in the
+/// frame, the vtable call with them, then the optional second call.
+pub(crate) fn widget_action_redraw(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 16;
+    c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x8).lw(c);
+    c.g[A1][0] = c.g[SP][0];
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 0);
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x58).lh(c);
+    frame.save_fpr(c, 0, 0x4);
+    frame.save_fpr(c, 0, 0x0);
+    Addr(frame.at(c, 0x8)).sw(c, 0);
+    Addr(frame.at(c, 0xc)).sw(c, 0);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x5c).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0020_02f0)?;
+    c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x18).lw(c);
+    c.g[V0][0] = 0x1;
+    let other = c.g[V1][0] != c.g[V0][0];
+    c.g[A1][0] = 0;
+    if !other {
+        c.cycles += 10;
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 0x1;
+        c.g[A3][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V1][0] = Addr(c.g[A3][0] as u32).off(0x4).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x20).lh(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0020_0324)?;
+        c.g[A1][0] = c.g[V0][0];
+    }
+    Ok(())
+}
+
+/// Kind 6 (`'b_20033c` exit): the notify call on the object at `this->+0x10`.
+/// Always leaves through the tail.
+pub(crate) fn widget_action_notify(c: &mut Cpu) -> Result<bool, Unwound> {
+    c.cycles += 10;
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x18).lw(c);
+    c.g[A3][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[V1][0] = Addr(c.g[A3][0] as u32).off(0x4).lw(c);
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x28).lh(c);
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x2c).lw(c);
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, 0x0020_035c)?;
+    let absent = c.g[V0][0] == 0;
+    c.g[A1][0] = c.g[V0][0];
+    if !absent {
+        c.cycles += 3;
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+        c.g[A0][0] = sx(abi::r32(c, A0).wrapping_add(0x18));
+        call_ptr(c, 0x0039_f400, 0x0020_0370)?;
+    }
+    Ok(true)
+}
+
+/// `OVScreenRewardsListPopup_ctor` (0x222100): the rewards-list popup state in
+/// `a0` with overlay id 0, after `UIState_ctor(this, 0)`.
+pub fn ov_screen_rewards_list_popup_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let f = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        f.save(c, 16, 0x10);
+        f.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, OV_UI_STATE_CTOR, 0x0022_2118)?;
+        ov_base_fill_fields(c, 0, 0x0047_21e0);
+        f.restore(c, 16, 0x10);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `OVScreenRewardsListPopup_ctor_2` (0x222160): as the constructor above, with
+/// the overlay id taken from `a2`.
+pub fn ov_screen_rewards_list_popup_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let f = Frame::open(c, 0x30);
+        f.save(c, 16, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        f.save(c, 17, 0x10);
+        f.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        call_ptr(c, OV_UI_STATE_CTOR, 0x0022_217c)?;
+        let ov_id = c.g[S1][0];
+        ov_base_fill_fields(c, ov_id, 0x0047_21e0);
+        f.restore(c, 17, 0x10);
+        f.restore(c, 16, 0x20);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `OVScreenRewardsListPopup_dtor` (0x2221c8): the rewards-list popup's
+/// destructor. Sets the base `cOVState` vtable at +0x8, then `UIState_dtor`.
+pub fn ov_screen_rewards_list_popup_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        oc1015_dtor(c, OC1015_VT_BASE, OC1015_UI_DTOR, 0x0022_21e4)
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -705,6 +893,88 @@ pub(crate) mod tests {
                 c.g[A2][0] = (r.next_u32() % 4) as u64;
                 c.g[A3][0] = sx(kind);
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc1014_hook;
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc1014_setup;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc991_machine;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::oc991_vtable;
+
+    pub(crate) use crate::game::fe::ovstatepause::tests::OC991_MISS;
+    pub(crate) use crate::game::fe::ovstatepause::tests::OC991_THIS;
+    pub(crate) use crate::game::fe::ovstatetrophy::tests::oc1015_object_setup;
+
+    pub(crate) fn oc991_setup_widget_action(c: &mut Cpu, seed: u32) {
+        let mut r = oc991_machine(c, seed, 0x2002, 6);
+        let vt = DATA + 0x2100;
+        oc991_vtable(c, &mut r, vt, &[0x20, 0x28, 0x58]);
+        // A zero data pointer takes the early exit.
+        let arg: u32 = if seed % 7 == 0 { 0 } else { DATA + 0x1000 };
+        if arg != 0 {
+            c.bus.write32(arg + 8, vt);
+            c.bus.write32(arg + 0x18, if seed % 2 == 0 { 1 } else { 0 });
+        }
+        let p = DATA + 0x2400;
+        let obj = DATA + 0x2800;
+        c.bus.write32(OC991_THIS + 0x10, p);
+        c.bus.write32(p, obj);
+        c.bus.write32(obj + 4, vt);
+        // The notify call's result decides the tail (zero or not).
+        c.bus.write32(
+            OC991_MISS,
+            if (seed / 3) % 2 == 0 { 0 } else { 0x0081_2340 },
+        );
+        c.g[A0][0] = sx(OC991_THIS);
+        c.g[A1][0] = arg as u64;
+        c.g[A2][0] = match seed % 3 {
+            0 => 5,
+            1 => 6,
+            _ => 7 + (seed % 4) as u64,
+        };
+    }
+
+    #[test]
+    fn ov_screen_rewards_list_popup_on_widget_action_matches() {
+        check(
+            ee::s05::f_00200288__generated,
+            ov_screen_rewards_list_popup_on_widget_action,
+            200,
+            &|c, seed| oc991_setup_widget_action(c, seed),
+        );
+    }
+
+    #[test]
+    fn ov_screen_rewards_list_popup_ctor_matches() {
+        oc1014_hook();
+        check(
+            ee::s05::f_00222100__generated,
+            ov_screen_rewards_list_popup_ctor,
+            200,
+            &|c, seed| oc1014_setup(c, seed, 0x0022_2100),
+        );
+    }
+
+    #[test]
+    fn ov_screen_rewards_list_popup_ctor_2_matches() {
+        oc1014_hook();
+        check(
+            ee::s05::f_00222160__generated,
+            ov_screen_rewards_list_popup_ctor_2,
+            200,
+            &|c, seed| oc1014_setup(c, seed, 0x0022_2160),
+        );
+    }
+
+    #[test]
+    fn ov_screen_rewards_list_popup_dtor_matches() {
+        check(
+            ee::s05::f_002221c8__generated,
+            ov_screen_rewards_list_popup_dtor,
+            200,
+            &|c, seed| oc1015_object_setup(c, seed),
         );
     }
 }

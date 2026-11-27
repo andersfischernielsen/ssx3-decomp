@@ -83,6 +83,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SndLoadQueue_AllocAsyncBuffer",
     ),
     (0x0028_a558, snd_load_queue_push, "SndLoadQueue_Push"),
+    (
+        0x0028_b0f0,
+        snd_bank_man_notify_queue_heads,
+        "SndBankMan_NotifyQueueHeads",
+    ),
 ];
 
 /// The audio app / view objects: `world + 0x84` is the audio system, its
@@ -3004,6 +3009,63 @@ pub(crate) const SNDLOADQUEUE_ASYNC_SIZE: u32 = 0x1d0;
 
 pub(crate) const SNDLOADQUEUE_ASYNC_BUFFER: u32 = 0x1cc;
 
+/// `void SndBankMan_NotifyQueueHeads(SndBankMan* self, int queue)` (0x28b0f0):
+/// pick the head entries of the two queues at `self+0x18c` and `self+0x1bc`
+/// (or -1 when a queue has none) and hand the first to the function pointer
+/// stored in the queue's dispatch table, with the chosen entry as argument.
+pub fn snd_bank_man_notify_queue_heads(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        let bank = c.g[A3][0] as u32;
+        c.g[T0][0] = sx(bank.wrapping_add(0x18c));
+        c.g[V0][0] = Addr(bank.wrapping_add(0x1d4)).lw(c);
+        c.g[A1][0] = Addr(bank.wrapping_add(0x194)).lw(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x18)).lh(c);
+        c.g[T2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1c));
+        c.g[A0][0] = Addr(bank.wrapping_add(0x198)).lw(c);
+        c.g[T1][0] = sx(bank.wrapping_add(c.g[V1][0] as u32));
+        if c.g[A1][0] != c.g[A0][0] {
+            c.cycles += 5;
+            c.g[V0][0] = Addr((c.g[T0][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[V1][0] = Addr((c.g[T0][0] as u32).wrapping_add(0x4)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A1][0] = Addr(c.g[V0][0] as u32).lw(c);
+        } else {
+            c.cycles += 2;
+            c.g[A1][0] = u64::MAX;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = Addr(bank.wrapping_add(0x1c8)).lw(c);
+        c.g[V0][0] = Addr(bank.wrapping_add(0x1c4)).lw(c);
+        let differ = c.g[V0][0] != c.g[V1][0];
+        c.g[A0][0] = sx(bank.wrapping_add(0x1bc));
+        if differ {
+            c.cycles += 5;
+            c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xc)).lw(c);
+            c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x4)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A3][0] = Addr(c.g[V0][0] as u32).lw(c);
+        } else {
+            c.cycles += 2;
+            c.g[A3][0] = u64::MAX;
+        }
+        c.cycles += 6;
+        c.g[V0][0] = Addr(c.g[T2][0] as u32).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = c.g[T1][0];
+        call_ptr(c, target, 0x0028_b174)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4048,6 +4110,44 @@ pub(crate) mod tests {
                 } else {
                     sx(r.next_u32() & 0xf_fff0 | 0x10)
                 };
+            },
+        );
+    }
+
+    use crate::difftest::fakes::FAKE;
+
+    #[test]
+    fn snd_bank_man_notify_queue_heads_matches() {
+        check(
+            ee::s07::f_0028b0f0__generated,
+            snd_bank_man_notify_queue_heads,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0028_b0f0, 0);
+                let bank = DATA + 0x1000;
+                let queue = DATA + 0x2000;
+                let table = DATA + 0x3000;
+                let idx = seed % 4;
+                c.g[A0][0] = bank as u64;
+                c.g[A1][0] = (seed as u64).wrapping_mul(7);
+                // The queue record: the entry offset and the call target.
+                c.bus.write32(bank + 0x1d4, queue);
+                c.bus.write16(queue + 0x18, 0x40);
+                c.bus.write32(queue + 0x1c, FAKE);
+                // First queue: the array base and index at +0x190/+0x198;
+                // the head is `a1` (+0x194) against `a0` (+0x198).
+                c.bus.write32(bank + 0x190, table);
+                c.bus.write32(bank + 0x198, idx);
+                c.bus
+                    .write32(bank + 0x194, if seed % 2 == 0 { idx } else { idx + 1 });
+                // Second queue: the same at +0x1c0/+0x1c8 and +0x1c4.
+                c.bus.write32(bank + 0x1c0, table);
+                c.bus.write32(bank + 0x1c8, idx);
+                c.bus.write32(
+                    bank + 0x1c4,
+                    if (seed / 2) % 2 == 0 { idx } else { idx + 1 },
+                );
+                c.bus.write32(table + 4 * idx, 0x1234 + seed);
             },
         );
     }

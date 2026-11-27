@@ -26,6 +26,9 @@ pub(crate) use crate::game::fe::feasyncfile::low_2;
 pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_3;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw_4;
 pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw_2;
+pub(crate) use crate::game::fe::festateloadhint::oc1009_base_minus;
+pub(crate) use crate::game::fe::festateloadhint::oc1009_ea;
+pub(crate) use crate::game::fe::festateloadhint::oc1009_gp_minus;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
 pub(crate) use crate::game::fe::festatetrophyroom::Ops;
 pub(crate) use crate::game::lib::snd::addiu;
@@ -336,6 +339,92 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0028_9470,
         ssx_audio_system_read_playlist_names,
         "SSXAudioSystem_ReadPlaylistNames",
+    ),
+    (0x0028_5210, ssx_audio_system_dtor, "SSXAudioSystem_dtor"),
+    (
+        0x0028_61d0,
+        ssx_audio_system_set_music_event1,
+        "SSXAudioSystem_SetMusicEvent1",
+    ),
+    (
+        0x0028_6a80,
+        ssx_audio_system_exit_game,
+        "SSXAudioSystem_ExitGame",
+    ),
+    (
+        0x0028_6d18,
+        ssx_audio_system_unload_memory_bank,
+        "SSXAudioSystem_UnloadMemoryBank",
+    ),
+    (
+        0x0028_70a0,
+        ssx_audio_system_on_quick_restart,
+        "SSXAudioSystem_OnQuickRestart",
+    ),
+    (
+        0x0028_72a8,
+        ssx_audio_system_start_pre_race_music,
+        "SSXAudioSystem_StartPreRaceMusic",
+    ),
+    (
+        0x0028_79b0,
+        ssx_audio_system_inc_channel_volume,
+        "SSXAudioSystem_IncChannelVolume",
+    ),
+    (
+        0x0028_79e0,
+        ssx_audio_system_dec_channel_volume,
+        "SSXAudioSystem_DecChannelVolume",
+    ),
+    (
+        0x0028_9398,
+        ssx_audio_system_prev_debug_mode,
+        "SSXAudioSystem_PrevDebugMode",
+    ),
+    (
+        0x0028_93c8,
+        ssx_audio_system_next_debug_mode,
+        "SSXAudioSystem_NextDebugMode",
+    ),
+    (
+        0x0028_9400,
+        ssx_audio_system_schedule_trigger_timer,
+        "SSXAudioSystem_ScheduleTriggerTimer",
+    ),
+    (
+        0x0028_9448,
+        ssx_audio_system_trigger_timer_callback,
+        "SSXAudioSystem_TriggerTimerCallback",
+    ),
+    (
+        0x0028_9680,
+        ssx_audio_system_empty_crowd_handler,
+        "SSXAudioSystem_EmptyCrowdHandler",
+    ),
+    (
+        0x0028_99f8,
+        ssx_audio_system_apply_music_trigger_paint,
+        "SSXAudioSystem_ApplyMusicTriggerPaint",
+    ),
+    (
+        0x0028_9af8,
+        ssx_audio_system_rider_release,
+        "SSXAudioSystem_RiderRelease",
+    ),
+    (
+        0x0028_9dc0,
+        ssx_audio_system_get_output_mode_option,
+        "SSXAudioSystem_GetOutputModeOption",
+    ),
+    (
+        0x0028_9de0,
+        ssx_audio_system_take_boot_movie_flag,
+        "SSXAudioSystem_TakeBootMovieFlag",
+    ),
+    (
+        0x0028_9df0,
+        snd_load_queue_finish_current,
+        "SndLoadQueue_FinishCurrent",
     ),
 ];
 
@@ -7728,6 +7817,1416 @@ pub fn ssx_audio_system_read_playlist_names(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_dtor (0x285210)
+// ---------------------------------------------------------------------------
+
+/// `void SSXAudioSystem::~SSXAudioSystem(int flags)` (0x285210): `this = a0`,
+/// `flags = a1` (bit 0: delete the object, bit 1: destroy the virtual bases).
+/// Resets the vtable words (music system `+0x5558`, speech system `+0x571c`,
+/// object `+0xc`), points the sound-system bases' vtables back at the base
+/// tables (`BankManager+0x1d8/+0x4`, `+0xab0`, `+0x1d4`; with `flags == 0` it
+/// first builds adjusted stack copies of those tables, gcc 2.95's virtual-base
+/// `this` fix-up), unloads the loading-screen bank, removes the user-chunk
+/// handler, tears down the speech system (`+0x5560`), the big-file sync (`+0x5728`)
+/// and the play history (`+0x5980`), runs the controller destructor and, for
+/// `flags & 2`, the stream, bank-manager and sound-system destructors, and for
+/// `flags & 1` frees the object.
+pub fn ssx_audio_system_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        // vtable words, then (flags == 0) the stack copies of the base tables
+        c.cycles += 36;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x100));
+        c.g[V0][0] = 0x480000;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3688));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.g[V1][0] = 0x480000;
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.g[A2][0] = 0x480000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x36d8));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0xa0), c.g[RA][0]);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x36b8));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x5558), c.g[V0][0]);
+        c.g[A0][0] = 0x480000;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0xc), c.g[A2][0]);
+        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3708));
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x571c), c.g[V1][0]);
+        c.g[A2][0] = 0x480000;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+        c.g[T8][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3648));
+        c.g[S3][0] = 0x480000;
+        c.g[S4][0] = sx((c.g[S1][0] as u32).wrapping_add(0x5560));
+        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+        c.g[T9][0] = sx((c.g[S3][0] as u32).wrapping_add(0x3728));
+        c.g[S2][0] = c.g[A1][0];
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A3][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xab0), c.g[T8][0]);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+        let t = c.g[S2][0] != 0u64;
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1d4), c.g[T9][0]);
+        if !t {
+            c.cycles += 81;
+            c.g[A1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x3708));
+            c.g[T6][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[A0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+            c.sd(c.g[SP][0] as u32, c.g[A1][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x18), c.g[A0][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+            c.g[A1][0] = c.lhu((c.g[A3][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            c.g[A0][0] = c.lhu((c.g[A3][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+            c.g[T5][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x3648));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[SP][0]);
+            c.g[T4][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x8));
+            c.g[T2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+            c.g[T3][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw(c.g[T2][0] as u32);
+            c.g[T1][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x18));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+            c.g[T0][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6c90));
+            c.g[A3][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x28));
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[A2][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x30));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = c.ld((c.g[T8][0] as u32).wrapping_add(0x38));
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[T5][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x28), c.g[T4][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[T3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x38), c.g[T1][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[T0][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V1][0]);
+            c.g[V0][0] = c.lw(c.g[T2][0] as u32);
+            c.g[A3][0] = c.lhu((c.g[T8][0] as u32).wrapping_add(0x30));
+            c.sw((c.g[V0][0] as u32).wrapping_add(0xab0), c.g[T6][0]);
+            c.g[A2][0] = c.lhu((c.g[T8][0] as u32).wrapping_add(0x8));
+            c.g[T7][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x118));
+            c.g[A1][0] = c.lhu((c.g[T8][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw(c.g[T7][0] as u32);
+            c.g[A0][0] = c.lhu((c.g[T8][0] as u32).wrapping_add(0x18));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6c98));
+            c.g[V0][0] = c.lhu((c.g[T8][0] as u32).wrapping_add(0x28));
+            c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+            c.g[T6][0] = c.ld((c.g[S3][0] as u32).wrapping_add(0x3728));
+            c.g[T0][0] = c.ld((c.g[T9][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[T5][0] = c.ld((c.g[T9][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[T4][0] = c.ld((c.g[T9][0] as u32).wrapping_add(0x18));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[T3][0] = c.ld((c.g[T9][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[T2][0] = c.ld((c.g[T9][0] as u32).wrapping_add(0x28));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[T1][0] = c.ld((c.g[T9][0] as u32).wrapping_add(0x30));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T0][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x48), c.g[V0][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x28), c.g[A2][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x30), c.g[A1][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x38), c.g[A0][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T6][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T5][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T4][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[T3][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x88), c.g[T2][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x90), c.g[T1][0]);
+            c.g[V0][0] = c.lhu((c.g[T9][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lw(c.g[T7][0] as u32);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x1d4), c.g[S0][0]);
+            c.sh((c.g[SP][0] as u32).wrapping_add(0x68), c.g[V0][0]);
+        }
+        let frame = Frame { size: 0x100 };
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0028_f730,
+            f: ee::s07::f_0028f730,
+        }
+        .call(c, 0x0028_53ec)?;
+        c.g[A0][0] = 0x0029_0000;
+        c.g[A0][0] = oc1009_base_minus(c.g[A0][0] as u32, 0x69b0);
+        call_ptr(c, 0x003b_5a60, 0x0028_53f8)?;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, 0x002b_0da0, 0x0028_5400)?;
+        c.g[A0][0] = c.lw(oc1009_ea(c.g[S1][0], 0x5728));
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = c.lw(oc1009_ea(c.g[S1][0], 0x5980));
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = 0x64;
+            call_ptr(c, 0x003d_edc0, 0x0028_5414)?;
+            c.g[A0][0] = c.lw(oc1009_ea(c.g[S1][0], 0x5980));
+        }
+        c.cycles += 2;
+        if c.g[A0][0] == 0 {
+            c.g[A0][0] = c.g[S1][0];
+        } else {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x0028_5428)?;
+            c.g[A0][0] = c.g[S1][0];
+        }
+        c.cycles += 5;
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x002a_b478, 0x0028_5434)?;
+        c.g[V0][0] = c.g[S2][0] & 0x2;
+        let no_bases = c.g[V0][0] == 0;
+        c.g[V0][0] = c.g[S2][0] & 0x1;
+        if !no_bases {
+            c.cycles += 13;
+            c.g[A0][0] = c.lw(oc1009_ea(c.g[S1][0], 0x118));
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x002a_a648, 0x0028_544c)?;
+            c.g[V0][0] = c.lw(oc1009_ea(c.g[S1][0], 0x118));
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+            Callee {
+                addr: 0x0028_bb10,
+                f: ee::s07::f_0028bb10,
+            }
+            .call(c, 0x0028_545c)?;
+            c.g[V1][0] = c.lw(oc1009_ea(c.g[S1][0], 0x118));
+            c.g[A1][0] = 0;
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[A0][0] = c.lw(oc1009_ea(c.g[V0][0], 0x1d8));
+            call_ptr(c, 0x002a_dee8, 0x0028_5470)?;
+            c.g[V0][0] = c.g[S2][0] & 0x1;
+        }
+        c.cycles += 2;
+        let keep = c.g[V0][0] == 0;
+        frame.restore(c, S0, 0xf0);
+        if !keep {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x0028_5484)?;
+            frame.restore(c, S0, 0xf0);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_OnRiderFinish (0x286ea0)
+// ---------------------------------------------------------------------------
+
+/// `void SSXAudioSystem::OnRiderFinish(Rider* rider)` (0x286ea0): `this = a0`,
+/// `rider = a1`. Ignored unless the rider is the one the audio system tracks
+/// for its player slot (`rider+0x870`). Reports the finish to the sound
+/// controller (`gp+0x410`, mode 2, rider id unless a replay is playing),
+/// updates the rider's, race and music state, switches the game music (monitor
+/// message `0x24` when the finish is in the racing modes 2/3 and the player
+/// is ahead, else message `0xa`), then, for a rider that has not finished
+/// (`rider+0x480 == 0`), starts the finish speech (`0x2a3708`) or the
+/// celebration (`0x2a34d0`) and finally the finish stinger (`0x2a45c0`) in
+/// the plain race mode.
+#[allow(dead_code)]
+pub fn ssx_audio_system_on_rider_finish(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.lw(oc1009_ea(c.g[S1][0], 0x870));
+        Callee {
+            addr: 0x0028_5d98,
+            f: ee::s07::f_00285d98,
+        }
+        .call(c, 0x0028_6ed0)?;
+        if c.g[S1][0] != c.g[V0][0] {
+            frame.restore(c, S0, 0x60);
+            return oc1009_orf_finish(c, frame);
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0028_8ae0,
+            f: ee::s07::f_00288ae0,
+        }
+        .call(c, 0x0028_6ee0)?;
+        let replay = c.g[V0][0] != 0;
+        c.g[A2][0] = 0;
+        if !replay {
+            c.cycles += 1;
+            c.g[A2][0] = c.lw(oc1009_ea(c.g[S1][0], 0x870));
+        }
+        c.cycles += 29;
+        c.g[A0][0] = c.lw(oc1009_ea(c.g[GP][0], 0x410));
+        c.g[A1][0] = 2;
+        c.g[S4][0] = 1;
+        call_ptr(c, 0x002a_73a8, 0x0028_6efc)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0029_6e20, 0x0028_6f08)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0029_7438, 0x0028_6f14)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0029_b3c0, 0x0028_6f20)?;
+        c.g[V0][0] = c.lw(oc1009_gp_minus(c, 0x848));
+        c.g[V1][0] = c.lw(oc1009_ea(c.g[V0][0], 0xc0));
+        c.g[S3][0] = c.lw(c.g[V1][0] as u32);
+        c.g[S2][0] = c.lw(oc1009_ea(c.g[V1][0], 0x70));
+        call_ptr(c, 0x0014_dc80, 0x0028_6f34)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0028_6f40)?;
+        c.g[V1][0] = 0x0053_0000;
+        c.g[S5][0] = c.g[V1][0];
+        c.g[V1][0] = sx(oc1009_ea(c.g[V1][0], 0x5bc8));
+        c.g[V0][0] = c.lb(oc1009_ea(c.g[V1][0], 0x48));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(2));
+        c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+        let not_race_mode = c.g[V0][0] == 0;
+        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[S2][0] as i64)) as u64;
+        if !not_race_mode {
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                Callee {
+                    addr: 0x0028_d960,
+                    f: ee::s07::f_0028d960,
+                }
+                .call(c, 0x0028_6f70)?;
+                let music_off = c.g[V0][0] == 0;
+                c.g[A2][0] = sx(oc1009_ea(c.g[S0][0], 0x118));
+                if !music_off {
+                    c.cycles += 8;
+                    c.g[V1][0] = c.lw(oc1009_ea(c.g[S0][0], 0x5558));
+                    c.g[A1][0] = 0x24;
+                    c.g[S4][0] = 0;
+                    c.g[A0][0] = c.lh(oc1009_ea(c.g[V1][0], 0x20));
+                    c.g[V0][0] = c.lw(oc1009_ea(c.g[V1][0], 0x24));
+                    let method = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx(oc1009_ea(c.g[A2][0], c.g[A0][0] as u32));
+                    call_ptr(c, method, 0x0028_6f94)?;
+                    c.sw(oc1009_ea(c.g[S0][0], 0x627c), 0);
+                }
+            }
+        }
+        c.cycles += 2;
+        if c.g[S4][0] != 0 {
+            c.cycles += 4;
+            Callee {
+                addr: 0x0028_d960,
+                f: ee::s07::f_0028d960,
+            }
+            .call(c, 0x0028_6fa8)?;
+            let music_off = c.g[V0][0] == 0;
+            c.g[A2][0] = sx(oc1009_ea(c.g[S0][0], 0x118));
+            if !music_off {
+                c.cycles += 6;
+                c.g[V1][0] = c.lw(oc1009_ea(c.g[S0][0], 0x5558));
+                c.g[A1][0] = 0xa;
+                c.g[A0][0] = c.lh(oc1009_ea(c.g[V1][0], 0x20));
+                c.g[V0][0] = c.lw(oc1009_ea(c.g[V1][0], 0x24));
+                let method = c.g[V0][0] as u32;
+                c.g[A0][0] = sx(oc1009_ea(c.g[A2][0], c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0028_6fc8)?;
+            }
+        }
+        // the rider's own finish sound
+        c.cycles += 8;
+        call_ptr(c, 0x0014_dc80, 0x0028_6fd0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0028_6fdc)?;
+        c.g[V1][0] = c.lw(oc1009_ea(c.g[S1][0], 0x480));
+        let already = c.g[V1][0] != 0;
+        c.g[V0][0] = sx(oc1009_ea(c.g[S5][0], 0x5bc8));
+        if !already {
+            // Which start: the finish speech (two code paths, `a` and `b`, that
+            // differ in cycles and return address) or the celebration.
+            #[derive(PartialEq)]
+            enum Start {
+                SpeechA,
+                SpeechB,
+                Celebrate,
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x002a_4078, 0x0028_6ff0)?;
+            let tracked = c.g[V0][0] != 0;
+            c.g[A1][0] = c.g[S1][0];
+            let start;
+            if tracked {
+                start = Start::SpeechA;
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = sx(oc1009_ea(c.g[S5][0], 0x5bc8));
+                c.g[A0][0] = 2;
+                c.g[V1][0] = c.lb(oc1009_ea(c.g[V0][0], 0x49));
+                let not_mode2 = c.g[V1][0] != c.g[A0][0];
+                c.g[V0][0] = ((c.g[S3][0] as i64) < 3) as u64;
+                if !not_mode2 {
+                    c.cycles += 6;
+                    Callee {
+                        addr: 0x0028_b1d8,
+                        f: ee::s07::f_0028b1d8,
+                    }
+                    .call(c, 0x0028_7014)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0012_a250, 0x0028_701c)?;
+                    let no_race = c.g[V0][0] == 0;
+                    c.g[A1][0] = c.g[S1][0];
+                    start = if no_race {
+                        Start::Celebrate
+                    } else {
+                        Start::SpeechA
+                    };
+                } else {
+                    c.cycles += 2;
+                    let few_players = c.g[V0][0] != 0;
+                    c.g[A1][0] = c.g[S1][0];
+                    start = if few_players {
+                        Start::Celebrate
+                    } else {
+                        Start::SpeechB
+                    };
+                }
+            }
+            match start {
+                Start::SpeechA => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x002a_3708, 0x0028_702c)?;
+                }
+                Start::Celebrate => {
+                    c.cycles += 7;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A2][0] = 0;
+                    c.g[A3][0] = u64::MAX;
+                    call_ptr(c, 0x002a_34d0, 0x0028_7050)?;
+                }
+                Start::SpeechB => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x002a_3708, 0x0028_7060)?;
+                }
+            }
+            c.g[V0][0] = sx(oc1009_ea(c.g[S5][0], 0x5bc8));
+        }
+        c.cycles += 3;
+        c.g[V1][0] = c.lb(oc1009_ea(c.g[V0][0], 0x49));
+        if c.g[V1][0] != 0 {
+            frame.restore(c, S0, 0x60);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x002a_45c0, 0x0028_7078)?;
+            frame.restore(c, S0, 0x60);
+        }
+        oc1009_orf_finish(c, frame)
+    });
+}
+
+/// Epilogue of `OnRiderFinish` (`s0` is restored by the caller).
+pub(crate) fn oc1009_orf_finish(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 8;
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// Pops one entry of the ring at `self + base` after the empty check failed
+/// (`v1 = self + base`, `a1` = the tail index): leaves the entry in `v0`,
+/// advances (and wraps) the index at `+0xc`. 10 cycles, +1 on the wrap.
+#[inline(always)]
+pub(crate) fn oc1010_ring_pop(c: &mut Cpu, s1: u32, base: u32) {
+    c.cycles += 10;
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V1][0] = c.lw(s1.wrapping_add(base));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
+    c.g[V1][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+    let in_range = c.g[V1][0] != 0;
+    c.sw(s1.wrapping_add(base).wrapping_add(0xc), c.g[A1][0]);
+    if !in_range {
+        c.cycles += 1;
+        c.sw(s1.wrapping_add(base).wrapping_add(0xc), 0);
+    }
+}
+
+/// Pops the ring at `self + base` (second to fourth rings of the async
+/// system: names, kinds): `-1` when empty, else the entry. Returns it.
+#[inline(always)]
+pub(crate) fn oc1010_pop_ring(c: &mut Cpu, s1: u32, base: u32) -> u64 {
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(s1.wrapping_add(base).wrapping_add(0x8));
+    c.g[A1][0] = c.lw(s1.wrapping_add(base).wrapping_add(0xc));
+    let nonempty = c.g[V0][0] != c.g[A1][0];
+    c.g[V1][0] = sx(s1.wrapping_add(base));
+    if !nonempty {
+        c.cycles += 2;
+        return 0xffff_ffff_ffff_ffff;
+    }
+    oc1010_ring_pop(c, s1, base);
+    c.cycles += 1;
+    c.g[V0][0]
+}
+
+/// `void SndLoadQueue_FinishCurrent(SndLoadQueue* self, int flush)` (0x289df0),
+/// the C++ `cAsyncSys_DoCancel`: pops one entry of each of the four request
+/// rings (user handle +0x18c, name slot +0x19c, kind +0x1ac, flags +0x1bc),
+/// and when a load is in flight (+4) asks the async file layer for its result
+/// and notifies through the vtable (+0x1d4, entry at +0x28/+0x2c) that the
+/// bank finished (kinds 0 and 2: result 1 means ok; kind 1 uses the kind
+/// itself), then clears busy. With `flush` the tails are set to the heads.
+/// Finally starts the next queued load.
+pub fn snd_load_queue_finish_current(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S4, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S5, 0x10);
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x18c));
+        frame.save(c, S0, 0x60);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save_ra(c, 0);
+        let this = c.g[S1][0] as u32;
+        c.g[A1][0] = c.lw(this.wrapping_add(0x198));
+        c.g[V0][0] = c.lw(this.wrapping_add(0x194));
+        let empty = c.g[V0][0] == c.g[A1][0];
+        c.g[S4][0] = 0xffff_ffff_ffff_ffff;
+        if !empty {
+            oc1010_ring_pop(c, this, 0x18c);
+            c.cycles += 1;
+            c.g[S4][0] = c.g[V0][0];
+        }
+        c.g[S3][0] = oc1010_pop_ring(c, this, 0x19c);
+        c.g[S2][0] = oc1010_pop_ring(c, this, 0x1ac);
+        // Fourth ring (flags): popped and dropped.
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(this.wrapping_add(0x1c4));
+        c.g[A0][0] = c.lw(this.wrapping_add(0x1c8));
+        let empty = c.g[V0][0] == c.g[A0][0];
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+        if !empty {
+            c.cycles += 5;
+            c.g[V1][0] = c.lw(this.wrapping_add(0x1bc));
+            c.sw(this.wrapping_add(0x1c8), c.g[V0][0]);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.sw(this.wrapping_add(0x1c8), 0);
+            }
+        }
+        // The in-flight load: finish it according to its kind.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(this.wrapping_add(0x4));
+        let idle = c.g[V0][0] == 0;
+        c.g[V0][0] = 0x1;
+        if !idle {
+            c.cycles += 2;
+            let kind_is_1 = c.g[S2][0] == c.g[V0][0];
+            c.g[V0][0] = ((c.g[S2][0] as i64) < 2) as u64;
+            // true: kind 0 or 2 arm (copy A); false: kind 1 arm (copy B).
+            let arm_a;
+            if kind_is_1 {
+                arm_a = None;
+            } else {
+                c.cycles += 2;
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = 0x2;
+                    c.cycles += 2;
+                    arm_a = if c.g[S2][0] != c.g[V0][0] {
+                        Some(false)
+                    } else {
+                        Some(true)
+                    };
+                } else {
+                    c.cycles += 2;
+                    if c.g[S2][0] == 0 {
+                        arm_a = Some(true);
+                    } else {
+                        c.cycles += 2;
+                        arm_a = Some(false);
+                    }
+                }
+            }
+            match arm_a {
+                Some(true) => {
+                    c.cycles += 25;
+                    c.g[A0][0] = c.lw(this);
+                    call_ptr(c, 0x003d_faf0, 0x0028_9f4c)?;
+                    c.g[A0][0] = c.lw(this);
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0;
+                    call_ptr(c, 0x003d_f9d8, 0x0028_9f60)?;
+                    c.g[V1][0] = c.lw(this.wrapping_add(0x1d4));
+                    c.g[T0][0] = sx((c.g[S3][0] as u32) << 6);
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = 0x1;
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+                    c.g[S0][0] ^= 0x1;
+                    c.g[T3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+                    c.g[A3][0] = 0x2;
+                    if c.g[S0][0] == 0 {
+                        c.g[A3][0] = c.g[V0][0];
+                    }
+                    c.g[A0][0] = sx(this.wrapping_add(c.g[A0][0] as u32));
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[T0][0] = sx(this.wrapping_add(c.g[T0][0] as u32));
+                    c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[T1][0] = 0;
+                    let target = c.g[T3][0] as u32;
+                    c.g[T2][0] = 0;
+                    call_ptr(c, target, 0x0028_9fa0)?;
+                    c.sw(this.wrapping_add(0x4), 0);
+                }
+                None => {
+                    c.cycles += 23;
+                    c.g[A0][0] = c.lw(this);
+                    call_ptr(c, 0x003d_faf0, 0x0028_9fb0)?;
+                    c.g[A0][0] = c.lw(this);
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0;
+                    call_ptr(c, 0x003d_f9d8, 0x0028_9fc4)?;
+                    c.g[V1][0] = c.lw(this.wrapping_add(0x1d4));
+                    c.g[T0][0] = sx((c.g[S3][0] as u32) << 6);
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0xc));
+                    c.g[S0][0] ^= 0x1;
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+                    c.g[A3][0] = 0x2;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+                    if c.g[S0][0] == 0 {
+                        c.g[A3][0] = c.g[S2][0];
+                    }
+                    c.g[A0][0] = sx(this.wrapping_add(c.g[A0][0] as u32));
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[T0][0] = sx(this.wrapping_add(c.g[T0][0] as u32));
+                    c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+                    c.g[T1][0] = 0;
+                    let target = c.g[V0][0] as u32;
+                    c.g[T2][0] = 0;
+                    call_ptr(c, target, 0x0028_a000)?;
+                    c.sw(this.wrapping_add(0x4), 0);
+                }
+                Some(false) => {}
+            }
+        }
+        c.cycles += 2;
+        if c.g[S5][0] != 0 {
+            c.cycles += 8;
+            c.g[V0][0] = c.lw(this.wrapping_add(0x194));
+            c.g[V1][0] = c.lw(this.wrapping_add(0x1a4));
+            c.g[A0][0] = c.lw(this.wrapping_add(0x1b4));
+            c.g[A1][0] = c.lw(this.wrapping_add(0x1c4));
+            c.sw(this.wrapping_add(0x198), c.g[V0][0]);
+            c.sw(this.wrapping_add(0x1a8), c.g[V1][0]);
+            c.sw(this.wrapping_add(0x1b8), c.g[A0][0]);
+            c.sw(this.wrapping_add(0x1c8), c.g[A1][0]);
+        }
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x0028_a298, 0x0028_a034)?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `SSXAudioSystem::SetMusicEvent1(self)` (0x2861d0, 48 B): calls the audio
+/// object's music callback (the function pointer at `self->mpAudio+0x24`)
+/// with `self+0x118 + lh(mpAudio+0x20)` as its object and 1 as its argument.
+pub fn ssx_audio_system_set_music_event1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let f = Frame::open(c, 0x10);
+        c.g[A1][0] = 1;
+        f.save_ra(c, 0);
+        let this = c.g[A0][0] as u32;
+        c.g[V1][0] = Addr(this).off(0x5558).lw(c);
+        c.g[A0][0] = sx(this.wrapping_add(0x118));
+        let obj = c.g[V1][0] as u32;
+        c.g[A2][0] = Addr(obj).off(0x20).lh(c);
+        c.g[V0][0] = Addr(obj).off(0x24).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        call_ptr(c, target, 0x0028_61f4)?;
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// One call of the exit chain: `obj->vt->fn(obj + vt->delta, 3)`, where the
+/// caller set A1 = 3. Leaves V0 = the vtable, V1 = the function, A0 = the
+/// object argument, as the compiled code does.
+pub(crate) fn ssx_exit_call(c: &mut Cpu, obj: u32, ret: u32) -> Flow {
+    c.g[V0][0] = Addr(obj).off(4).lw(c);
+    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(8).lh(c);
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+    let target = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// One later link of the exit chain: `obj = self->load` (into A2), the link
+/// `self->clear` is zeroed after the load, and a non-null object gets the
+/// [`ssx_exit_call`] (with cycles 3 before the load and 6 on the call path).
+pub(crate) fn ssx_exit_link(c: &mut Cpu, this: u32, load: u32, clear: u32, ret: u32) -> Flow {
+    c.cycles += 3;
+    c.g[A2][0] = Addr(this).off(load).lw(c);
+    let empty = c.g[A2][0] == 0;
+    Addr(this).off(clear).sw(c, 0);
+    if !empty {
+        c.cycles += 6;
+        c.g[A1][0] = 3;
+        let obj = c.g[A2][0] as u32;
+        ssx_exit_call(c, obj, ret)?;
+    }
+    Ok(())
+}
+
+/// `SSXAudioSystem::ExitGame(self)` (0x286a80, 380 B): stops the audio
+/// subsystems in order (resume, mode, music, loops, speech, object loops,
+/// mix preset, timers), calls the speech callback and the speech stop.
+pub fn ssx_audio_system_exit_game(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let f = Frame::open(c, 0x20);
+        f.save(c, S0, 0x10);
+        f.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        call_ptr(c, 0x0028_9bb8, 0x0028_6a94)?;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0028_5be0, 0x0028_6aa0)?;
+        c.g[A0][0] = sx(this.wrapping_add(0x118));
+        call_ptr(c, 0x002b_3ac0, 0x0028_6aa8)?;
+        c.mtc1(0, 12);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0029_d678, 0x0028_6ab4)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x002a_4550, 0x0028_6abc)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0029_2b48, 0x0028_6ac4)?;
+
+        // The object chain: the first link has no clear, the rest zero
+        // their own link after loading it.
+        c.g[A2][0] = Addr(this).off(0x625c).lw(c);
+        let empty = c.g[A2][0] == 0;
+        c.g[A1][0] = 3;
+        if !empty {
+            c.cycles += 5;
+            let obj = c.g[A2][0] as u32;
+            ssx_exit_call(c, obj, 0x0028_6ae4)?;
+        }
+        ssx_exit_link(c, this, 0x6260, 0x625c, 0x0028_6b08)?;
+        ssx_exit_link(c, this, 0x5fa0, 0x6260, 0x0028_6b2c)?;
+        ssx_exit_link(c, this, 0x5fa4, 0x5fa0, 0x0028_6b50)?;
+        ssx_exit_link(c, this, 0x6c80, 0x5fa4, 0x0028_6b74)?;
+        ssx_exit_link(c, this, 0x6c84, 0x6c80, 0x0028_6b98)?;
+
+        c.cycles += 25;
+        Addr(this).off(0x6c84).sw(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0029_80b0, 0x0028_6ba4)?;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0028_83b0, 0x0028_6bb0)?;
+
+        // mgr = *self->mpMgr; mgr->timers stop with mgr+0x1d8.
+        c.g[V0][0] = Addr(this).off(0x118).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+        call_ptr(c, 0x002a_dda0, 0x0028_6bc0)?;
+
+        // The speech callback: (mgr+0x1d8) + lh(cfg+0x10), cfg+0x14.
+        c.g[V0][0] = Addr(this).off(0x118).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V1][0] = Addr(c.g[A0][0] as u32).off(0xab0).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x10).lh(c);
+        c.g[A1][0] = Addr(c.g[V1][0] as u32).off(0x14).lw(c);
+        let target = c.g[A1][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        call_ptr(c, target, 0x0028_6be0)?;
+
+        c.g[A0][0] = sx(this.wrapping_add(0x5560));
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x002b_11b0, 0x0028_6bec)?;
+
+        f.restore(c, S0, 0x10);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// The probe of the unload chain: `mgr = *(self+0x118)`, `cfg = mgr->0xacc`,
+/// `busy = (cfg[off] ^ 1) != 0`, the call's A0 = `mgr + 0x1d8`; not busy takes
+/// the next word (`cfg[off_next]`) into A1, busy sets A1 = -1.
+pub(crate) fn ssx_unload_probe(c: &mut Cpu, this: u32, off: u32, off_next: u32) {
+    c.g[V0][0] = Addr(this).off(0x118).lw(c);
+    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[A1][0] = Addr(c.g[V1][0] as u32).off(0xacc).lw(c);
+    c.g[V0][0] = Addr(c.g[A1][0] as u32).off(off).lw(c) ^ 1;
+    let busy = c.g[V0][0] != 0;
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1d8));
+    if busy {
+        c.cycles += 1;
+        c.g[A1][0] = u64::MAX;
+    } else {
+        c.cycles += 2;
+        c.g[A1][0] = Addr(c.g[A1][0] as u32).off(off_next).lw(c);
+    }
+}
+
+/// The body of `SSXAudioSystem::UnloadMemoryBank` once the bank's handle
+/// matches: bank 0 stops its music with the probe at 0x300, the other banks
+/// stop their loops with the probe at 0x360, then the bank's object (the table
+/// at `self+0x6c70`) is unloaded and its handle slot cleared.
+pub(crate) fn ssx_unload_matched(c: &mut Cpu, this: u32) -> Flow {
+    let s2 = sx((c.g[S3][0] as u32) << 2);
+    c.cycles += 2;
+    if c.g[S3][0] == 0 {
+        c.cycles += 7;
+        ssx_unload_probe(c, this, 0x300, 0x304);
+        c.cycles += 5;
+        c.mtc1(0, 12);
+        c.g[S2][0] = s2;
+        call_ptr(c, 0x002a_d650, 0x0028_6d8c)?;
+    } else {
+        c.cycles += 10;
+        c.mtc1(0, 12);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0029_d678, 0x0028_6da0)?;
+        ssx_unload_probe(c, this, 0x360, 0x364);
+        c.cycles += 4;
+        c.mtc1(0, 12);
+        c.g[S2][0] = s2;
+        call_ptr(c, 0x002a_d650, 0x0028_6dd4)?;
+    }
+    c.g[V0][0] = sx(this.wrapping_add(0x6c70));
+
+    // The bank's object slot: unload it and clear both words.
+    c.cycles += 4;
+    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+    let slot = c.g[S1][0] as u32;
+    c.g[V1][0] = Addr(slot).lw(c);
+    let empty = c.g[V1][0] == 0;
+    c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(8));
+    if !empty {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(this).off(0x118).lw(c);
+        c.g[RA][0] = sx(0x0028_6df4);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        call_ptr(c, 0x0028_be90, 0x0028_6df4)?;
+        c.g[V1][0] = sx(this.wrapping_add(c.g[S2][0] as u32));
+        Addr(slot).sw(c, 0);
+        c.g[V0][0] = u64::MAX;
+        let v = c.g[V0][0];
+        let handle = c.g[V1][0] as u32;
+        Addr(handle).off(0x6c78).sw(c, v);
+    }
+    Ok(())
+}
+
+/// `SSXAudioSystem::UnloadMemoryBank(self = a0, handle = a1)` (0x286d18,
+/// 264 B): `slot = handle >> 8`, and only if `self->slot[slot] == handle & 0xff`
+/// (the word at `self + 4*slot + 0x6c78`) the bank is unloaded.
+pub fn ssx_audio_system_unload_memory_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let f = Frame::open(c, 0x50);
+        f.save(c, S3, 0x10);
+        f.save(c, S2, 0x20);
+        f.save(c, S1, 0x30);
+        f.save(c, S0, 0x40);
+        c.g[S3][0] = sx((c.g[A1][0] as u32) >> 8);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        c.g[V0][0] = sx((c.g[S3][0] as u32) << 2);
+        f.save_ra(c, 0);
+        c.g[V0][0] = sx(this.wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] &= 0xff;
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x6c78).lw(c);
+        if c.g[V1][0] == c.g[A1][0] {
+            ssx_unload_matched(c, this)?;
+            c.cycles += 1;
+        }
+        f.restore(c, S0, 0x40);
+
+        // Epilogue.
+        c.cycles += 6;
+        f.restore(c, S1, 0x30);
+        f.restore(c, S2, 0x20);
+        f.restore(c, S3, 0x10);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `SSXAudioSystem::OnQuickRestart(self)` (0x2870a0, 104 B): resets the race
+/// sounds, and unless the event is in mode 4 and the tracked sound is not
+/// playing, tracks a new sound (`TrackSound(self, 0, 0, -1, 0, 0)`).
+pub fn ssx_audio_system_on_quick_restart(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let f = Frame::open(c, 0x20);
+        f.save(c, S0, 0x10);
+        f.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0028_71b0, 0x0028_70b4)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x002a_4040, 0x0028_70bc)?;
+        if c.g[V0][0] == 0 {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0029_5028, 0x0028_70d4)?;
+            if c.g[V0][0] == 0 {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                c.g[A3][0] = u64::MAX;
+                c.g[T0][0] = 0;
+                c.g[T1][0] = 0;
+                call_ptr(c, 0x0029_5628, 0x0028_70f8)?;
+            }
+        }
+        f.restore(c, S0, 0x10);
+
+        // Epilogue.
+        c.cycles += 3;
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `SSXAudioSystem::StartPreRaceMusic(self)` (0x2872a8, 304 B): reads the
+/// audio game module's config bytes (0x535bc8+0x48/0x49/0x4a); for the two
+/// valid ranges either plays a random song (no song loaded) or asks the
+/// speech system to say the DJ line, then records the played sound ids.
+pub fn ssx_audio_system_start_pre_race_music(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let f = Frame::open(c, 0x40);
+        f.save(c, S0, 0x30);
+        f.save(c, S1, 0x20);
+        f.save(c, S2, 0x10);
+        f.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        call_ptr(c, 0x0028_b1c8, 0x0028_72c4)?;
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xc).lw(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(8).lw(c);
+        let v = c.g[V0][0];
+        Addr(this).off(0x582c).sw(c, v);
+        call_ptr(c, 0x0014_dc80, 0x0028_72d4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0028_72e0)?;
+
+        c.g[V1][0] = 0x0053_0000;
+        c.g[S2][0] = c.g[V1][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5bc8));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x48).lb(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(5));
+        c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(this).off(0x530).lw(c);
+            let loaded = c.g[V0][0] != 0;
+            c.g[S1][0] = sx(this.wrapping_add(0x118));
+            if loaded {
+                c.cycles += 8;
+                c.g[V1][0] = Addr(this).off(0x5558).lw(c);
+                c.g[A1][0] = 0;
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x20).lh(c);
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x24).lw(c);
+                let target = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0028_7324)?;
+                c.g[A0][0] = c.g[S0][0];
+            } else {
+                c.cycles += 9;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0028_d488, 0x0028_7334)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                c.g[A3][0] = u64::MAX;
+                c.g[T0][0] = 0;
+                call_ptr(c, 0x0028_cf98, 0x0028_734c)?;
+                c.g[A0][0] = c.g[S0][0];
+            }
+
+            c.cycles += 5;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0029_5028, 0x0028_735c)?;
+            if c.g[V0][0] == 0 {
+                let mut skip_tail = false;
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x5bc8));
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x4a).lb(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(4));
+                c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                let in_range = c.g[V0][0] != 0;
+                c.g[V0][0] = 2;
+                if in_range {
+                    c.cycles += 3;
+                    c.g[V1][0] = Addr(c.g[V1][0] as u32).off(0x49).lb(c);
+                    let is_two = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = 1;
+                    if is_two {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = 0;
+                        c.g[A2][0] = 0;
+                        call_ptr(c, 0x002a_26f0, 0x0028_73a0)?;
+                        c.g[A0][0] = sx(this.wrapping_add(0x5560));
+                        c.g[A1][0] = 0;
+                        call_ptr(c, 0x002b_1758, 0x0028_73ac)?;
+                    } else {
+                        c.cycles += 2;
+                        let v = c.g[V0][0];
+                        Addr(this).off(0x5788).sw(c, v);
+                        skip_tail = true;
+                    }
+                }
+                if !skip_tail {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                }
+
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                let v = c.g[V0][0];
+                Addr(this).off(0x5774).sw(c, v);
+                call_ptr(c, 0x002b_4908, 0x0028_73bc)?;
+                let v = c.g[V0][0];
+                Addr(this).off(0x5778).sw(c, v);
+            }
+        }
+
+        f.restore(c, S0, 0x30);
+
+        // Epilogue.
+        c.cycles += 5;
+        f.restore(c, S1, 0x20);
+        f.restore(c, S2, 0x10);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_IncChannelVolume(SSXAudioSystem* self, int ch)` (0x2879b0):
+/// raise channel `ch`'s volume (record at +0x62bc, 16 bytes per channel) by
+/// the 0.0909 step at gp-0x4628 and re-apply it through
+/// `SSXAudioSystem_SetChannelVolume`.
+pub fn ssx_audio_system_inc_channel_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[A1][0] as u32) << 4);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let step = Addr((c.g[GP][0] as u32).wrapping_sub(0x4628)).read_fpu(c);
+        c.f[0] = step.0;
+        let volume = Addr((c.g[V0][0] as u32).wrapping_add(0x62bc)).read_fpu(c);
+        c.f[12] = (volume + step).0;
+        Callee {
+            addr: 0x0028_7700,
+            f: ee::s07::SSXAudioSystem_SetChannelVolume,
+        }
+        .call(c, 0x0028_79d0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_DecChannelVolume(SSXAudioSystem* self, int ch)` (0x2879e0):
+/// the counterpart of [`ssx_audio_system_inc_channel_volume`], lowering the
+/// volume by the step at gp-0x4624.
+pub fn ssx_audio_system_dec_channel_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[A1][0] as u32) << 4);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        let step = Addr((c.g[GP][0] as u32).wrapping_sub(0x4624)).read_fpu(c);
+        c.f[0] = step.0;
+        let volume = Addr((c.g[V0][0] as u32).wrapping_add(0x62bc)).read_fpu(c);
+        c.f[12] = (volume - step).0;
+        Callee {
+            addr: 0x0028_7700,
+            f: ee::s07::SSXAudioSystem_SetChannelVolume,
+        }
+        .call(c, 0x0028_7a00)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_PrevDebugMode(SSXAudioSystem* self)` (0x289398): step the
+/// debug preset (+0x6470) down, wrapping from 0 to 5, and apply it through
+/// `SSXAudioSystem_SetDebugMode`.
+pub fn ssx_audio_system_prev_debug_mode(c: &mut Cpu) {
+    guest(c, |c| {
+        let obj = c.g[A0][0] as u32;
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(obj.wrapping_add(0x6470)).lw(c);
+        let stepped = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        if !stepped {
+            c.cycles += 1;
+            c.g[V0][0] = 5;
+        }
+        c.cycles += 6;
+        let preset = c.g[V0][0];
+        Addr(obj.wrapping_add(0x6470)).sw(c, preset);
+        c.g[RA][0] = sx(0x0028_93bc);
+        c.g[A1][0] = Addr(obj.wrapping_add(0x6470)).lw(c);
+        Callee {
+            addr: 0x0028_8f60,
+            f: ee::s07::SSXAudioSystem_SetDebugMode,
+        }
+        .call(c, 0x0028_93bc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_NextDebugMode(SSXAudioSystem* self)` (0x2893c8): step the
+/// debug preset (+0x6470) up, wrapping from 6 to 0, and apply it through
+/// `SSXAudioSystem_SetDebugMode`.
+pub fn ssx_audio_system_next_debug_mode(c: &mut Cpu) {
+    guest(c, |c| {
+        let obj = c.g[A0][0] as u32;
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = 6;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(obj.wrapping_add(0x6470)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        let more = c.g[V0][0] != c.g[V1][0];
+        let stepped = c.g[V0][0];
+        Addr(obj.wrapping_add(0x6470)).sw(c, stepped);
+        if !more {
+            c.cycles += 1;
+            Addr(obj.wrapping_add(0x6470)).sw(c, 0u64);
+        }
+        c.cycles += 5;
+        c.g[RA][0] = sx(0x0028_93f0);
+        c.g[A1][0] = Addr(obj.wrapping_add(0x6470)).lw(c);
+        Callee {
+            addr: 0x0028_8f60,
+            f: ee::s07::SSXAudioSystem_SetDebugMode,
+        }
+        .call(c, 0x0028_93f0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_ScheduleTriggerTimer(SSXAudioSystem* self)` (0x289400):
+/// arm the 250-tick trigger timer on the bank monitor (`self->+0x118->*` +0x1d8)
+/// with the callback `SSXAudioSystem_TriggerTimerCallback` (the 8-byte pointer at
+/// 0x4a3600 in the game image).
+pub fn ssx_audio_system_schedule_trigger_timer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = 0x004a_0000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xfa;
+        c.ldl(A2, (c.g[V1][0] as u32).wrapping_add(0x3607));
+        c.ldr(A2, (c.g[V1][0] as u32).wrapping_add(0x3600));
+        c.g[A3][0] = 0;
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x118)).lw(c);
+        c.g[T0][0] = 0;
+        c.g[T1][0] = 0;
+        c.g[T2][0] = 0;
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[T3][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+        call_ptr(c, 0x002a_dca0, 0x0028_943c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_TriggerTimerCallback(void)` (0x289448): the timer's
+/// callback, `WorldTriggerManager` monitor pass (gp+0x21e4, one, no extra) and
+/// result 1.
+pub fn ssx_audio_system_trigger_timer_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x21e4)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = 0;
+        call_ptr(c, 0x002b_6950, 0x0028_9460)?;
+        c.g[V0][0] = 1;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_EmptyCrowdHandler(void)` (0x289680): an empty
+/// callback; it only returns.
+pub fn ssx_audio_system_empty_crowd_handler(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void SSXAudioSystem_ApplyMusicTriggerPaint(SSXAudioSystem* self, Rider* rider, Obj* obj)`
+/// (0x2899f8). When `FindRider(self, -1)` is `rider` and `obj` is set, `obj`'s
+/// vtable method (`+4 -> +0x24`) gives a type code: 0x1f and 0x20 choose a
+/// song through `MusicPlayer_GetSongTag` and `SSXAudioSystem_PlayMusic`
+/// (0x65 / 0x66 end without playing), 0x21 ends, other codes call the
+/// method at `self + 0x5558`'s vtable.
+pub fn ssx_audio_system_apply_music_trigger_paint(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A2][0];
+        'b_289ad8: {
+            c.g[A1][0] = u64::MAX;
+            Callee {
+                addr: 0x0028_5d98,
+                f: ee::s07::SSXAudioSystem_FindRider,
+            }
+            .call(c, 0x0028_9a20)?;
+            if c.g[S0][0] != c.g[V0][0] {
+                frame.restore(c, S0, 0x30);
+                break 'b_289ad8;
+            }
+            c.cycles += 2;
+            if c.g[S1][0] == 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_289ad8;
+            }
+            'b_289ad4: {
+                c.cycles += 9;
+                c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x20)).lh(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x24)).lw(c);
+                let method = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0028_9a44)?;
+                c.g[A1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = u64::MAX;
+                let t = c.g[A1][0] == c.g[V0][0];
+                c.g[V0][0] = 0x1f;
+                if t {
+                    break 'b_289ad4;
+                }
+                'b_289ab8: {
+                    'b_289aa8: {
+                        'b_289a80: {
+                            c.cycles += 2;
+                            let t = c.g[A1][0] != c.g[V0][0];
+                            c.g[V0][0] = 0x20;
+                            if t {
+                                break 'b_289a80;
+                            }
+                            c.cycles += 5;
+                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+                            call_ptr(c, 0x002b_49e0, 0x0028_9a64)?;
+                            c.g[V1][0] = 0x65;
+                            let t = c.g[V0][0] == c.g[V1][0];
+                            c.g[A1][0] = 0;
+                            if t {
+                                break 'b_289ad4;
+                            }
+                            c.cycles += 4;
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[A2][0] = 0;
+                            c.g[A3][0] = 0x1;
+                            break 'b_289aa8;
+                        }
+                        c.cycles += 2;
+                        let t = c.g[A1][0] != c.g[V0][0];
+                        c.g[V0][0] = 0x21;
+                        if t {
+                            break 'b_289ab8;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+                        call_ptr(c, 0x002b_49e0, 0x0028_9a90)?;
+                        c.g[V1][0] = 0x66;
+                        let t = c.g[V0][0] == c.g[V1][0];
+                        c.g[A1][0] = 0;
+                        if t {
+                            break 'b_289ad4;
+                        }
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A2][0] = 0;
+                        c.g[A3][0] = 0x2;
+                        break 'b_289aa8;
+                    }
+                    c.cycles += 4;
+                    c.g[T0][0] = 0;
+                    Callee {
+                        addr: 0x0028_cf98,
+                        f: ee::s07::SSXAudioSystem_PlayMusic,
+                    }
+                    .call(c, 0x0028_9ab0)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'b_289ad8;
+                }
+                c.cycles += 2;
+                let t = c.g[A1][0] == c.g[V0][0];
+                c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+                if t {
+                    break 'b_289ad4;
+                }
+                c.cycles += 5;
+                c.g[V1][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x5558)).lw(c);
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x20)).lh(c);
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x24)).lw(c);
+                let method = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, method, 0x0028_9ad4)?;
+                break 'b_289ad4;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+            break 'b_289ad8;
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `SSXAudioSystem_KillRiderTimers` (0x292ae8).
+pub(crate) const RIDER_RELEASE_KILL_TIMERS_CALLEE: Callee = Callee {
+    addr: 0x0029_2ae8,
+    f: ee::s07::SSXAudioSystem_KillRiderTimers,
+};
+
+/// `SSXAudioSystem_OutputModeToOption` (0x289d60).
+pub(crate) const OUTPUT_MODE_TO_OPTION_CALLEE: Callee = Callee {
+    addr: 0x0028_9d60,
+    f: ee::s07::SSXAudioSystem_OutputModeToOption,
+};
+
+/// `void SSXAudioSystem_RiderRelease(SSXAudioSystem* self)` (0x289af8):
+/// stop the rider timers by forwarding to `SSXAudioSystem_KillRiderTimers`.
+pub fn ssx_audio_system_rider_release(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        RIDER_RELEASE_KILL_TIMERS_CALLEE.call(c, 0x0028_9b08)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SSXAudioSystem_GetOutputModeOption(SSXAudioSystem* self)` (0x289dc0):
+/// the option index of the output mode stored at `self+0x62b0`.
+pub fn ssx_audio_system_get_output_mode_option(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(crate::abi::arg(c, 0).wrapping_add(0x62b0)).lw(c);
+        OUTPUT_MODE_TO_OPTION_CALLEE.call(c, 0x0028_9dd0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool SSXAudioSystem_TakeBootMovieFlag(SSXAudioSystem* self)` (0x289de0):
+/// return the boot-movie flag at `self+0x6c88` and clear it.
+pub fn ssx_audio_system_take_boot_movie_flag(c: &mut Cpu) {
+    c.cycles += 3;
+    let flag = crate::abi::arg(c, 0).wrapping_add(0x6c88);
+    c.g[V0][0] = Addr(flag).lw(c);
+    Addr(flag).sw(c, 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10018,6 +11517,879 @@ pub(crate) mod tests {
                         (FX_NEXT_SECTION, 2 + (seed / 4) % 8),
                     ],
                 );
+            },
+        );
+    }
+
+    use crate::game::be::beprepoststate::tests::belib as belib_m2;
+    pub(crate) use crate::game::fe::festateloadhint::tests::oc1009_machine;
+
+    use crate::game::sound::soundsys::tests::oc739_gate;
+    use crate::game::sound::soundsys::tests::oc739_install;
+    use crate::game::sound::soundsys::tests::OC739_CTRL;
+
+    /// `SSXAudioSystem_dtor`: flags 0..3 (vtable fix-up copies with flags 0,
+    /// base destructors with bit 1, delete with bit 0), with and without the
+    /// big-file sync and the play history.
+    #[test]
+    fn ssx_audio_system_dtor_matches() {
+        check(
+            ee::s07::f_00285210__generated,
+            ssx_audio_system_dtor,
+            160,
+            &|c, seed| {
+                let mut r = oc1009_machine(c, seed, 0x0028_5210, 12);
+                let this = DATA + 0x23_0000;
+                let (ptr, bm, ss) = (DATA + 0x23_1000, DATA + 0x23_2000, DATA + 0x23_3000);
+                c.bus.write32(this + 0x118, ptr);
+                c.bus.write32(ptr, bm);
+                c.bus.write32(bm + 0x1d8, ss);
+                c.bus.write32(
+                    this + 0x5728,
+                    if (seed >> 2) & 1 == 1 {
+                        r.next_u32() | 1
+                    } else {
+                        0
+                    },
+                );
+                c.bus.write32(
+                    this + 0x5980,
+                    if (seed >> 3) & 1 == 1 {
+                        r.next_u32() | 1
+                    } else {
+                        0
+                    },
+                );
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+            },
+        );
+    }
+
+    /// `SndLoadQueue_FinishCurrent`: four rings (size, data, head, tail at
+    /// +0x18c/+0x19c/+0x1ac/+0x1bc; empty, wrapping and plain pops), busy or
+    /// not, every kind (0, 1, 2, other, empty ring), the async layer's
+    /// cancel and result (gated fakes), the vtable notification, with and
+    /// without flush; the next load starts through the real `StartNext`.
+    #[test]
+    fn snd_load_queue_finish_current_matches() {
+        oc739_install();
+        fakes::covered(
+            ee::s07::f_00289df0__generated,
+            snd_load_queue_finish_current,
+            500,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x289df0, 6);
+                oc739_gate(c);
+                c.bus.write32(OC739_CTRL + 0x20, r.next_u32() % 3);
+                c.bus.write32(OC739_CTRL + 0x24, r.next_u32() % 2);
+                let this = DATA + 0x100;
+                let vt = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 3 == 0 { 1 } else { 0 };
+                c.bus.write32(this, DATA + 0x5000);
+                c.bus.write32(this + 4, (seed % 4 != 0) as u32);
+                let kinds = [0u32, 1, 2, 3, u32::MAX, 1, 0, 2, 1, 2];
+                for k in 0..4u32 {
+                    let base = this + 0x18c + 0x10 * k;
+                    let size = 1 + r.next_u32() % 4;
+                    let data = DATA + 0x1000 + 0x40 * k;
+                    let head = r.next_u32() % size;
+                    let mut tail = r.next_u32() % size;
+                    if r.next_u32() % 4 != 0 && head == tail {
+                        tail = (tail + 1) % size;
+                    }
+                    c.bus.write32(base, size);
+                    c.bus.write32(base + 4, data);
+                    c.bus.write32(base + 8, head);
+                    c.bus.write32(base + 0xc, tail);
+                    for i in 0..size {
+                        let v = if k == 2 {
+                            kinds[(r.next_u32() % 10) as usize]
+                        } else {
+                            r.next_u32() % 4
+                        };
+                        c.bus.write32(data + 4 * i, v);
+                    }
+                }
+                c.bus.write32(this + 0x1cc, r.next_u32());
+                c.bus.write32(this + 0x1d0, r.next_u32());
+                c.bus.write32(this + 0x1d4, vt);
+                for off in (0..0x40u32).step_by(4) {
+                    let lh_slot = matches!(off, 0x10 | 0x18 | 0x20 | 0x28);
+                    c.bus
+                        .write32(vt + off, if lh_slot { 0 } else { fakes::FAKE });
+                }
+                c.bus
+                    .write16(vt + 0x28, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.pc = 0x0028_9df0;
+            },
+        );
+    }
+
+    // Fixture objects live in DATA+0x200000 and up: clear of the fake log
+    // (DATA+0x100000) and of the pointers the fakes return (DATA..DATA+0x40000).
+
+    /// Gate word of this module's fakes, and its magic value.
+    pub(crate) const OC1017_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1017_MAGIC: u32 = 0x4f43_1017;
+
+    /// The audio system (`self`) and the objects its fields point to.
+    pub(crate) const OC1017_SELF: u32 = DATA + 0x21_0000;
+
+    pub(crate) const OC1017_OBJ: u32 = DATA + 0x23_0000;
+
+    /// Chain links (`LINK + 0x100*i`), their vtables (`VT + 0x100*i`).
+    pub(crate) const OC1017_LINK: u32 = DATA + 0x24_0000;
+
+    pub(crate) const OC1017_VT: u32 = DATA + 0x25_0000;
+
+    /// The manager (`self->mpMgr` = `*(self+0x118)`), its config objects.
+    pub(crate) const OC1017_MGR: u32 = DATA + 0x26_0000;
+
+    pub(crate) const OC1017_CFG: u32 = DATA + 0x27_0000;
+
+    pub(crate) const OC1017_CFG2: u32 = DATA + 0x28_0000;
+
+    pub(crate) fn oc1017_w(c: &mut Cpu, addr: u32, v: u32) {
+        c.bus.write32(addr, v);
+    }
+
+    /// The fake callee: logs the call like `fakes::fake_call`, then returns 0
+    /// if the mailbox word at `CTRL + mail` is set (the unused word `0x1fc`
+    /// never is).
+    pub(crate) fn oc1017_fake_call(c: &mut Cpu, addr: u32, mail: u32) {
+        let zero = c.bus.read32(OC1017_CTRL + mail) != 0;
+        let ra = c.g[RA][0] as u32;
+        fakes::fake_call(c, addr);
+        if zero && c.pc == ra {
+            c.g[V0][0] = 0;
+        }
+    }
+
+    macro_rules! oc1017_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr, $mail:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC1017_CTRL) != OC1017_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    oc1017_fake_call(c, $addr, $mail);
+                }
+            )*
+            fn oc1017_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc1017_fakes!(
+        (
+            oc1017_fake_317670,
+            OC1017_PREV_317670,
+            ee::s10::OVERRIDE_00317670,
+            ee::s10::f_00317670__generated,
+            0x0031_7670,
+            0x100
+        ),
+        (
+            oc1017_fake_317d70,
+            OC1017_PREV_317D70,
+            ee::s10::OVERRIDE_00317D70,
+            ee::s10::f_00317d70__generated,
+            0x0031_7d70,
+            0x1fc
+        ),
+        (
+            oc1017_fake_186a08,
+            OC1017_PREV_186A08,
+            ee::s02::OVERRIDE_00186A08,
+            ee::s02::f_00186a08__generated,
+            0x0018_6a08,
+            0x1fc
+        ),
+        (
+            oc1017_fake_39f400,
+            OC1017_PREV_39F400,
+            ee::s13::OVERRIDE_0039F400,
+            ee::s13::f_0039f400__generated,
+            0x0039_f400,
+            0x1fc
+        ),
+        (
+            oc1017_fake_242eb8,
+            OC1017_PREV_242EB8,
+            ee::s06::OVERRIDE_00242EB8,
+            ee::s06::f_00242eb8__generated,
+            0x0024_2eb8,
+            0x1fc
+        ),
+        (
+            oc1017_fake_289bb8,
+            OC1017_PREV_289BB8,
+            ee::s07::OVERRIDE_00289BB8,
+            ee::s07::f_00289bb8__generated,
+            0x0028_9bb8,
+            0x1fc
+        ),
+        (
+            oc1017_fake_285be0,
+            OC1017_PREV_285BE0,
+            ee::s07::OVERRIDE_00285BE0,
+            ee::s07::f_00285be0__generated,
+            0x0028_5be0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2b3ac0,
+            OC1017_PREV_2B3AC0,
+            ee::s08::OVERRIDE_002B3AC0,
+            ee::s08::f_002b3ac0__generated,
+            0x002b_3ac0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_29d678,
+            OC1017_PREV_29D678,
+            ee::s08::OVERRIDE_0029D678,
+            ee::s08::f_0029d678__generated,
+            0x0029_d678,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2a4550,
+            OC1017_PREV_2A4550,
+            ee::s08::OVERRIDE_002A4550,
+            ee::s08::f_002a4550__generated,
+            0x002a_4550,
+            0x1fc
+        ),
+        (
+            oc1017_fake_292b48,
+            OC1017_PREV_292B48,
+            ee::s07::OVERRIDE_00292B48,
+            ee::s07::f_00292b48__generated,
+            0x0029_2b48,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2980b0,
+            OC1017_PREV_2980B0,
+            ee::s08::OVERRIDE_002980B0,
+            ee::s08::f_002980b0__generated,
+            0x0029_80b0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2883b0,
+            OC1017_PREV_2883B0,
+            ee::s07::OVERRIDE_002883B0,
+            ee::s07::f_002883b0__generated,
+            0x0028_83b0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2adda0,
+            OC1017_PREV_2ADDA0,
+            ee::s08::OVERRIDE_002ADDA0,
+            ee::s08::f_002adda0__generated,
+            0x002a_dda0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2b11b0,
+            OC1017_PREV_2B11B0,
+            ee::s08::OVERRIDE_002B11B0,
+            ee::s08::f_002b11b0__generated,
+            0x002b_11b0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2ad650,
+            OC1017_PREV_2AD650,
+            ee::s08::OVERRIDE_002AD650,
+            ee::s08::f_002ad650__generated,
+            0x002a_d650,
+            0x1fc
+        ),
+        (
+            oc1017_fake_28be90,
+            OC1017_PREV_28BE90,
+            ee::s07::OVERRIDE_0028BE90,
+            ee::s07::f_0028be90__generated,
+            0x0028_be90,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2871b0,
+            OC1017_PREV_2871B0,
+            ee::s07::OVERRIDE_002871B0,
+            ee::s07::f_002871b0__generated,
+            0x0028_71b0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2a4040,
+            OC1017_PREV_2A4040,
+            ee::s08::OVERRIDE_002A4040,
+            ee::s08::f_002a4040__generated,
+            0x002a_4040,
+            0x104
+        ),
+        (
+            oc1017_fake_295028,
+            OC1017_PREV_295028,
+            ee::s08::OVERRIDE_00295028,
+            ee::s08::f_00295028__generated,
+            0x0029_5028,
+            0x108
+        ),
+        (
+            oc1017_fake_295628,
+            OC1017_PREV_295628,
+            ee::s08::OVERRIDE_00295628,
+            ee::s08::f_00295628__generated,
+            0x0029_5628,
+            0x1fc
+        ),
+        (
+            oc1017_fake_28b1c8,
+            OC1017_PREV_28B1C8,
+            ee::s07::OVERRIDE_0028B1C8,
+            ee::s07::f_0028b1c8__generated,
+            0x0028_b1c8,
+            0x1fc
+        ),
+        (
+            oc1017_fake_14dc80,
+            OC1017_PREV_14DC80,
+            ee::s01::OVERRIDE_0014DC80,
+            ee::s01::f_0014dc80__generated,
+            0x0014_dc80,
+            0x1fc
+        ),
+        (
+            oc1017_fake_14dd58,
+            OC1017_PREV_14DD58,
+            ee::s01::OVERRIDE_0014DD58,
+            ee::s01::f_0014dd58__generated,
+            0x0014_dd58,
+            0x1fc
+        ),
+        (
+            oc1017_fake_28d488,
+            OC1017_PREV_28D488,
+            ee::s07::OVERRIDE_0028D488,
+            ee::s07::f_0028d488__generated,
+            0x0028_d488,
+            0x1fc
+        ),
+        (
+            oc1017_fake_28cf98,
+            OC1017_PREV_28CF98,
+            ee::s07::OVERRIDE_0028CF98,
+            ee::s07::f_0028cf98__generated,
+            0x0028_cf98,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2a26f0,
+            OC1017_PREV_2A26F0,
+            ee::s08::OVERRIDE_002A26F0,
+            ee::s08::f_002a26f0__generated,
+            0x002a_26f0,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2b1758,
+            OC1017_PREV_2B1758,
+            ee::s08::OVERRIDE_002B1758,
+            ee::s08::f_002b1758__generated,
+            0x002b_1758,
+            0x1fc
+        ),
+        (
+            oc1017_fake_2b4908,
+            OC1017_PREV_2B4908,
+            ee::s08::OVERRIDE_002B4908,
+            ee::s08::f_002b4908__generated,
+            0x002b_4908,
+            0x1fc
+        ),
+    );
+
+    /// One seed's machine: the fakes gated on, the mailboxes cleared.
+    pub(crate) fn oc1017_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        oc1017_install_fakes();
+        let r = machine(c, seed, salt, 0);
+        oc1017_w(c, OC1017_CTRL, OC1017_MAGIC);
+        r
+    }
+
+    /// `self->mpMgr` (`*(self+0x118)`) with its config objects, and the
+    /// chain links (`self+0x625c` .. `self+0x6c84`) of a seed's subset.
+    pub(crate) fn oc1017_manager(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        oc1017_w(c, OC1017_SELF + 0x118, OC1017_MGR + 0x100);
+        oc1017_w(c, OC1017_MGR + 0x100, OC1017_MGR);
+        oc1017_w(c, OC1017_MGR + 0xab0, OC1017_CFG2);
+        oc1017_w(c, OC1017_MGR + 0xacc, OC1017_CFG);
+        c.bus.write16(OC1017_CFG2 + 0x10, r.next_u32() as u16);
+        oc1017_w(c, OC1017_CFG2 + 0x14, fakes::FAKE + 0x20 * (seed % 3));
+        oc1017_w(c, OC1017_CFG + 0x300, (seed % 2) as u32);
+        oc1017_w(c, OC1017_CFG + 0x304, r.next_u32());
+        oc1017_w(c, OC1017_CFG + 0x360, ((seed / 2) % 2) as u32);
+        oc1017_w(c, OC1017_CFG + 0x364, r.next_u32());
+    }
+
+    /// A chain link object `i`: `link+4` is its vtable, `vt+8` a halfword
+    /// delta and `vt+0xc` the function (an address the machine's miss hook
+    /// answers).
+    pub(crate) fn oc1017_link(c: &mut Cpu, r: &mut Rng, i: u32, seed: u32) -> u32 {
+        let link = OC1017_LINK + 0x100 * i;
+        let vt = OC1017_VT + 0x100 * i;
+        oc1017_w(c, link + 4, vt);
+        c.bus.write16(vt + 8, r.next_u32() as u16);
+        oc1017_w(c, vt + 0xc, fakes::FAKE + 0x10 * ((seed + i) % 4));
+        link
+    }
+
+    #[test]
+    fn ssx_audio_system_set_music_event1_matches() {
+        check(
+            ee::s07::f_002861d0__generated,
+            ssx_audio_system_set_music_event1,
+            300,
+            &|c, seed| {
+                let mut r = oc1017_setup(c, seed, 0x0028_61d0);
+                oc1017_w(c, OC1017_SELF + 0x5558, OC1017_OBJ);
+                c.bus.write16(OC1017_OBJ + 0x20, r.next_u32() as u16);
+                oc1017_w(c, OC1017_OBJ + 0x24, fakes::FAKE + 0x10 * (seed % 3));
+                c.g[A0][0] = sx(OC1017_SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_exit_game_matches() {
+        check(
+            ee::s07::f_00286a80__generated,
+            ssx_audio_system_exit_game,
+            300,
+            &|c, seed| {
+                let mut r = oc1017_setup(c, seed, 0x0028_6a80);
+                oc1017_manager(c, &mut r, seed);
+                // Each chain link present on the seed's bits.
+                let fields = [0x625c, 0x6260, 0x5fa0, 0x5fa4, 0x6c80, 0x6c84];
+                for (i, &off) in fields.iter().enumerate() {
+                    if (seed >> i) & 1 == 1 {
+                        let link = oc1017_link(c, &mut r, i as u32, seed);
+                        oc1017_w(c, OC1017_SELF + off, link);
+                    }
+                }
+                c.g[A0][0] = sx(OC1017_SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_unload_memory_bank_matches() {
+        check(
+            ee::s07::f_00286d18__generated,
+            ssx_audio_system_unload_memory_bank,
+            300,
+            &|c, seed| {
+                let mut r = oc1017_setup(c, seed, 0x0028_6d18);
+                oc1017_manager(c, &mut r, seed);
+                let bank = seed % 3;
+                let id = 7u32;
+                // The handle slot matches unless seed % 5 == 0; the bank's
+                // object slot is empty on even seeds.
+                let stored = if seed % 5 == 0 { id ^ 1 } else { id };
+                oc1017_w(c, OC1017_SELF + 0x6c78 + 4 * bank, stored);
+                let obj_slot = if seed % 2 == 0 { 0 } else { OC1017_OBJ };
+                oc1017_w(c, OC1017_SELF + 0x6c70 + 4 * bank, obj_slot);
+                c.g[A0][0] = sx(OC1017_SELF);
+                c.g[A1][0] = ((bank << 8) | id) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_on_quick_restart_matches() {
+        check(
+            ee::s07::f_002870a0__generated,
+            ssx_audio_system_on_quick_restart,
+            300,
+            &|c, seed| {
+                let _ = oc1017_setup(c, seed, 0x0028_70a0);
+                // IsEventMode4 is 0 on seeds % 3 == 0 (the chain goes on);
+                // IsTrackedSoundPlaying is 0 on even seeds (TrackSound runs).
+                oc1017_w(c, OC1017_CTRL + 0x104, (seed % 3 == 0) as u32);
+                oc1017_w(c, OC1017_CTRL + 0x108, (seed % 2 == 0) as u32);
+                c.g[A0][0] = sx(OC1017_SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_start_pre_race_music_matches() {
+        check(
+            ee::s07::f_002872a8__generated,
+            ssx_audio_system_start_pre_race_music,
+            300,
+            &|c, seed| {
+                let _ = oc1017_setup(c, seed, 0x0028_72a8);
+                // The game module's config bytes at 0x535bc8+0x48/0x49/0x4a.
+                c.bus
+                    .write8(0x0053_5c10, [5u8, 6, 0x20][(seed % 3) as usize]);
+                c.bus
+                    .write8(0x0053_5c12, [4u8, 5, 9][((seed / 3) % 3) as usize]);
+                c.bus
+                    .write8(0x0053_5c11, [2u8, 1][((seed / 9) % 2) as usize]);
+                oc1017_w(
+                    c,
+                    OC1017_SELF + 0x530,
+                    if (seed / 18) % 2 == 0 { 0 } else { 0x1000 },
+                );
+                oc1017_w(c, OC1017_SELF + 0x5558, OC1017_LINK);
+                c.bus.write16(OC1017_LINK + 0x20, (seed * 37) as u16);
+                oc1017_w(c, OC1017_LINK + 0x24, fakes::FAKE + 0x10);
+                oc1017_w(c, OC1017_CTRL + 0x108, ((seed / 36) % 2 == 0) as u32);
+                c.g[A0][0] = sx(OC1017_SELF);
+            },
+        );
+    }
+
+    /// Gate word of this module's callee fakes, in the test machine's RAM.
+    pub(crate) const OC1018_CTRL: u32 = DATA + 0x28_0000;
+
+    pub(crate) const OC1018_MAGIC: u32 = 0x1018_c0de;
+
+    /// Result of the fake `FindRider` (a rider pointer).
+    pub(crate) const OC1018_RIDER: u32 = OC1018_CTRL + 0x10;
+
+    /// Result of the fake `MusicPlayer_GetSongTag`.
+    pub(crate) const OC1018_TAG: u32 = OC1018_CTRL + 0x14;
+
+    /// The fake `FindRider`: logs the call, returns the rider word when gated on.
+    pub(crate) fn oc1018_find_rider(c: &mut Cpu) {
+        if c.bus.read32(OC1018_CTRL) != OC1018_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1018_find_rider),
+                ee::s07::f_00285d98__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let rider = c.bus.read32(OC1018_RIDER);
+        fakes::fake_call(c, 0x0028_5d98);
+        if c.pc == ra {
+            c.g[V0][0] = sx(rider);
+        }
+    }
+
+    /// The fake `MusicPlayer_GetSongTag`: logs, returns the tag word when gated on.
+    pub(crate) fn oc1018_get_song_tag(c: &mut Cpu) {
+        if c.bus.read32(OC1018_CTRL) != OC1018_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1018_get_song_tag),
+                ee::s08::f_002b49e0__generated,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        let tag = c.bus.read32(OC1018_TAG);
+        fakes::fake_call(c, 0x002b_49e0);
+        if c.pc == ra {
+            c.g[V0][0] = sx(tag);
+        }
+    }
+
+    /// The fake `SSXAudioSystem_PlayMusic`: logs the call only.
+    pub(crate) fn oc1018_play_music(c: &mut Cpu) {
+        if c.bus.read32(OC1018_CTRL) != OC1018_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1018_play_music),
+                ee::s07::f_0028cf98__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0028_cf98);
+    }
+
+    /// The fake bank-monitor `AddTimer`: logs the call only.
+    pub(crate) fn oc1018_add_timer(c: &mut Cpu) {
+        if c.bus.read32(OC1018_CTRL) != OC1018_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1018_add_timer),
+                ee::s08::f_002adca0__generated,
+            );
+        }
+        fakes::fake_call(c, 0x002a_dca0);
+    }
+
+    /// The fake world-trigger monitor pass: logs the call only.
+    pub(crate) fn oc1018_monitor_triggers(c: &mut Cpu) {
+        if c.bus.read32(OC1018_CTRL) != OC1018_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1018_monitor_triggers),
+                ee::s08::f_002b6950__generated,
+            );
+        }
+        fakes::fake_call(c, 0x002b_6950);
+    }
+
+    /// Hooks the fakes into their override slots (once per process).
+    pub(crate) fn oc1018_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00285D98),
+            oc1018_find_rider,
+            fakes::prev_cell(oc1018_find_rider),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B49E0),
+            oc1018_get_song_tag,
+            fakes::prev_cell(oc1018_get_song_tag),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0028CF98),
+            oc1018_play_music,
+            fakes::prev_cell(oc1018_play_music),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002ADCA0),
+            oc1018_add_timer,
+            fakes::prev_cell(oc1018_add_timer),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B6950),
+            oc1018_monitor_triggers,
+            fakes::prev_cell(oc1018_monitor_triggers),
+        );
+    }
+
+    /// A scrambled machine with this module's fakes armed, `a0` at the object
+    /// `DATA + 0x1000` and `pc` at `entry`.
+    pub(crate) fn oc1018_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32, entry: u32) -> Rng {
+        oc1018_install_fakes();
+        let r = fakes::machine(c, seed, salt, calls);
+        c.bus.write32(OC1018_CTRL, OC1018_MAGIC);
+        c.g[A0][0] = u64::from(DATA + 0x1000);
+        c.pc = entry;
+        r
+    }
+
+    /// The object's debug preset set to a value that covers the wrap cases.
+    pub(crate) fn oc1018_preset_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        oc1018_machine(c, seed, salt, 12, entry);
+        elf_image(c);
+        let preset = match seed % 9 {
+            8 => 100,
+            m => m,
+        };
+        c.bus.write32(DATA + 0x1000 + 0x6470, preset);
+    }
+
+    /// The channel-volume fixture of `SSXAudioSystem_SetChannelVolume`, the step
+    /// constants from the game image, and the entry `pc`.
+    pub(crate) fn oc1018_channel_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        set_channel_volume_setup(c, seed);
+        elf_image(c);
+        c.pc = entry;
+    }
+
+    /// `SSXAudioSystem_IncChannelVolume`: every channel and the out-of-range ones.
+    #[test]
+    fn ssx_audio_system_inc_channel_volume_matches() {
+        check(
+            ee::s07::f_002879b0__generated,
+            ssx_audio_system_inc_channel_volume,
+            280,
+            &|c, seed| oc1018_channel_setup(c, seed, 0x0028_79b0),
+        );
+    }
+
+    /// `SSXAudioSystem_DecChannelVolume`: every channel and the out-of-range ones.
+    #[test]
+    fn ssx_audio_system_dec_channel_volume_matches() {
+        check(
+            ee::s07::f_002879e0__generated,
+            ssx_audio_system_dec_channel_volume,
+            280,
+            &|c, seed| oc1018_channel_setup(c, seed, 0x0028_79e0),
+        );
+    }
+
+    /// Presets 0..=8 (wrap from 0, then the store and the apply) and 100.
+    #[test]
+    fn ssx_audio_system_prev_debug_mode_matches() {
+        check(
+            ee::s07::f_00289398__generated,
+            ssx_audio_system_prev_debug_mode,
+            240,
+            &|c, seed| oc1018_preset_setup(c, seed, 0x9398, 0x0028_9398),
+        );
+    }
+
+    /// Presets 0..=8 (wrap from 6) and 100.
+    #[test]
+    fn ssx_audio_system_next_debug_mode_matches() {
+        check(
+            ee::s07::f_002893c8__generated,
+            ssx_audio_system_next_debug_mode,
+            240,
+            &|c, seed| oc1018_preset_setup(c, seed, 0x93c8, 0x0028_93c8),
+        );
+    }
+
+    /// The timer arms with the callback pointer from the game image; the bank
+    /// monitor is faked (logs its arguments).
+    #[test]
+    fn ssx_audio_system_schedule_trigger_timer_matches() {
+        check(
+            ee::s07::f_00289400__generated,
+            ssx_audio_system_schedule_trigger_timer,
+            200,
+            &|c, seed| {
+                oc1018_machine(c, seed, 0x9400, 2, 0x0028_9400);
+                elf_image(c);
+                c.bus.write32(DATA + 0x1000 + 0x118, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000, DATA + 0x3000);
+            },
+        );
+    }
+
+    /// The callback calls the world-trigger monitor (faked) and returns 1.
+    #[test]
+    fn ssx_audio_system_trigger_timer_callback_matches() {
+        check(
+            ee::s07::f_00289448__generated,
+            ssx_audio_system_trigger_timer_callback,
+            200,
+            &|c, seed| {
+                oc1018_machine(c, seed, 0x9448, 2, 0x0028_9448);
+                c.bus.write32(
+                    GAME_GP.wrapping_add(0x21e4),
+                    DATA + 0x9000 + 0x40 * (seed % 4),
+                );
+            },
+        );
+    }
+
+    /// The empty callback only returns to `ra`.
+    #[test]
+    fn ssx_audio_system_empty_crowd_handler_matches() {
+        check(
+            ee::s07::f_00289680__generated,
+            ssx_audio_system_empty_crowd_handler,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x9680 ^ u64::from(seed));
+                scramble(c, &mut r);
+                c.g[RA][0] = sx(0x0030_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// The paint: rider match or not, a null or set object, every type code
+    /// (-1, 0x1f, 0x20, 0x21, other) and the song-tag results. The rider and the
+    /// song tag come from the faked callees; the miss fakes return a pointer to
+    /// the type-code word.
+    pub(crate) fn oc1018_paint_setup(c: &mut Cpu, seed: u32) {
+        oc1018_machine(c, seed, 0x99f8, 4, 0x0028_99f8);
+        let rider = DATA + 0x2000;
+        c.g[A1][0] = u64::from(rider);
+        c.g[A2][0] = if seed % 5 == 0 {
+            0
+        } else {
+            u64::from(DATA + 0x4000)
+        };
+        c.bus.write32(
+            OC1018_RIDER,
+            if seed % 3 == 0 { DATA + 0x2400 } else { rider },
+        );
+        c.bus
+            .write32(OC1018_TAG, [0x65, 0x66, 0][(seed % 3) as usize]);
+        // The object's vtable: delta at +0x20, method at +0x24 (a miss fake).
+        c.bus.write32(DATA + 0x4004, DATA + 0x5000);
+        c.bus.write16(DATA + 0x5020, ((seed % 2) * 0x10) as u16);
+        c.bus
+            .write32(DATA + 0x5024, fakes::FAKE + 0x10 * (seed % 3));
+        // The self's table at +0x5558, the other path's method.
+        c.bus.write32(DATA + 0x1000 + 0x5558, DATA + 0x6000);
+        c.bus.write16(DATA + 0x6020, 0x10);
+        c.bus.write32(DATA + 0x6024, fakes::FAKE + 0x30);
+        // The miss fakes return this word's address; the code word is read back.
+        let code_word = DATA + 0x7000;
+        c.bus.write32(
+            code_word,
+            [u32::MAX, 0x1f, 0x20, 0x21, 0x33][(seed % 5) as usize],
+        );
+        for n in 0..8 {
+            c.bus.write32(fakes::LOG_RESULTS + 4 * n, code_word);
+        }
+    }
+
+    /// The paint over every type code, rider and song-tag outcome.
+    #[test]
+    fn ssx_audio_system_apply_music_trigger_paint_matches() {
+        check(
+            ee::s07::f_002899f8__generated,
+            ssx_audio_system_apply_music_trigger_paint,
+            300,
+            &oc1018_paint_setup,
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_rider_release_matches() {
+        check(
+            ee::s07::f_00289af8__generated,
+            ssx_audio_system_rider_release,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_9af8, 2);
+                belib_m2(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = 7;
+                c.bus.write32(DATA + 0x118, DATA + 0x100);
+                c.bus.write32(DATA + 0x100, DATA + 0x200);
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(DATA + 0x200 + 0xab0, vt);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_get_output_mode_option_matches() {
+        check(
+            ee::s07::f_00289dc0__generated,
+            ssx_audio_system_get_output_mode_option,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0028_9dc0, 2);
+                belib_m2(c);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 0x62b0, seed % 5);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_system_take_boot_movie_flag_matches() {
+        check(
+            ee::s07::f_00289de0__generated,
+            ssx_audio_system_take_boot_movie_flag,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_9de0, 0);
+                c.g[A0][0] = DATA as u64;
+                let flag = if seed % 3 == 0 { 0 } else { r.next_u32() };
+                c.bus.write32(DATA + 0x6c88, flag);
             },
         );
     }

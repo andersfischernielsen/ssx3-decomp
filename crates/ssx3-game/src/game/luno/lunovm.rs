@@ -86,6 +86,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         oc681_luno_vm_register_add,
         "LunoVMRegister_Add",
     ),
+    (0x0022_2648, luno_vm_call_with_arg, "LunoVM_CallWithArg"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6400,6 +6401,153 @@ pub fn oc681_luno_vm_register_add(c: &mut Cpu) {
     });
 }
 
+/// `LunoVM_CallWithArg(out, state, table, value, retVar)` (0x222648): the
+/// Luno VM's register table for one call. Allocates `n` registers of 12 bytes
+/// (`new (str_LunoVMRegister, 0x20000000, 0) LV[n]`) with `n` read from the
+/// chunk the state points at, stores the table into register 0, the value
+/// into register 1 (a table is copied, a function pair is shared, anything
+/// else is the raw word), and runs `LunoVM_Execute(out, state, retVar)`.
+pub fn luno_vm_call_with_arg(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x90);
+        c.g[V1][0] = 0xc;
+        frame.save(c, 17, 0x70);
+        frame.save(c, 19, 0x50);
+        frame.save(c, 20, 0x40);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, 21, 0x30);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, 22, 0x20);
+        c.g[S5][0] = c.g[A2][0];
+        frame.save(c, 23, 0x10);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, 16, 0x80);
+        c.g[A1][0] = 0x0048_0000;
+        frame.save(c, 18, 0x60);
+        c.g[S7][0] = c.g[T0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(0x0048_0000u32.wrapping_sub(0x6880));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        // n = *(chunk + *(chunk + 4) + 8), chunk = *state.
+        c.g[V0][0] = c.lw(c.g[S6][0] as u32);
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
+        c.mult(0, V1, S0, V1);
+        c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+        call_ptr(c, 0x0031_7e30, 0x0022_26b4)?;
+        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+        let header = c.g[V0][0] as u32;
+        c.sw(header, c.g[S0][0]);
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+        let t = c.g[S0][0] == 0;
+        c.g[V0][0] = c.g[S1][0];
+        if !t {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+            loop {
+                c.cycles += 7;
+                let entry = c.g[V0][0] as u32;
+                c.sw(entry.wrapping_add(0x8), 0);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                c.sw(entry, 0);
+                let more = c.g[V1][0] != c.g[A0][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xc));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_26d0);
+                }
+            }
+        }
+        // Register 0 (the table): its type word decides whether the
+        // destructor runs first.
+        c.cycles += 4;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+        c.g[S2][0] = 0x4;
+        let differs = c.g[V0][0] != c.g[S2][0];
+        c.sw(c.g[S4][0] as u32, c.g[S1][0]);
+        if !differs {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x0022_4df0, 0x0022_2708)?;
+        }
+        // Register 1 (the second entry): its table is assigned.
+        c.cycles += 10;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0);
+        c.g[A0][0] = c.g[S1][0];
+        c.sw(c.g[S1][0] as u32, 0);
+        c.g[A1][0] = c.g[S5][0];
+        call_ptr(c, 0x0022_5068, 0x0022_271c)?;
+        c.g[S0][0] = c.lw(c.g[S4][0] as u32);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+        let differs = c.g[V0][0] != c.g[S2][0];
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
+        if !differs {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x0022_4df0, 0x0022_273c)?;
+        }
+        // The value: a table is assigned, a function pair is shared, any
+        // other type copies the raw words. Each arm ends at the Execute call;
+        // only the `!=` arm (and the copy of the word) falls to the tail.
+        c.cycles += 5;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x8), 0);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0);
+        c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+        let type_differs = c.g[V1][0] != c.g[S2][0];
+        c.g[V0][0] = 0x5;
+        if !type_differs {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S3][0];
+            call_ptr(c, 0x0022_5068, 0x0022_275c)?;
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+        } else {
+            c.cycles += 2;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V0][0] = c.lw(c.g[S3][0] as u32);
+                c.cycles += 2;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+            } else {
+                c.cycles += 6;
+                let s3 = c.g[S3][0] as u32;
+                c.ldl(2, s3.wrapping_add(0x7));
+                c.ldr(2, s3);
+                let s0 = c.g[S0][0] as u32;
+                c.sdl(2, s0.wrapping_add(0x13));
+                c.sdr(2, s0.wrapping_add(0xc));
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+            }
+        }
+        // LunoVM_Execute(out, state, retVar).
+        c.cycles += 16;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = c.g[S7][0];
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        call_ptr(c, 0x0022_27d0, 0x0022_27a0)?;
+        frame.restore(c, 16, 0x80);
+        frame.restore(c, 17, 0x70);
+        frame.restore(c, 18, 0x60);
+        frame.restore(c, 19, 0x50);
+        frame.restore(c, 20, 0x40);
+        frame.restore(c, 21, 0x30);
+        frame.restore(c, 22, 0x20);
+        frame.restore(c, 23, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7525,6 +7673,50 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(OC640_REF);
                 c.pc = 0x0022_4f68;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festateloadscreen::tests::oc1016_machine;
+
+    #[test]
+    fn luno_vm_call_with_arg_matches() {
+        check(
+            ee::s05::f_00222648__generated,
+            luno_vm_call_with_arg,
+            300,
+            &|c, seed| {
+                let out = DATA + 0x5000;
+                let state = DATA + 0x2000;
+                let chunk = DATA + 0x3000;
+                let table = DATA + 0x6000;
+                let value = DATA + 0x7000;
+                let ret_var = DATA + 0x8000;
+                // The allocator returns the register block at DATA+0x4000
+                // (every fake returns it; no zero mask).
+                let block = DATA + 0x4000;
+                oc1016_machine(c, seed, 0x222648, 24, block, 0);
+                c.bus.write32(state, chunk);
+                c.bus.write32(chunk + 4, 0x10);
+                c.bus.write32(chunk + 0x18, seed % 4);
+                // Register 0 (the block's first entry): its type word for
+                // the destructor branch; register 1 (the second) for the
+                // table assignment.
+                c.bus
+                    .write32(block + 0x10 + 8, if seed % 2 == 0 { 4 } else { seed % 7 });
+                c.bus
+                    .write32(block + 0x10 + 0x14, if seed % 3 == 0 { 0 } else { 0x10 });
+                c.bus.write32(block + 0x10 + 0x14 + 0x8, 4);
+                // The value's type decides the arm: a table (4), a function
+                // (5) or a raw word.
+                let ty = [4u32, 5, 0, 1, 2, 3][(seed % 6) as usize];
+                c.bus.write32(value + 8, ty);
+                c.bus.write32(value, 0x1234_5678 ^ seed);
+                c.g[A0][0] = sx(out);
+                c.g[A1][0] = sx(state);
+                c.g[A2][0] = sx(table);
+                c.g[A3][0] = sx(value);
+                c.g[T0][0] = sx(ret_var);
             },
         );
     }
