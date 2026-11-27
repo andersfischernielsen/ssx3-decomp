@@ -12,12 +12,15 @@ pub mod camera;
 pub mod dirtysock;
 pub mod ealib;
 pub mod fe;
+pub mod hashvalue;
 pub mod input;
 pub mod intersect;
 pub mod lib;
 pub mod luno;
 pub mod main;
+pub mod md5;
 pub mod mem;
+pub mod misc;
 pub mod movie;
 pub mod object;
 pub mod path;
@@ -32,9 +35,6 @@ pub mod visualfx;
 pub mod world;
 pub mod worldpainter;
 pub mod wscript;
-pub mod hashvalue;
-pub mod md5;
-pub mod misc;
 
 /// Every replacement in this directory.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {

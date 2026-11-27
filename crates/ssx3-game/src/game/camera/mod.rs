@@ -2,12 +2,12 @@
 
 use ssx3_ee_rt::funcs::GuestFn;
 
-pub mod script;
-pub mod trigger;
 pub mod camera;
 pub mod cameraalgolist;
 pub mod cameraalgorithms;
 pub mod cameracontroller;
+pub mod script;
+pub mod trigger;
 
 /// Every replacement in this directory.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
