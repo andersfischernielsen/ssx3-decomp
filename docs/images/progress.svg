@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="93" viewBox="0 0 800 93" role="img"
-     aria-label="Ported to Rust: 11338 of 11844 functions">
+     aria-label="Ported to Rust: 11792 of 13306 functions">
   <style>
     .track { fill: #8b949e; fill-opacity: 0.3; }
     .fill { fill: #1e90e0; }
@@ -12,26 +12,26 @@
   </style>
   <text x="0" y="14" class="label strong">All</text>
   <rect x="160" y="3" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="3" width="469" height="14" rx="2" class="fill"/>
-  <text x="658" y="14" class="pct">96%</text>
-  <text x="800" y="10" text-anchor="end" class="sub">11,338 / 11,844 functions</text>
-  <text x="800" y="19" text-anchor="end" class="mb">3.03 / 3.20 MB</text>
+  <rect x="160" y="3" width="434" height="14" rx="2" class="fill"/>
+  <text x="658" y="14" class="pct">89%</text>
+  <text x="800" y="10" text-anchor="end" class="sub">11,792 / 13,306 functions</text>
+  <text x="800" y="19" text-anchor="end" class="mb">3.06 / 3.26 MB</text>
   <text x="0" y="38" class="label">Game logic</text>
   <rect x="160" y="27" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="27" width="489" height="14" rx="2" class="fill"/>
-  <text x="658" y="38" class="pct">100%</text>
-  <text x="800" y="34" text-anchor="end" class="sub">3,947 / 3,958 functions</text>
-  <text x="800" y="43" text-anchor="end" class="mb">1.05 / 1.06 MB</text>
+  <rect x="160" y="27" width="444" height="14" rx="2" class="fill"/>
+  <text x="658" y="38" class="pct">91%</text>
+  <text x="800" y="34" text-anchor="end" class="sub">4,061 / 4,480 functions</text>
+  <text x="800" y="43" text-anchor="end" class="mb">1.06 / 1.08 MB</text>
   <text x="0" y="62" class="label">Front end, graphics, sound</text>
   <rect x="160" y="51" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="51" width="481" height="14" rx="2" class="fill"/>
-  <text x="658" y="62" class="pct">98%</text>
-  <text x="800" y="58" text-anchor="end" class="sub">4,486 / 4,569 functions</text>
-  <text x="800" y="67" text-anchor="end" class="mb">1.35 / 1.42 MB</text>
+  <rect x="160" y="51" width="441" height="14" rx="2" class="fill"/>
+  <text x="658" y="62" class="pct">90%</text>
+  <text x="800" y="58" text-anchor="end" class="sub">4,716 / 5,235 functions</text>
+  <text x="800" y="67" text-anchor="end" class="mb">1.36 / 1.43 MB</text>
   <text x="0" y="86" class="label">Engine, libraries, online</text>
   <rect x="160" y="75" width="490" height="14" rx="2" class="track"/>
-  <rect x="160" y="75" width="429" height="14" rx="2" class="fill"/>
-  <text x="658" y="86" class="pct">88%</text>
-  <text x="800" y="82" text-anchor="end" class="sub">2,905 / 3,317 functions</text>
-  <text x="800" y="91" text-anchor="end" class="mb">0.64 / 0.73 MB</text>
+  <rect x="160" y="75" width="411" height="14" rx="2" class="fill"/>
+  <text x="658" y="86" class="pct">84%</text>
+  <text x="800" y="82" text-anchor="end" class="sub">3,015 / 3,591 functions</text>
+  <text x="800" y="91" text-anchor="end" class="mb">0.64 / 0.74 MB</text>
 </svg>

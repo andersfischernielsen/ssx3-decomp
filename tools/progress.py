@@ -134,17 +134,61 @@ def registered():
     return done
 
 
+def universe():
+    """Every function of the EE code: (start, end, name) from
+    `generated/ee-symbols.tsv` (committed, so this works without the generated
+    code), named from `generated/functions.tsv` when the Ghidra list has it.
+    The symbol table also holds the small functions (stubs, thunks) that the
+    Ghidra list leaves out."""
+    names = {}
+    path = os.path.join(ROOT, "generated/functions.tsv")
+    if os.path.exists(path):
+        for line in open(path):
+            cols = line.rstrip("\n").split("\t")
+            try:
+                names[int(cols[0], 16)] = cols[2] if len(cols) > 2 else ""
+            except ValueError:
+                pass
+    rows = []
+    for line in open(os.path.join(ROOT, "generated/ee-symbols.tsv")):
+        cols = line.rstrip("\n").split("\t")
+        if line.startswith("#") or len(cols) < 3:
+            continue
+        try:
+            rows.append((int(cols[1], 16), int(cols[2], 16)))
+        except ValueError:
+            continue
+    rows.sort()
+    return [(s, e, names.get(s, "")) for s, e in rows]
+
+
+def groups_of(rows, mapped, rust):
+    """Group of each function: its purpose group, ported directory or name
+    prefix; an unnamed small function takes the group of the nearest named
+    function before it (a stub sits next to the code it belongs to)."""
+    out, last = {}, ENGINE
+    for start, _end, name in rows:
+        g = mapped.get(start)
+        if g is None and (name or rust.get(start)):
+            g = classify(name, None, rust.get(start))
+        if g is None:
+            g = last
+        else:
+            last = g
+        out[start] = g
+    return out
+
+
 def counts():
     ported = registered()
     mapped, rust = purpose_groups(), rust_dirs()
+    rows = universe()
+    group = groups_of(rows, mapped, rust)
     # [functions done, functions, bytes done, bytes] overall and per group
     stats = {g: [0, 0, 0, 0] for g in ["All"] + GROUPS}
-    for line in open(os.path.join(ROOT, "generated/functions.tsv")):
-        cols = line.rstrip("\n").split("\t")
-        start, end = int(cols[0], 16), int(cols[1], 16)
-        name = cols[2] if len(cols) > 2 else ""
+    for start, end, _name in rows:
         done = start in ported
-        for g in ("All", mapped.get(start) or classify(name, None, rust.get(start))):
+        for g in ("All", group[start]):
             s = stats[g]
             s[1] += 1
             s[3] += end - start
