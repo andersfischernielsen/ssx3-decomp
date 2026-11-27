@@ -12548,11 +12548,6 @@ pub(crate) const INTC_REMOVE_VIF_VU_HANDLERS: Callee = Callee {
     f: ee::s12::f_00361e80,
 };
 
-pub(crate) const VRAM_HEAP_FREE_BLOCK: Callee = Callee {
-    addr: 0x0036_63d8,
-    f: ee::s12::f_003663d8,
-};
-
 /// The `cAnimFrame` vtable the constructors store at `this+0x84` (0x490af0),
 /// and the `cMeshAnimFrame`/`cCamAnimFrame` variants' words (0x490ad0, 0x490ab0).
 pub(crate) const ANIMFRAME_VTBL: u32 = 0x0049_0af0;

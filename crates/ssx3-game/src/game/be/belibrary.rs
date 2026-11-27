@@ -5399,12 +5399,6 @@ pub(crate) const COLLECT_BOLTS_CALL: Callee = Callee {
     f: ee::s01::Bolts_GetCharBolts,
 };
 
-/// `BEBoltInt_GetBoltTextureName(self, profile, ch, def, out)` (0x14b988).
-pub(crate) const COLLECT_TEXTURE_CALL: Callee = Callee {
-    addr: 0x0014_b988,
-    f: ee::s01::BEBoltInt_GetBoltTextureName,
-};
-
 /// `Bolts_FindFirstChild(self, group, key)` (0x14d558).
 pub(crate) const COLLECT_FIRST_CHILD_CALL: Callee = Callee {
     addr: 0x0014_d558,

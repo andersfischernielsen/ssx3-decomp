@@ -752,68 +752,9 @@ pub fn replay_begin_playback(c: &mut Cpu) {
     })
 }
 
-pub(crate) mod game_ui {
+pub(crate) mod game_ui {}
 
-    /// `gp-0x848`: the world; its game module (`+0x84`) and BE library
-    /// (`+0x78`).
-    pub const GP_WORLD: u32 = 0x848;
-
-    pub const W_GAME: u32 = 0x84;
-
-    pub const W_BE: u32 = 0x78;
-
-    /// `gp-0x9f4`: the pending UI action (0 none, 1 menu result, 2 leave the
-    /// replay, 3 close the PDA template, 4 request game state 0xe).
-    pub const GP_ACTION: u32 = 0x9f4;
-
-    /// Game module: replay (`+0x28`), UI manager (`+0x48`, its state stack at
-    /// `+0x18`), the HUD block (`+0x200`, its "dirty" word at `+8`), the game
-    /// mode (`+0x214`).
-    pub const G_REPLAY: u32 = 0x28;
-
-    pub const G_UI: u32 = 0x48;
-
-    pub const UI_STACK: u32 = 0x18;
-
-    pub const G_HUD: u32 = 0x200;
-
-    pub const G_MODE: u32 = 0x214;
-
-    /// UI state id (`+0x98`); 8 is the pause menu.
-    pub const S_ID: u32 = 0x98;
-
-    /// The action jump table.
-    pub const JUMP_TABLE: u32 = 0x0047_1ae0;
-
-    /// The "online" flag word the pause-menu exit checks.
-    pub const ONLINE: u32 = 0x0053_4b30;
-}
-
-pub(crate) mod game_ui_callee {
-    use super::ee;
-    use super::Callee;
-
-    pub const HANDLE_MENU_RESULT: Callee = Callee {
-        addr: 0x0020_ccf8,
-        f: ee::s05::GameUI_HandleMenuResult,
-    };
-
-    pub const PDA_TEMPLATE_CLOSE: Callee = Callee {
-        addr: 0x0020_d190,
-        f: ee::s05::OVScreenPDATemplate_Close,
-    };
-
-    /// Called through the function table.
-    pub const GET_ACTIVE_STATE: u32 = 0x0039_fa88;
-
-    pub const REPLAY_FINISH: u32 = 0x0027_06f0;
-
-    pub const BE_GET_INTERFACE: u32 = 0x0014_dd58;
-
-    pub const CLOSE_ALL: u32 = 0x0039_f840;
-
-    pub const REQUEST_STATE: u32 = 0x0023_1250;
-}
+pub(crate) mod game_ui_callee {}
 
 // ---------------------------------------------------------------------------
 // GameUI_IsPauseMenuOpen (0x20cba0)

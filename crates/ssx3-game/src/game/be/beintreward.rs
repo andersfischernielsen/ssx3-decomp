@@ -5157,32 +5157,6 @@ pub(crate) const UNLOCK_TOY: RewardUnlock = RewardUnlock {
     ret_money: 0x0015_8448,
 };
 
-pub(crate) const UNLOCK_VIDEO: RewardUnlock = RewardUnlock {
-    table: 0x24,
-    bit_off: 0xf52,
-    index_adj: false,
-    count: None,
-    ret_inst: 0x0015_84a8,
-    ret_iface: 0x0015_84b4,
-    ret_setbit: 0x0015_84e8,
-    ret_file: 0x0015_84f8,
-    ret_spend: 0x0015_8524,
-    ret_money: 0x0015_8534,
-};
-
-pub(crate) const UNLOCK_RIDER_ITEM: RewardUnlock = RewardUnlock {
-    table: 0x28,
-    bit_off: 0xf57,
-    index_adj: true,
-    count: None,
-    ret_inst: 0x0015_8650,
-    ret_iface: 0x0015_865c,
-    ret_setbit: 0x0015_8690,
-    ret_file: 0x0015_86a0,
-    ret_spend: 0x0015_86cc,
-    ret_money: 0x0015_86dc,
-};
-
 /// `void BERewardInt_UnlockPoster(self, profile, c, idx, award)` (0x157fd0).
 pub fn reward_unlock_poster(c: &mut Cpu) {
     guest(c, |c| reward_unlock_body(c, UNLOCK_POSTER))

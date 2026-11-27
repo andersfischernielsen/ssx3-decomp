@@ -4722,21 +4722,6 @@ pub fn script_list_add_movie(c: &mut Cpu) {
     });
 }
 
-/// The reset branch of `ScriptList_Skip` (`tNISList_Reset(self, 1)`): stop the list with
-/// `ScriptList_Stop(self, 1)`, then return the state. `a0` is the list.
-pub(crate) fn skip_reset(c: &mut Cpu) -> Flow {
-    const STOP: Callee = Callee {
-        addr: 0x0027_6868,
-        f: ee::s07::f_00276868,
-    };
-    c.cycles += 2;
-    c.g[A1][0] = 1;
-    STOP.call(c, 0x0027_6848)?;
-    c.cycles += 1;
-    c.g[V0][0] = oc538_field(c, S0, 0xa4).lw(c);
-    Ok(())
-}
-
 /// `ScriptList_GetEntryScriptIndex(self, i)` (0x276a78): the script index of queue entry
 /// `i`, or -1 when `i` is out of range or the entry is a movie. An entry whose own index
 /// (+4) is negative takes the index of its request (`ScriptEngine_GetProcessScriptId`)

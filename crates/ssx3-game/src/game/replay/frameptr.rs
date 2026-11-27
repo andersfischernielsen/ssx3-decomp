@@ -2252,12 +2252,6 @@ pub fn replay_empty_reset_hook(c: &mut Cpu) {
     ret(c);
 }
 
-/// `ReplayStream_RewindRead` (0x26e9b0): `self->+0xc = self->+0x4`.
-pub(crate) const OC532_REWIND_READ: Callee = Callee {
-    addr: 0x0026_e9b0,
-    f: ee::s07::f_0026e9b0,
-};
-
 /// `sNode_EC08* ReplayStream_ReadNodeRef(stream, owner)` (0x26ec08): reads an
 /// 8-byte `{id, type}` record through the stream's virtual `read`. An id of
 /// -1 (`~id == 0`) gives no node and the result is 0. Otherwise the id is
@@ -2348,18 +2342,6 @@ pub fn replay_stream_read_node_ref(c: &mut Cpu) {
         Ok(())
     })
 }
-
-/// `cReplay_restoreReplayFrame` (0x26db88), a direct call (no override slot).
-pub(crate) const OC532_RESTORE_REPLAY_FRAME: Callee = Callee {
-    addr: 0x0026_db88,
-    f: ee::s07::f_0026db88,
-};
-
-/// `cReplay_freeReplayFrame` (0x270238).
-pub(crate) const OC532_FREE_REPLAY_FRAME: Callee = Callee {
-    addr: 0x0027_0238,
-    f: ee::s07::f_00270238,
-};
 
 /// `Replay_SnapshotEmptyHookB` (0x26ed90): an empty hook.
 pub fn replay_snapshot_empty_hook_b(c: &mut Cpu) {

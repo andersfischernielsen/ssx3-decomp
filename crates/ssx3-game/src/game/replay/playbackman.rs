@@ -2885,11 +2885,6 @@ pub fn playback_man_load_playback(c: &mut Cpu) {
     });
 }
 
-/// `base + off` as a guest address (`addiu`; `off` may be negative).
-pub(crate) fn oc653_off(base: u64, off: i32) -> u32 {
-    (base as u32).wrapping_add(off as u32)
-}
-
 /// `PlaybackMan* PlaybackMan_ctor(PlaybackMan* self, int a1)` (0x26c458): build the
 /// replay playback manager: the embedded `WorldStateStream` (`+0x14`), the world
 /// and rider-table words copied from the game world, two allocated helpers (a

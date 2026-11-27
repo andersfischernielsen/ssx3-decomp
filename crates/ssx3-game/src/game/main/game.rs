@@ -3604,26 +3604,6 @@ pub(crate) const SM_LOCATION_MODE_MAP: u32 = 0x0044_2820;
 #[allow(dead_code)]
 pub(crate) const SM_LOCATION_MAP: u32 = 0x0044_2488;
 
-pub(crate) const SM_LOCATION_SIZE: u32 = 0x28;
-
-pub(crate) const SM_LOC_NUM_SECTIONS: u32 = 0x4;
-
-pub(crate) const SM_LOC_SKY_SECTION: u32 = 0x8;
-
-pub(crate) const SM_LOC_SECTION_IDS: u32 = 0x10;
-
-pub(crate) const SM_LOC_TRANSPORT: u32 = 0xc;
-
-/// cSectionMan fields: the current location, the activated flag, the sky swap.
-pub(crate) const SM_LOCATION_ID: u32 = 0x1bc;
-
-pub(crate) const SM_ACTIVATED: u32 = 0x1c0;
-
-pub(crate) const SM_SKY_SWAP: u32 = 0x1a4;
-
-/// "No sky section" (IsSection is false for it).
-pub(crate) const SM_NO_SKY: u64 = 0x31;
-
 /// `void SectionMan_RequestEvent(cSectionMan* self, int idx, int mode)` (0x22cea8):
 /// switches to the event location `idx`: unloads every BE section it does not
 /// use (43-48 stay), records the location, loads its sections, the sky section

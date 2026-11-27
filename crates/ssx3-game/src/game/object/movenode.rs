@@ -58,7 +58,6 @@ pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::object::deadfadenode::ctor_with_vtable;
 pub(crate) use crate::game::object::debouncenode::lw32;
 pub(crate) use crate::game::object::instancenode::ui_vector_lw;
-pub(crate) use crate::game::object::modifierblock::oc664_stream_read;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::p as p_2;
@@ -5540,26 +5539,6 @@ pub fn ava_spline_modifier_ctor_2_2(c: &mut Cpu) {
         Ok(())
     })
 }
-
-pub(crate) const MOBJ_WORLD_CTOR: Callee = Callee {
-    addr: 0x0034_fb90,
-    f: ee::s11::f_0034fb90,
-};
-
-pub(crate) const MOBJ_CREATE_BLOCK: Callee = Callee {
-    addr: 0x0035_5468,
-    f: ee::s11::f_00355468,
-};
-
-pub(crate) const MOBJ_MODIFIER_BLOCK_LOAD: Callee = Callee {
-    addr: 0x0035_36d8,
-    f: ee::s11::f_003536d8,
-};
-
-pub(crate) const MOBJ_SETUP_OVERLAP: Callee = Callee {
-    addr: 0x0035_6780,
-    f: ee::s11::f_00356780,
-};
 
 /// `ModObj* ModObj::ModObj(self, int, Stream* s)` (0x3552d8), the stream
 /// constructor: builds the world-object base (`WorldObj_ctor_2`), sets the

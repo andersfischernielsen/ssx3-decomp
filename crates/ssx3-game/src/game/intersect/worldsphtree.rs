@@ -32138,170 +32138,6 @@ pub(crate) fn boost_modifier_v07_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-pub(crate) fn anim_teeter_v43_body(c: &mut Cpu) -> Flow {
-    c.cycles += 10;
-    let frame = Frame::open(c, 0x80);
-    frame.save(c, S0, 0x70);
-    frame.save(c, S1, 0x60);
-    c.g[S0][0] = c.g[A0][0];
-    frame.save(c, S2, 0x50);
-    c.g[S1][0] = c.g[A1][0];
-    frame.save_ra(c, 0x40);
-    c.g[A3][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x5c)).lw(c);
-    let negative = (c.g[A3][0] as i64) < 0;
-    c.g[S2][0] = c.g[A2][0];
-    'exit: {
-        if negative {
-            break 'exit;
-        }
-        c.cycles += 9;
-        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x44));
-        c.g[A1][0] = sx((c.g[A3][0] as u32) << 4);
-        c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x18)).lw(c);
-        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x80)).lw(c);
-        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lw(c);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x8)).lw(c);
-        let no_entry = c.g[V0][0] == 0;
-        c.g[A1][0] = c.g[A3][0];
-        if no_entry {
-            break 'exit;
-        }
-        c.cycles += 22;
-        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x50)).lw(c);
-        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xe8)).lh(c);
-        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xec)).lw(c);
-        let slot = c.g[V0][0] as u32;
-        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-        call_ptr(c, slot, 0x0034_2598)?;
-        c.g[V1][0] = c.g[V0][0];
-        c.g[AT][0] = 0x42c8_0000;
-        c.mtc1(1, 1);
-        c.lqc2(3, c.g[S1][0] as u32);
-        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
-        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
-        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
-        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
-        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
-        c.vu0().sqrt(4, 0);
-        c.vu0().waitq();
-        c.cfc2(2, 22);
-        c.mtc1(2, 0);
-        c.c_lt_s(1, 0);
-        let passed = c.fcc();
-        c.g[A0][0] = c.g[V1][0];
-        if !passed {
-            break 'exit;
-        }
-        'blend: {
-            c.cycles += 13;
-            c.lq(2, (c.g[V1][0] as u32).wrapping_add(0x30));
-            c.mtc1(0, 1);
-            let spill10 = frame.at(c, 0x10);
-            c.sq(2, spill10);
-            c.lqc2(3, c.g[S1][0] as u32);
-            c.lqc2(4, spill10);
-            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
-            let spill20 = frame.at(c, 0x20);
-            c.sqc2(5, spill20);
-            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
-            c.lq(2, spill20);
-            c.c_lt_s(0, 1);
-            let below = c.fcc();
-            let spill0 = frame.at(c, 0x0);
-            c.sq(2, spill0);
-            if !below {
-                break 'blend;
-            }
-            c.cycles += 10;
-            c.g[AT][0] = 0xffff_ffff_bf80_0000;
-            c.mtc1(1, 0);
-            c.mfc1(3, 0);
-            let spill0_q = frame.at(c, 0x0);
-            c.lqc2(4, spill0_q);
-            c.qmtc2(3, 3);
-            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
-            c.sqc2(5, spill20);
-            c.lq(2, spill20);
-            c.sq(2, spill0_q);
-            c.sq(2, spill10);
-        }
-        'scale: {
-            c.cycles += 6;
-            c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x5c)).lw(c);
-            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x2c)).lw(c);
-            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> ((c.g[V1][0] as u32) & 31)) as u32);
-            c.g[V0][0] &= 0x1;
-            let clear = c.g[V0][0] == 0;
-            c.g[V0][0] = 0x50_0000;
-            if clear {
-                break 'scale;
-            }
-            c.cycles += 11;
-            c.g[AT][0] = 0xffff_ffff_bf80_0000;
-            c.mtc1(1, 0);
-            c.mfc1(3, 0);
-            let base = frame.at(c, 0x0);
-            c.lqc2(4, base);
-            c.qmtc2(3, 3);
-            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
-            let spill20 = frame.at(c, 0x20);
-            c.sqc2(5, spill20);
-            c.lq(2, spill20);
-            let base2 = frame.at(c, 0x0);
-            c.sq(2, base2);
-            let spill10 = frame.at(c, 0x10);
-            c.sq(2, spill10);
-            c.g[V0][0] = 0x50_0000;
-        }
-        c.cycles += 33;
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xeb0));
-        c.lqc2(8, c.g[V0][0] as u32);
-        c.lqc2(4, c.g[A0][0] as u32);
-        c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
-        c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
-        c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
-        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
-        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
-        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
-        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
-        let spill20 = frame.at(c, 0x20);
-        c.sqc2(12, spill20);
-        c.lq(2, spill20);
-        let spill10 = frame.at(c, 0x10);
-        c.sq(2, spill10);
-        let base = frame.at(c, 0x0);
-        c.lqc2(4, base);
-        c.lqc2(5, c.g[S2][0] as u32);
-        c.vu0().opmula(4, 5);
-        c.vu0().opmsub(6, 5, 4);
-        c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
-        let spill30 = frame.at(c, 0x30);
-        c.sqc2(6, spill30);
-        c.lq(2, spill30);
-        c.lwc1(0, c.g[S0][0] as u32);
-        c.sq(2, spill20);
-        c.lqc2(3, spill10);
-        c.lqc2(5, spill20);
-        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
-        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
-        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
-        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
-        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
-        c.qmfc2(3, 4);
-        c.mtc1(3, 1);
-        c.add_s(0, 0, 1);
-        c.swc1(0, c.g[S0][0] as u32);
-    }
-    c.cycles += 6;
-    frame.restore(c, S0, 0x70);
-    frame.restore(c, S1, 0x60);
-    frame.restore(c, S2, 0x50);
-    frame.restore_ra(c, 0x40);
-    frame.close(c);
-    Ok(())
-}
-
 /// `EA_MemAllocNamed` (0x317d70), through the function table.
 pub(crate) const EA_ALLOC_NAMED_ADDR: u32 = 0x0031_7d70;
 
@@ -32418,19 +32254,9 @@ pub(crate) const CALL_SUBTREE_OBJECTS: Callee = Callee {
     f: ee::s11::Cell_GatherObjectsSubtree,
 };
 
-pub(crate) const CALL_SUBTREE_TYPE2: Callee = Callee {
-    addr: 0x0034_0b18,
-    f: ee::s11::Cell_GatherType2Subtree,
-};
-
 pub(crate) const CALL_SUBTREE_OBJINST: Callee = Callee {
     addr: 0x0034_0c20,
     f: ee::s11::Cell_GatherObjInstSubtree,
-};
-
-pub(crate) const CALL_SUBTREE_ALL: Callee = Callee {
-    addr: 0x0034_0dc0,
-    f: ee::s11::Cell_GatherAllSubtree,
 };
 
 pub(crate) const CALL_SUBTREE_VOLUME: Callee = Callee {
@@ -32613,37 +32439,6 @@ pub(crate) fn gather_objects_subtree_body(c: &mut Cpu) -> Flow {
     sub_epilogue(c, frame)
 }
 
-pub(crate) fn gather_type2_subtree_body(c: &mut Cpu) -> Flow {
-    c.cycles += 8;
-    let frame = Frame::open(c, 0x30);
-    frame.save(c, S0, 0x20);
-    frame.save(c, S1, 0x10);
-    frame.save_ra(c, 0);
-    c.g[S1][0] = c.g[A0][0];
-    c.g[A2][0] = sub_lw(c, S1, 0x28);
-    let empty = c.g[A2][0] == 0;
-    c.g[S0][0] = c.g[A1][0];
-    if !empty {
-        c.cycles += 2;
-        c.g[A1][0] = sub_lw(c, S0, 4);
-        loop {
-            c.cycles += 10;
-            let pair = r32(c, S0);
-            sub_push(c, pair);
-            if c.g[A2][0] == 0 {
-                break;
-            }
-            c.g[A1][0] = sub_lw(c, S0, 4);
-            if event_due(c) {
-                deliver_event_here(c, 0x0034_0b40);
-            }
-        }
-    }
-    c.g[A0][0] = sub_lw(c, S1, 0);
-    sub_chain8(c, S1, CALL_SUBTREE_TYPE2, 0x0034_0b7c, S0, 3, 0x20)?;
-    sub_epilogue(c, frame)
-}
-
 /// `Cell_GatherObjInstSubtree(tree, ctx)` (0x340c20): the node's object list
 /// (`tree+0x24`) whose boxes overlap the `ctx` box (`ctx+0x1c`) goes to the
 /// `ctx+0x10` pair, then the eight children.
@@ -32693,72 +32488,6 @@ pub(crate) fn gather_objinst_subtree_body(c: &mut Cpu) -> Flow {
     }
     c.g[A0][0] = sub_lw(c, S0, 0);
     sub_chain8(c, S0, CALL_SUBTREE_OBJINST, 0x0034_0d20, S1, 3, 0x20)?;
-    sub_epilogue(c, frame)
-}
-
-pub(crate) fn gather_all_subtree_body(c: &mut Cpu) -> Flow {
-    c.cycles += 12;
-    let frame = Frame::open(c, 0x30);
-    frame.save(c, S0, 0x20);
-    frame.save(c, S1, 0x10);
-    frame.save_ra(c, 0);
-    c.g[S0][0] = c.g[A0][0];
-    c.g[S1][0] = c.g[A1][0];
-    c.g[A0][0] = c.g[S1][0];
-    c.g[A1][0] = c.g[S0][0];
-    CALL_GATHER_OBJECTS.call(c, 0x0034_0de4)?;
-    c.g[A2][0] = sub_lw(c, S0, 0x24);
-    let empty = c.g[A2][0] == 0;
-    c.g[A3][0] = sx(r32(c, S1).wrapping_add(0x10));
-    if !empty {
-        c.cycles += 2;
-        c.g[V0][0] = sub_lw(c, A3, 0xc);
-        loop {
-            let obj = r32(c, A2);
-            let bx = r32(c, V0);
-            let hit = sub_box_hit(c, obj, bx);
-            c.g[V1][0] = hit as u64;
-            c.cycles += 2;
-            if c.g[V1][0] == 0 {
-                c.g[A2][0] = sub_lw(c, A2, 0);
-            } else {
-                c.cycles += 9;
-                let pair = r32(c, A3);
-                sub_push(c, pair);
-            }
-            c.cycles += 2;
-            if c.g[A2][0] == 0 {
-                break;
-            }
-            c.g[V0][0] = sub_lw(c, A3, 0xc);
-            if event_due(c) {
-                deliver_event_here(c, 0x0034_0df8);
-            }
-        }
-    }
-    c.cycles += 3;
-    c.g[A2][0] = sub_lw(c, S0, 0x28);
-    let empty2 = c.g[A2][0] == 0;
-    c.g[A3][0] = sx(r32(c, S1).wrapping_add(0x20));
-    if !empty2 {
-        c.cycles += 2;
-        c.g[A1][0] = sub_lw(c, A3, 4);
-        loop {
-            c.cycles += 10;
-            let pair = r32(c, A3);
-            sub_push(c, pair);
-            if c.g[A2][0] == 0 {
-                break;
-            }
-            c.g[A1][0] = sub_lw(c, A3, 4);
-            if event_due(c) {
-                deliver_event_here(c, 0x0034_0ec0);
-            }
-        }
-    }
-    c.cycles += 3;
-    c.g[A0][0] = sub_lw(c, S0, 0);
-    sub_chain8(c, S0, CALL_SUBTREE_ALL, 0x0034_0efc, S1, 3, 0x20)?;
     sub_epilogue(c, frame)
 }
 

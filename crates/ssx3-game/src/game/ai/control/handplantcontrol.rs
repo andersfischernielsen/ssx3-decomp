@@ -7893,42 +7893,7 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
     return;
 }
 
-pub(crate) mod air_walls {
-
-    /// `RiderAirState`: the rider.
-    pub const RIDER: u32 = 0x4;
-
-    /// `Rider`: velocity, the controller (vtable slot `+0x40`: "use the
-    /// small hull"), the hull's sphere tree, the overlap list and its flags.
-    pub const VEL: u32 = 0x1e0;
-
-    pub const POSITION_ROW: u32 = 0x180;
-
-    pub const CONTROLLER: u32 = 0x6c0;
-
-    pub const SPHERE_TREE: u32 = 0xaa0;
-
-    pub const OVERLAP_LIST: u32 = 0x860;
-
-    pub const OVERLAP_FLAGS: u32 = 0x868;
-
-    pub const GET_SUB_STATE: u32 = 0x0011_fee8;
-
-    pub const HULL_CTOR: u32 = 0x0032_f650;
-
-    pub const HULL_DTOR: u32 = 0x0032_f708;
-
-    pub const FIND_CLOSEST_CONTACT: u32 = 0x0033_42d0;
-
-    pub const TRANSLATE: u32 = 0x0010_6538;
-
-    pub const BUILD_WORLD_MATRIX: u32 = 0x0011_e098;
-
-    pub const HANDLE_IMPACT: u32 = 0x0010_5d98;
-
-    /// Sub state 9: no wall collision.
-    pub const SUB_STATE_SKIP: u64 = 9;
-}
+pub(crate) mod air_walls {}
 
 pub(crate) mod boost_accel {
     use super::*;
@@ -7972,30 +7937,6 @@ pub(crate) mod boost_accel {
     };
 
     pub const MATH_ATAN: u32 = 0x0031_c228;
-}
-
-/// `vf5 = vf4(at) * x` with `x` moved through a GPR (`mfc1; qmtc2`), stored
-/// at `sp+out` and reloaded into v0 (`lq`): the original's vector scale.
-pub(crate) fn air_walls_scale(c: &mut Cpu, gpr: usize, fpr: usize, at: u32, out: u32) {
-    use ssx3_ee_rt::vu0::{Src, X};
-    let base = sp(c);
-    c.mfc1(gpr, fpr);
-    c.lqc2(4, base.wrapping_add(at));
-    c.qmtc2(gpr, 3);
-    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
-    c.sqc2(5, base.wrapping_add(out));
-    c.lq(V0, base.wrapping_add(out));
-}
-
-/// `vf4 = vf3 * vf5; vf4.w = vf4.x + vf4.y + vf4.z` (the original's dot
-/// product macro, `vf6.w = 1`).
-pub(crate) fn air_walls_dot(c: &mut Cpu, b: u8) {
-    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
-    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
-    c.vu0().mul(0b1111, 4, 3, Src::Vec(b));
-    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
-    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
-    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
 }
 
 // ---------------------------------------------------------------------------
@@ -18282,10 +18223,6 @@ pub(crate) mod tests {
             assert!(r.lohi.is_empty(), "seed {seed} lo/hi: {:#?}", r.lohi);
         }
     }
-
-    pub(crate) use crate::game::ai::computer::tests::install_fake_slots;
-    pub(crate) use crate::game::ai::computer::tests::FCC_CTRL;
-    pub(crate) use crate::game::ai::computer::tests::FCC_MAGIC;
 
     /// RiderGroundState_CollideWalls fixture. `impact`: the rider moves into
     /// the wall after the push-out (reaches the bounce, the deflection and

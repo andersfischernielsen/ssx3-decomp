@@ -2126,33 +2126,11 @@ pub fn float_rail_node_update_nodes(c: &mut Cpu) {
 /// cSpringRailNode field offsets (the node array is 0x60 bytes per node).
 pub(crate) const SR_NUM_NODES: u32 = 0x20;
 
-pub(crate) const SR_MATS: u32 = 0x50;
-
 pub(crate) const SR_SPRING: u32 = 0x60;
 
 pub(crate) const SR_DAMP: u32 = 0x64;
 
 pub(crate) const SR_NODES: u32 = 0x70;
-
-/// The VU0 matrix constant the segment transform multiplies by (0x500000 - 0x540).
-pub(crate) const SR_SEG_XFORM: u32 = 0x004f_ffc0;
-
-/// One VU0 pass of the segment build: loads the vector at `vec` into VF8,
-/// transforms it by the matrix at `SR_SEG_XFORM` (VF4..VF7) and stores the
-/// resulting quad to `dst` (VF12). The generated body spills the vector and the
-/// result to the stack; the caller keeps those stores.
-pub(crate) fn spring_rail_seg_xform(c: &mut Cpu, vec: u32, dst: u32) {
-    c.lqc2(8, vec);
-    c.lqc2(4, SR_SEG_XFORM);
-    c.lqc2(5, SR_SEG_XFORM.wrapping_add(0x10));
-    c.lqc2(6, SR_SEG_XFORM.wrapping_add(0x20));
-    c.lqc2(7, SR_SEG_XFORM.wrapping_add(0x30));
-    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
-    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
-    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
-    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
-    c.sqc2(12, dst);
-}
 
 /// `void cSpringRailNode_updateNodes(cSpringRailNode* self)` (0x34a8c8),
 /// `SpringRail_v47`: one physics step of the rail's nodes. It reads the update
@@ -2641,73 +2619,6 @@ pub fn float_rail_ctor_2(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
-}
-
-/// `cFlexRailNode::cFlexRailNode` (0x347d90): the base constructor.
-pub(crate) const FLEX_RAIL_CTOR: Callee = Callee {
-    addr: 0x0034_7d90,
-    f: ee::s11::f_00347d90,
-};
-
-/// `cFlexRailNode::cFlexRailNode` second form (0x347ea8).
-pub(crate) const SPRING_FLEX_RAIL_CTOR_2: Callee = Callee {
-    addr: 0x0034_7ea8,
-    f: ee::s11::f_00347ea8,
-};
-
-/// `cFlexRailNode_addSpaceHash` (0x348b90).
-pub(crate) const FLEX_RAIL_REGISTER_SPACE: Callee = Callee {
-    addr: 0x0034_8b90,
-    f: ee::s11::f_00348b90,
-};
-
-/// `SpringRail_v50`: the bound box of the rail (0x349f18).
-pub(crate) const SPRING_RAIL_BOUND_BOX: Callee = Callee {
-    addr: 0x0034_9f18,
-    f: ee::s11::f_00349f18,
-};
-
-/// `cSpringRailNode_getPosition` (0x34a028): this port.
-pub(crate) const SPRING_RAIL_NODE_POS: Callee = Callee {
-    addr: 0x0034_a028,
-    f: ee::s11::f_0034a028,
-};
-
-/// `cSpringRailNode_updateMats` (0x34a0b0): this port.
-pub(crate) const SPRING_RAIL_MATS: Callee = Callee {
-    addr: 0x0034_a0b0,
-    f: ee::s11::f_0034a0b0,
-};
-
-/// `World_GetInstance` (0x2d1bd8): the instance of the world, through the table.
-pub(crate) const SPRING_WORLD_GET_INSTANCE: u32 = 0x002d_1bd8;
-
-/// `Instance_GetNodeMatrix` (0x34fed8): the bone matrix of a mesh node.
-pub(crate) const INSTANCE_NODE_MATRIX: Callee = Callee {
-    addr: 0x0034_fed8,
-    f: ee::s11::f_0034fed8,
-};
-
-/// The `operator new` the spring rail nodes are allocated with (0x317e30).
-pub(crate) const NODE_ALLOC: u32 = 0x0031_7e30;
-
-/// The VU0 matrix the segment transform multiplies by: `0x500000 - 0x540`
-/// (the generated body's T7 and A3, both computed from the same constant).
-pub(crate) const MATS_V48_XFORM: u32 = 0x004f_fac0;
-
-/// One segment transform of the matrix rebuild: VF8 from `vec`, the matrix at
-/// [`MATS_V48_XFORM`] in VF4..VF7, the result quad stored to `dst`.
-pub(crate) fn spring_seg_xform_v48(c: &mut Cpu, vec: u32, dst: u32) {
-    c.lqc2(8, vec);
-    c.lqc2(4, MATS_V48_XFORM);
-    c.lqc2(5, MATS_V48_XFORM + 0x10);
-    c.lqc2(6, MATS_V48_XFORM + 0x20);
-    c.lqc2(7, MATS_V48_XFORM + 0x30);
-    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
-    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
-    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
-    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
-    c.sqc2(12, dst);
 }
 
 /// `void FlexRail_UnregisterSpaceNode(FlexRail* self)` (0x348c48,
@@ -3949,6 +3860,12 @@ pub fn spring_rail_v48(c: &mut Cpu) {
     c.pc = t;
     return;
 }
+
+#[cfg(test)]
+pub(crate) const SR_MATS: u32 = 0x50;
+
+#[cfg(test)]
+pub(crate) const SR_SEG_XFORM: u32 = 0x004f_ffc0;
 
 #[cfg(test)]
 pub(crate) mod tests {
