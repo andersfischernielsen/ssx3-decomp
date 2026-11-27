@@ -10536,6 +10536,63 @@
 # Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1129, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
 # Phase 2 wave: oc1128, oc1130
 # Phase 2 wave: oc1124, oc1125, oc1126, oc1127, oc1128, oc1129, oc1130, oc1131, oc1132, oc1133, oc1134, oc1135, oc1136, oc1137
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+0x00256998    cDSockChannel_Disconnect
+0x00256698    cDSockChannel_ctor
+0x00256a58    cDSockChannel_UpdateConnecting
+0x002566e8    cDSockChannel_dtor
+0x00242d50    MCManager_DebugPrintfStub
+0x004245a0    libc_EioStub_45a0
+0x004245c8    libc_EioStub_45c8
+0x0031ff38    EACoreGlobal_dtor
+0x00320b28    EACore_GlobalCtors
+0x00320b48    EACore_GlobalDtors
+0x0031ff20    EACoreGlobal_ctor
+0x002c4758    cPS2MemCard_DeferState18
+0x002c4890    cPS2MemCard_DeferState1E
+0x00244860    MCManager_NullCallback
+0x00244868    MCManager_NullCallbackRet0
+0x00244870    MCManager_NullCallbackRet1
+0x00244878    MCManager_NullChunkCallback
+0x00256ba8    cDSockChannel_v05
+0x00267dc8    cDSockChannel_BaseUpdate
+0x00267dd0    cDSockChannel_BaseIsConnected
+0x00267de8    cDSockChannel_Base_v06
+0x00267df0    cDSockChannel_BaseRecv
+0x00267df8    cDSockChannel_BaseSend
+0x00267e10    cDSockChannel_v06
+0x002c4400    cPS2MemCard_Get490
+0x002c4408    cPS2MemCard_Set24
+0x002c5520    cPS2MemCard_v46
+0x002c6700    cPS2MemCard_v57
+0x002c6708    cPS2MemCard_v58
+0x002c6710    cPS2MemCard_v61
+0x002c6748    cPS2MemCard_GetBlockSize
+0x002c6750    cPS2MemCard_v21
+0x002c67a8    cPS2MemCard_v50
+0x002c67e0    cPS2MemCard_v25
+0x002d37d8    cPS2MemCard_GetCurrentPort
+0x002d3920    cPS2MemCard_v59
+0x002d3928    cPS2MemCard_v60
+0x002d3970    cPS2MemCard_Get14
+0x002d3978    cPS2MemCard_v69
+0x002d39a8    cPS2MemCard_v72
+0x002d39b0    cPS2MemCard_IsSyncDone
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453
+0x00256a00    cDSockChannel_Update
+0x00256aa8    cDSockChannel_UpdateConnected
+0x00256730    cDSockChannel_Recv
+0x002568f8    cDSockChannel_Connect
+0x00256860    cDSockChannel_Listen
+0x002567e0    cDSockChannel_Send
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1450, oc1451, oc1452, oc1453, oc1454, oc1455, oc1456, oc1457, oc1458, oc1459
+# Phase 2 wave: oc1453
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

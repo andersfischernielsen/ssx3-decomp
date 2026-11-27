@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -35,6 +36,7 @@ pub(crate) use crate::game::main::gamestate::p_2 as p_3;
 pub(crate) use crate::game::movie::movieplayer::lw_at;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -119,6 +121,59 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_dsock_channel_reset_state,
         "cDSockChannel_ResetState",
     ),
+    (0x0025_6698, c_dsock_channel_ctor, "cDSockChannel_ctor"),
+    (0x0025_66e8, c_dsock_channel_dtor, "cDSockChannel_dtor"),
+    (0x0025_6730, c_dsock_channel_recv, "cDSockChannel_Recv"),
+    (0x0025_67e0, c_dsock_channel_send, "cDSockChannel_Send"),
+    (0x0025_6860, c_dsock_channel_listen, "cDSockChannel_Listen"),
+    (
+        0x0025_68f8,
+        c_dsock_channel_connect,
+        "cDSockChannel_Connect",
+    ),
+    (
+        0x0025_6998,
+        c_dsock_channel_disconnect,
+        "cDSockChannel_Disconnect",
+    ),
+    (0x0025_6a00, c_dsock_channel_update, "cDSockChannel_Update"),
+    (
+        0x0025_6a58,
+        c_dsock_channel_update_connecting,
+        "cDSockChannel_UpdateConnecting",
+    ),
+    (
+        0x0025_6aa8,
+        c_dsock_channel_update_connected,
+        "cDSockChannel_UpdateConnected",
+    ),
+    (0x0025_6ba8, dsock_channel_v05, "cDSockChannel_v05"),
+    (
+        0x0026_7dc8,
+        c_dsock_channel_base_update,
+        "cDSockChannel_BaseUpdate",
+    ),
+    (
+        0x0026_7dd0,
+        c_dsock_channel_base_is_connected,
+        "cDSockChannel_BaseIsConnected",
+    ),
+    (
+        0x0026_7de8,
+        c_dsock_channel_base_v06,
+        "cDSockChannel_Base_v06",
+    ),
+    (
+        0x0026_7df0,
+        c_dsock_channel_base_recv,
+        "cDSockChannel_BaseRecv",
+    ),
+    (
+        0x0026_7df8,
+        c_dsock_channel_base_send,
+        "cDSockChannel_BaseSend",
+    ),
+    (0x0026_7e10, c_dsock_channel_v06, "cDSockChannel_v06"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -136,8 +191,100 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
 
+    use super::ee;
+    use super::Callee;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_INSTALL_MEM_HOOKS;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_PLAYER_INIT_OPEN_PARAMS;
+
+    pub(crate) const C_DSOCK_CHANNEL_UPDATE_CONNECTING: Callee = Callee {
+        addr: 0x0025_6a58,
+        f: ee::s06::cDSockChannel_UpdateConnecting,
+    };
+
+    pub(crate) const C_DSOCK_CHANNEL_UPDATE_CONNECTED: Callee = Callee {
+        addr: 0x0025_6aa8,
+        f: ee::s06::cDSockChannel_UpdateConnected,
+    };
+
+    pub(crate) const C_NET_GAME_LINK_STATUS: Callee = Callee {
+        addr: 0x003e_6958,
+        f: ee::s14::NetGameLinkStatus,
+    };
+
+    pub(crate) const C_EA_MEM_COPY: Callee = Callee {
+        addr: 0x003e_6574,
+        f: ee::s14::EA_MemCopy,
+    };
+
+    pub(crate) const C_NET_GAME_LINK_RECV: Callee = Callee {
+        addr: 0x003e_6b10,
+        f: ee::s14::NetGameLinkRecv,
+    };
+
+    pub(crate) const C_NET_GAME_LINK_SEND: Callee = Callee {
+        addr: 0x003e_6c80,
+        f: ee::s14::NetGameLinkSend,
+    };
+
+    pub(crate) const C_NET_GAME_UTIL_CREATE: Callee = Callee {
+        addr: 0x003e_6e08,
+        f: ee::s14::NetGameUtilCreate,
+    };
+
+    pub(crate) const C_DSOCK_CHANNEL_SET_OPEN: Callee = Callee {
+        addr: 0x0025_5830,
+        f: ee::s06::cDSockChannel_SetOpen,
+    };
+
+    pub(crate) const C_NET_GAME_UTIL_CONNECT: Callee = Callee {
+        addr: 0x003e_6f40,
+        f: ee::s14::NetGameUtilConnect,
+    };
+
+    pub(crate) const C_DSOCK_CHANNEL_BASE_CTOR: Callee = Callee {
+        addr: 0x0025_57e0,
+        f: ee::s06::cDSockChannel_BaseCtor,
+    };
+
+    pub(crate) const C_DSOCK_CHANNEL_BASE_DTOR: Callee = Callee {
+        addr: 0x0025_5800,
+        f: ee::s06::cDSockChannel_BaseDtor,
+    };
+
+    pub(crate) const C_DSOCK_CHANNEL_RESET_STATE: Callee = Callee {
+        addr: 0x0025_5840,
+        f: ee::s06::cDSockChannel_ResetState,
+    };
+
+    pub(crate) const C_DSOCK_CHANNEL_DISCONNECT: Callee = Callee {
+        addr: 0x0025_6998,
+        f: ee::s06::cDSockChannel_Disconnect,
+    };
+
+    pub(crate) const C_NET_GAME_LINK_DESTROY: Callee = Callee {
+        addr: 0x003e_67f8,
+        f: ee::s14::NetGameLinkDestroy,
+    };
+
+    pub(crate) const C_NET_GAME_UTIL_DESTROY: Callee = Callee {
+        addr: 0x003e_6e70,
+        f: ee::s14::NetGameUtilDestroy,
+    };
+
+    pub(crate) const C_NET_GAME_UTIL_COMPLETE: Callee = Callee {
+        addr: 0x003e_6fc8,
+        f: ee::s14::NetGameUtilComplete,
+    };
+
+    pub(crate) const C_NET_GAME_LINK_CREATE: Callee = Callee {
+        addr: 0x003e_66f0,
+        f: ee::s14::NetGameLinkCreate,
+    };
+
+    pub(crate) const C_BUILTIN_DELETE: Callee = Callee {
+        addr: 0x0031_7e50,
+        f: ee::s10::__builtin_delete,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1398,804 @@ pub fn vd_texture_sink_dtor(c: &mut Cpu) {
     })
 }
 
+/// `void cDSockChannel_Update(cDSockChannel *self)` (0x256a00):
+/// dispatches on the channel state: connecting (1) polls the pending
+/// connect, connected (2) services the link; any other state is left
+/// alone.
+pub fn c_dsock_channel_update(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        if c.pc != 0x0025_6a00 {
+            return Ok(ee::s06::f_00256a00__entries(c));
+        }
+        'l_256a00: loop {
+            'b_256a50: {
+                'b_256a4c: {
+                    c.cycles += 7;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                    c.g[A1][0] = c.g[A0][0];
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x480000;
+                    if t {
+                        break 'b_256a4c;
+                    } else {
+                        'b_256a44: {
+                            c.cycles += 6;
+                            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x460));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                            let t = c.g[A0][0] as u32;
+                            match t {
+                                0x00256a00 => {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0025_6a00);
+                                    }
+                                    continue 'l_256a00;
+                                }
+                                0x00256a34 => {
+                                    c.cycles += 4;
+                                    c.g[A0][0] = c.g[A1][0];
+                                    C_DSOCK_CHANNEL_UPDATE_CONNECTING.call(c, 0x0025_6a3c)?;
+                                    let t = true;
+                                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                                    if t {
+                                        break 'b_256a50;
+                                    } else {
+                                        break 'b_256a44;
+                                    }
+                                }
+                                0x00256a44 => {
+                                    break 'b_256a44;
+                                }
+                                0x00256a4c => {
+                                    break 'b_256a4c;
+                                }
+                                _ => {
+                                    c.jump_out(t, 0x00256a00, 0x00256a58);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[A1][0];
+                        C_DSOCK_CHANNEL_UPDATE_CONNECTED.call(c, 0x0025_6a4c)?;
+                        break 'b_256a4c;
+                    }
+                }
+                c.cycles += 1;
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                break 'b_256a50;
+            }
+            c.cycles += 2;
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.pc = t;
+            return Ok(());
+        }
+    })
+}
+
+/// `void cDSockChannel_UpdateConnected(cDSockChannel *self)`
+/// (0x256aa8): services the connected channel: polls link status,
+/// ages the quality estimate, and drops to state 3 (stalled) or 4
+/// (idle) when the link goes quiet.
+pub fn c_dsock_channel_update_connected(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_256b98: {
+            'b_256b8c: {
+                'b_256b84: {
+                    c.cycles += 9;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S0][0] = c.g[A0][0];
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    C_NET_GAME_LINK_STATUS.call(c, 0x0025_6ac0)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    if c.g[A0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        break 'b_256b84;
+                    } else {
+                        'b_256aec: {
+                            c.cycles += 6;
+                            c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < 30001i64) as u64;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lbu((c.g[A0][0] as u32).wrapping_add(0x45));
+                                break 'b_256aec;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[V1][0] = 0x3;
+                                if t {
+                                    break 'b_256b8c;
+                                } else {
+                                    break 'b_256aec;
+                                }
+                            }
+                        }
+                        'b_256b14: {
+                            c.cycles += 2;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                                break 'b_256b14;
+                            } else {
+                                c.cycles += 8;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+                                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+                                let t = c.g[V1][0] as u32;
+                                c.g[A0][0] =
+                                    sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                call_ptr(c, t, 0x0025_6b08)?;
+                                c.g[V0][0] = 0x1;
+                                let t = true;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                if t {
+                                    break 'b_256b98;
+                                } else {
+                                    break 'b_256b14;
+                                }
+                            }
+                        }
+                        'b_256b40: {
+                            'b_256b2c: {
+                                c.cycles += 2;
+                                let t = (c.g[V0][0] as i64) < 0;
+                                c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+                                if t {
+                                    break 'b_256b2c;
+                                } else {
+                                    c.cycles += 4;
+                                    c.mtc1(2, 1);
+                                    c.cvt_s_w(1, 1);
+                                    let t = true;
+                                    if t {
+                                        break 'b_256b40;
+                                    } else {
+                                        break 'b_256b2c;
+                                    }
+                                }
+                            }
+                            c.cycles += 5;
+                            c.g[V0][0] = c.g[V0][0] & 0x1;
+                            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                            c.mtc1(2, 1);
+                            c.cvt_s_w(1, 1);
+                            c.add_s(1, 1, 1);
+                            break 'b_256b40;
+                        }
+                        'b_256b60: {
+                            c.cycles += 8;
+                            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4b80));
+                            c.g[AT][0] = 0x3f800000;
+                            c.mtc1(1, 2);
+                            c.mul_s(3, 1, 0);
+                            c.c_lt_s(2, 3);
+                            if c.fcc() {
+                                c.mov_s(3, 2);
+                                break 'b_256b60;
+                            } else {
+                                break 'b_256b60;
+                            }
+                        }
+                        c.cycles += 9;
+                        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.g[AT][0] = 0x40800000;
+                        c.mtc1(1, 1);
+                        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4b7c));
+                        c.mul_s(0, 0, 1);
+                        c.add_s(0, 0, 3);
+                        c.mul_s(0, 0, 2);
+                        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+                        break 'b_256b84;
+                    }
+                }
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V1][0] = 0x4;
+                if t {
+                    break 'b_256b98;
+                } else {
+                    break 'b_256b8c;
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x1;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            break 'b_256b98;
+        }
+        c.cycles += 4;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int cDSockChannel_Recv(cDSockChannel *self, void *dst, int maxlen)`
+/// (0x256730): pulls one packet off the connected channel into `dst`,
+/// returning its length (0 when nothing is ready).
+pub fn c_dsock_channel_recv(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00256730 => {
+                    c.cycles += 13;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x170));
+                    c.g[V0][0] = 0x2;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x160));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x150));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x140));
+                    c.g[S1][0] = c.g[A2][0];
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x130));
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x120));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x110), c.g[RA][0]);
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[S2][0] = c.g[A1][0];
+                    if t {
+                        pc = 0x002567bc;
+                        continue;
+                    }
+                    pc = 0x00256764;
+                    continue;
+                }
+                0x00256764 => {
+                    c.cycles += 3;
+                    c.g[S3][0] = 0x5;
+                    let t = true;
+                    c.g[S4][0] = 0x1;
+                    if t {
+                        pc = 0x002567a4;
+                        continue;
+                    }
+                    pc = 0x00256770;
+                    continue;
+                }
+                0x00256770 => {
+                    c.cycles += 2;
+                    if c.g[V0][0] != c.g[S3][0] {
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[S4][0]);
+                        pc = 0x002567bc;
+                        continue;
+                    }
+                    pc = 0x00256778;
+                    continue;
+                }
+                0x00256778 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lbu((c.g[SP][0] as u32).wrapping_add(0x3));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A2][0] = c.g[V0][0] & 0xff;
+                    if t {
+                        pc = 0x002567a4;
+                        continue;
+                    }
+                    pc = 0x00256784;
+                    continue;
+                }
+                0x00256784 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                        pc = 0x002567a8;
+                        continue;
+                    }
+                    pc = 0x00256790;
+                    continue;
+                }
+                0x00256790 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x4));
+                    C_EA_MEM_COPY.call(c, 0x0025_679c)?;
+                    let t = true;
+                    c.g[V0][0] = c.lbu((c.g[SP][0] as u32).wrapping_add(0x3));
+                    if t {
+                        pc = 0x002567c0;
+                        continue;
+                    }
+                    pc = 0x002567a4;
+                    continue;
+                }
+                0x002567a4 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    pc = 0x002567a8;
+                    continue;
+                }
+                0x002567a8 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[A2][0] = 0x1;
+                    C_NET_GAME_LINK_RECV.call(c, 0x0025_67b4)?;
+                    let t = (c.g[V0][0] as i64) > 0;
+                    c.g[V0][0] = c.lbu((c.g[SP][0] as u32).wrapping_add(0x2));
+                    if t {
+                        if c.cycles >= c.next_event {
+                            c.pc = 0x00256770;
+                            if c.event() {
+                                return Ok(());
+                            }
+                        }
+                        pc = 0x00256770;
+                        continue;
+                    }
+                    pc = 0x002567bc;
+                    continue;
+                }
+                0x002567bc => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = 0x002567c0;
+                    continue;
+                }
+                0x002567c0 => {
+                    c.cycles += 8;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x160));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x150));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x140));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x130));
+                    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x120));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x110));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x170));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00256730, 0x002567e0);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `void cDSockChannel_Connect(cDSockChannel *self, void *addr, int port)`
+/// (0x2568f8): opens the channel and connects it to `addr:port`,
+/// marking state 1 (connecting) once the link is up.
+pub fn c_dsock_channel_connect(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_25697c: {
+            c.cycles += 20;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x140));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+            c.g[S1][0] = c.g[A2][0] & 0xffff;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x100), c.g[RA][0]);
+            c.g[S2][0] = c.g[A1][0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+            let t = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0025_6930)?;
+            c.g[A0][0] = c.g[S0][0];
+            C_DSOCK_CHANNEL_SET_OPEN.call(c, 0x0025_6938)?;
+            C_NET_GAME_UTIL_CREATE.call(c, 0x0025_6940)?;
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+            if t {
+                break 'b_25697c;
+            } else {
+                c.cycles += 13;
+                c.g[A3][0] = c.g[S1][0];
+                c.g[A1][0] = 0x480000;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[T0][0] = c.g[A3][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x448));
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x0041_7828, 0x0025_6964)?;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                c.g[A1][0] = 0x102;
+                c.g[A2][0] = c.g[SP][0];
+                C_NET_GAME_UTIL_CONNECT.call(c, 0x0025_6974)?;
+                c.g[V1][0] = 0x1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                break 'b_25697c;
+            }
+        }
+        c.cycles += 6;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x100));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void cDSockChannel_Listen(cDSockChannel *self, void *addr, int port)`
+/// (0x256860): opens the channel and listens on `addr:port`, marking
+/// state 1 (connecting) once the link is up.
+pub fn c_dsock_channel_listen(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_2568e0: {
+            c.cycles += 19;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x140));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+            c.g[S0][0] = c.g[A0][0];
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+            c.g[S1][0] = c.g[A2][0] & 0xffff;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x100), c.g[RA][0]);
+            c.g[S2][0] = c.g[A1][0];
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+            let t = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0025_6894)?;
+            c.g[A0][0] = c.g[S0][0];
+            C_DSOCK_CHANNEL_SET_OPEN.call(c, 0x0025_689c)?;
+            C_NET_GAME_UTIL_CREATE.call(c, 0x0025_68a4)?;
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+            if t {
+                break 'b_2568e0;
+            } else {
+                c.cycles += 13;
+                c.g[A3][0] = c.g[S1][0];
+                c.g[A1][0] = 0x480000;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[T0][0] = c.g[A3][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x448));
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x0041_7828, 0x0025_68c8)?;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                c.g[A1][0] = 0x101;
+                c.g[A2][0] = c.g[SP][0];
+                C_NET_GAME_UTIL_CONNECT.call(c, 0x0025_68d8)?;
+                c.g[V1][0] = 0x1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                break 'b_2568e0;
+            }
+        }
+        c.cycles += 6;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x100));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int cDSockChannel_Send(cDSockChannel *self, void *src, int len)`
+/// (0x2567e0): queues `len` bytes from `src` on the connected channel;
+/// nonzero only when the link accepted the whole packet.
+pub fn c_dsock_channel_send(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_256848: {
+            'b_256820: {
+                'b_256818: {
+                    c.cycles += 9;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x140));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+                    c.g[V0][0] = 0x2;
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x110), c.g[RA][0]);
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[A3][0] = c.g[A2][0];
+                    if t {
+                        break 'b_256818;
+                    } else {
+                        c.cycles += 3;
+                        c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        let t = c.g[S1][0] != 0u64;
+                        c.g[V0][0] = 0u64;
+                        if t {
+                            break 'b_256848;
+                        } else {
+                            c.cycles += 2;
+                            let t = (c.g[A3][0] as i64) > 0;
+                            c.g[V0][0] = 0x5;
+                            if t {
+                                break 'b_256820;
+                            } else {
+                                break 'b_256818;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let t = true;
+                c.g[V0][0] = 0u64;
+                if t {
+                    break 'b_256848;
+                } else {
+                    break 'b_256820;
+                }
+            }
+            c.cycles += 10;
+            c.g[A2][0] = c.g[A3][0];
+            c.g[A0][0] = c.g[SP][0] | 0x4;
+            c.sb((c.g[SP][0] as u32).wrapping_add(0x2), c.g[V0][0]);
+            c.sb((c.g[SP][0] as u32).wrapping_add(0x3), c.g[A3][0]);
+            C_EA_MEM_COPY.call(c, 0x0025_6834)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A2][0] = 0x1;
+            C_NET_GAME_LINK_SEND.call(c, 0x0025_6844)?;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            break 'b_256848;
+        }
+        c.cycles += 5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x130));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x110));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x140));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void cDSockChannel_Disconnect(cDSockChannel *self)` (0x256998):
+/// tears the channel down (reset, free the link and util handles) and
+/// clears the state word.
+pub fn c_dsock_channel_disconnect(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_2569f4: {
+            c.cycles += 7;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S0][0] = c.g[A0][0];
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            if c.g[V0][0] == 0u64 {
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                break 'b_2569f4;
+            } else {
+                'b_2569d8: {
+                    c.cycles += 5;
+                    C_DSOCK_CHANNEL_RESET_STATE.call(c, 0x0025_69bc)?;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+                    if c.g[A0][0] == 0u64 {
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                        break 'b_2569d8;
+                    } else {
+                        c.cycles += 4;
+                        C_NET_GAME_LINK_DESTROY.call(c, 0x0025_69d0)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), 0u64);
+                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+                        break 'b_2569d8;
+                    }
+                }
+                'b_2569f0: {
+                    c.cycles += 2;
+                    if c.g[A0][0] == 0u64 {
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+                        break 'b_2569f0;
+                    } else {
+                        c.cycles += 4;
+                        C_NET_GAME_UTIL_DESTROY.call(c, 0x0025_69e8)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+                        break 'b_2569f0;
+                    }
+                }
+                c.cycles += 1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                break 'b_2569f4;
+            }
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `cDSockChannel *cDSockChannel_ctor(cDSockChannel *self)` (0x256698):
+/// base-constructs the channel, installs the vtable and 0.1s poll
+/// interval, and clears the state words.
+pub fn c_dsock_channel_ctor(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 19;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        C_DSOCK_CHANNEL_BASE_CTOR.call(c, 0x0025_66ac)?;
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4b84));
+        c.g[V1][0] = 0x480000;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x12d0));
+        c.g[V0][0] = c.g[S0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x10));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void cDSockChannel_UpdateConnecting(cDSockChannel *self)`
+/// (0x256a58): polls the pending connect; a completed link moves the
+/// channel to the connected state (2).
+pub fn c_dsock_channel_update_connecting(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_256a94: {
+            c.cycles += 8;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S0][0] = c.g[A0][0];
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
+            C_NET_GAME_UTIL_COMPLETE.call(c, 0x0025_6a70)?;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[V0][0];
+            if t {
+                break 'b_256a94;
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = 0u64;
+                c.g[A2][0] = 0x237c;
+                C_NET_GAME_LINK_CREATE.call(c, 0x0025_6a84)?;
+                let t = c.g[V0][0] == 0u64;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                if t {
+                    break 'b_256a94;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x2;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    break 'b_256a94;
+                }
+            }
+        }
+        c.cycles += 4;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void cDSockChannel_dtor(cDSockChannel *self, int free)` (0x2566e8):
+/// disconnects, then base-destroys (which releases the channel block
+/// when `free` is set).
+pub fn c_dsock_channel_dtor(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        c.cycles += 18;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.g[V0][0] = 0x480000;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12d0));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[RA][0] = sx(0x00256710);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+        C_DSOCK_CHANNEL_DISCONNECT.call(c, 0x0025_6710)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        C_DSOCK_CHANNEL_BASE_DTOR.call(c, 0x0025_671c)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `float cDSockChannel_v05(cDSockChannel *self)` (0x256ba8): returns the
+/// smoothed link-quality float at `self+0x10`.
+pub fn dsock_channel_v05(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x10));
+    c.pc = t;
+    return;
+}
+
+/// `void cDSockChannel_BaseUpdate(cDSockChannel *self)` (0x267dc8):
+/// base tick slot; the connected channel overrides it, so the base
+/// version returns without touching state.
+pub fn c_dsock_channel_base_update(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+    return;
+}
+
+/// `int cDSockChannel_BaseIsConnected(cDSockChannel *self)` (0x267dd0):
+/// base connected-query slot, always 0.
+pub fn c_dsock_channel_base_is_connected(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cDSockChannel_Base_v06(cDSockChannel *self)` (0x267de8): base
+/// vtable slot returning 0.
+pub fn c_dsock_channel_base_v06(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cDSockChannel_BaseRecv(...)` (0x267df0): base receive slot,
+/// always 0.
+pub fn c_dsock_channel_base_recv(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cDSockChannel_BaseSend(...)` (0x267df8): base send slot, always
+/// 0.
+pub fn c_dsock_channel_base_send(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cDSockChannel_v06(cDSockChannel *self)` (0x267e10): vtable slot
+/// returning 1.
+pub fn c_dsock_channel_v06(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x1;
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1839,6 +2784,885 @@ pub(crate) mod tests {
                 c.g[A0][0] = this_ as u64;
                 c.g[A1][0] = (seed % 2) as u64;
             },
+        );
+    }
+    use crate::difftest::check_paths;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::prev_cell;
+    use crate::difftest::RA as SENTINEL_RA;
+    pub(crate) const UPDATE_FAKE_BASE: u32 = DATA + 0x6_2000;
+
+    pub(crate) const UPDATE_STATUS_GATE: u32 = UPDATE_FAKE_BASE;
+
+    pub(crate) const UPDATE_STATUS_RESULT: u32 = UPDATE_FAKE_BASE + 4;
+
+    pub(crate) const UPDATE_COMPLETE_GATE: u32 = UPDATE_FAKE_BASE + 8;
+
+    pub(crate) const UPDATE_COMPLETE_RESULT: u32 = UPDATE_FAKE_BASE + 12;
+
+    pub(crate) const UPDATE_LINKCREATE_GATE: u32 = UPDATE_FAKE_BASE + 16;
+
+    pub(crate) const UPDATE_LINKCREATE_RESULT: u32 = UPDATE_FAKE_BASE + 20;
+
+    pub(crate) const UPDATE_FAKE_MAGIC: u32 = 0x5eed_0001;
+
+    pub(crate) fn gated(c: &mut Cpu, gate: u32, magic: u32) -> bool {
+        c.bus.read32(gate) == magic
+    }
+
+    /// `NetGameLinkStatus`: fixed status block (or null).
+    pub(crate) fn update_status_fake(c: &mut Cpu) {
+        if !gated(c, UPDATE_STATUS_GATE, UPDATE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(update_status_fake),
+                ee::s14::f_003e6958__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(UPDATE_STATUS_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameUtilComplete`: forced completion.
+    pub(crate) fn update_complete_fake(c: &mut Cpu) {
+        if !gated(c, UPDATE_COMPLETE_GATE, UPDATE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(update_complete_fake),
+                ee::s14::f_003e6fc8__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(UPDATE_COMPLETE_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameLinkCreate`: forced handle.
+    pub(crate) fn update_linkcreate_fake(c: &mut Cpu) {
+        if !gated(c, UPDATE_LINKCREATE_GATE, UPDATE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(update_linkcreate_fake),
+                ee::s14::f_003e66f0__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(UPDATE_LINKCREATE_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn install_update_fakes() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6958),
+            update_status_fake,
+            prev_cell(update_status_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6FC8),
+            update_complete_fake,
+            prev_cell(update_complete_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E66F0),
+            update_linkcreate_fake,
+            prev_cell(update_linkcreate_fake),
+        );
+    }
+
+    /// Update fixture: state word steers the dispatch; the sibling
+    /// arms run their real bodies against the scripted fakes.
+    pub(crate) fn update_fixture(c: &mut Cpu, seed: u32) {
+        install_update_fakes();
+        machine(c, seed, 0x0025_6a00, 0);
+        elf_image(c);
+        let this = DATA + 0x400;
+        let st = DATA + 0x800;
+        let variant = seed % 6;
+        // States: 0, 1, 2, 3, 4 and out-of-range (early exit).
+        c.bus
+            .write32(this + 0xc, [0, 1, 2, 3, 4, 9][variant as usize]);
+        c.bus.write32(this + 0x1c, DATA + 0x900);
+        c.bus.write32(this + 0x8, DATA + 0x600);
+        c.bus.write32(DATA + 0x600 + 0x10, 0x20);
+        c.bus.write32(DATA + 0x600 + 0x14, 0x003e_6574);
+        c.bus.write32(this + 0x18, DATA + 0x950);
+        c.bus.write32(this + 0x4, 0);
+        c.bus.write32(this + 0x14, 0);
+        c.bus.write32(this + 0x10, 0x3f80_0000);
+        c.bus.write32(st, 0x0000_1000);
+        c.bus.write32(st + 0x20, 0);
+        c.bus.write32(st + 0xc, 0x41f0_0000);
+        c.bus.write8(st + 0x45, 1);
+        c.bus.write32(UPDATE_STATUS_GATE, UPDATE_FAKE_MAGIC);
+        c.bus
+            .write32(UPDATE_STATUS_RESULT, [0, 0, st, 0, 0, 0][variant as usize]);
+        c.bus.write32(UPDATE_COMPLETE_GATE, UPDATE_FAKE_MAGIC);
+        c.bus.write32(
+            UPDATE_COMPLETE_RESULT,
+            [0, DATA + 0x700, 0, 0, 0, 0][variant as usize],
+        );
+        c.bus.write32(UPDATE_LINKCREATE_GATE, UPDATE_FAKE_MAGIC);
+        c.bus.write32(
+            UPDATE_LINKCREATE_RESULT,
+            [0, DATA + 0x800, 0, 0, 0, 0][variant as usize],
+        );
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = (DATA + 0x700) as u64;
+        c.g[A2][0] = 8;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6a00;
+    }
+
+    #[test]
+    fn c_dsock_channel_update_matches() {
+        // idle/connecting/connected/other/out-of-range dispatch arms.
+        const PATHS: &[u64] = &[10, 16, 46, 68];
+        check_paths(
+            ee::s06::f_00256a00__generated,
+            c_dsock_channel_update,
+            72,
+            PATHS,
+            &update_fixture,
+        );
+    }
+
+    /// Resume heads: entering at either call-resume address runs the
+    /// same tail as the generated body.
+    #[test]
+    fn c_dsock_channel_update_resume_heads_matches() {
+        for entry in [0x0025_6a34u32, 0x0025_6a44u32] {
+            check(
+                ee::s06::f_00256a00__generated,
+                c_dsock_channel_update,
+                8,
+                &|c, seed| {
+                    update_fixture(c, seed);
+                    c.pc = entry;
+                },
+            );
+        }
+    }
+
+    pub(crate) const CHANNEL_FAKE_BASE: u32 = DATA + 0x6_1000;
+
+    pub(crate) const CHANNEL_STATUS_GATE: u32 = CHANNEL_FAKE_BASE;
+
+    pub(crate) const CHANNEL_STATUS_RESULT: u32 = CHANNEL_FAKE_BASE + 4;
+
+    pub(crate) const CHANNEL_RECV_GATE: u32 = CHANNEL_FAKE_BASE + 8;
+
+    pub(crate) const CHANNEL_RECV_IDX: u32 = CHANNEL_FAKE_BASE + 12;
+
+    pub(crate) const CHANNEL_RECV_SEQ: u32 = CHANNEL_FAKE_BASE + 16;
+
+    pub(crate) const CHANNEL_UTILCREATE_GATE: u32 = CHANNEL_FAKE_BASE + 40;
+
+    pub(crate) const CHANNEL_UTILCREATE_RESULT: u32 = CHANNEL_FAKE_BASE + 44;
+
+    pub(crate) const CHANNEL_UTILCONNECT_GATE: u32 = CHANNEL_FAKE_BASE + 48;
+
+    pub(crate) const CHANNEL_LINKSEND_GATE: u32 = CHANNEL_FAKE_BASE + 52;
+
+    pub(crate) const CHANNEL_LINKSEND_RESULT: u32 = CHANNEL_FAKE_BASE + 56;
+
+    pub(crate) const CHANNEL_SPRINTF_GATE: u32 = CHANNEL_FAKE_BASE + 60;
+
+    pub(crate) const CHANNEL_FAKE_MAGIC: u32 = 0x5eed_0002;
+
+    /// `NetGameLinkStatus`: connected socket's status block (planted)
+    /// or null (quiet link).
+    pub(crate) fn channel_status_fake(c: &mut Cpu) {
+        if !gated(c, CHANNEL_STATUS_GATE, CHANNEL_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(channel_status_fake),
+                ee::s14::f_003e6958__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(CHANNEL_STATUS_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameLinkRecv`: one scripted datagram per call (length and
+    /// tag bytes), from the per-fixture sequence table.
+    pub(crate) fn channel_recv_fake(c: &mut Cpu) {
+        if !gated(c, CHANNEL_RECV_GATE, CHANNEL_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(channel_recv_fake),
+                ee::s14::f_003e6b10__generated,
+            );
+        }
+        let idx = c.bus.read32(CHANNEL_RECV_IDX).min(1);
+        let b = c.g[A1][0] as u32;
+        let b2 = c.bus.read32(CHANNEL_RECV_SEQ + 12 * idx + 4) as u8;
+        let b3 = c.bus.read32(CHANNEL_RECV_SEQ + 12 * idx + 8) as u8;
+        c.bus.write8(b + 2, b2);
+        c.bus.write8(b + 3, b3);
+        c.g[V0][0] = c.bus.read32(CHANNEL_RECV_SEQ + 12 * idx) as i32 as i64 as u64;
+        c.bus.write32(CHANNEL_RECV_IDX, idx + 1);
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameUtilCreate`: handle or null (steers the open path).
+    pub(crate) fn channel_utilcreate_fake(c: &mut Cpu) {
+        if !gated(c, CHANNEL_UTILCREATE_GATE, CHANNEL_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(channel_utilcreate_fake),
+                ee::s14::f_003e6e08__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(CHANNEL_UTILCREATE_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameUtilConnect`: result ignored by the caller; fixed cost.
+    pub(crate) fn channel_utilconnect_fake(c: &mut Cpu) {
+        if !gated(c, CHANNEL_UTILCONNECT_GATE, CHANNEL_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(channel_utilconnect_fake),
+                ee::s14::f_003e6f40__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameLinkSend`: accepted byte count (steers the nonzero arm).
+    pub(crate) fn channel_linksend_fake(c: &mut Cpu) {
+        if !gated(c, CHANNEL_LINKSEND_GATE, CHANNEL_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(channel_linksend_fake),
+                ee::s14::f_003e6c80__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(CHANNEL_LINKSEND_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `sprintf`: the format comes from the game image and the length
+    /// is unchecked; the fake leaves the stack buffer alone at a fixed
+    /// cost.
+    pub(crate) fn channel_sprintf_fake(c: &mut Cpu) {
+        if !gated(c, CHANNEL_SPRINTF_GATE, CHANNEL_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(channel_sprintf_fake),
+                ee::s15::f_00417828__generated,
+            );
+        }
+        c.g[V0][0] = 8;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn install_channel_fakes() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6958),
+            channel_status_fake,
+            prev_cell(channel_status_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6B10),
+            channel_recv_fake,
+            prev_cell(channel_recv_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6E08),
+            channel_utilcreate_fake,
+            prev_cell(channel_utilcreate_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6F40),
+            channel_utilconnect_fake,
+            prev_cell(channel_utilconnect_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6C80),
+            channel_linksend_fake,
+            prev_cell(channel_linksend_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            channel_sprintf_fake,
+            prev_cell(channel_sprintf_fake),
+        );
+    }
+
+    /// Channel fixture: state word, idle word, link handle, vtable
+    /// routing through `EA_MemCopy`, and seed-steered registers.
+    pub(crate) fn channel_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        machine(c, seed, entry as u64, 0);
+        elf_image(c);
+        let this = DATA + 0x400;
+        let vt = DATA + 0x600;
+        c.bus.write32(this + 0x8, vt);
+        c.bus.write32(vt + 0x10, 0x20);
+        c.bus.write32(vt + 0x14, 0x003e_6574);
+        c.bus.write32(this + 0x10, 0x3f80_0000 + seed);
+        let dst = DATA + 0x700;
+        for i in 0..4u32 {
+            c.bus.write32(dst + 4 * i, 0x1111_1111 * (i + 1) + seed);
+        }
+    }
+
+    #[test]
+    fn c_dsock_channel_update_connected_matches() {
+        // status/idle/flag arms (the stalled, idle, smoothing and
+        // vtable paths; combos sharing a total are split by the RAM
+        // comparison).
+        const PATHS: &[u64] = &[19, 22, 28, 50, 53, 99];
+        check_paths(
+            ee::s06::f_00256aa8__generated,
+            c_dsock_channel_update_connected,
+            96,
+            PATHS,
+            &|c, seed| {
+                install_channel_fakes();
+                channel_fixture(c, seed, 0x0025_6aa8);
+                let this = DATA + 0x400;
+                let st = DATA + 0x800;
+                let variant = seed % 4;
+                c.bus.write32(this + 0x1c, DATA + 0x900);
+                c.bus.write32(this + 0x4, [0, 1][seed as usize / 4 % 2]);
+                c.bus.write32(this + 0x14, [0, 7][seed as usize / 8 % 2]);
+                c.bus.write32(CHANNEL_STATUS_GATE, CHANNEL_FAKE_MAGIC);
+                c.bus
+                    .write32(CHANNEL_STATUS_RESULT, [0, st, st, 0][variant as usize]);
+                // Status block: counter words (small or big spread),
+                // flag byte, quality word.
+                let big = variant == 2;
+                c.bus.write32(
+                    st,
+                    0x0000_1000 + if big { 0x1_0000 } else { 1000 * (seed % 5) },
+                );
+                c.bus.write32(st + 0x20, 0x0000_1000);
+                c.bus.write32(st + 0xc, 0x0000_00c0 + seed);
+                c.bus.write8(st + 0x45, [0, 1][seed as usize / 16 % 2]);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x700) as u64;
+                c.g[A2][0] = 8;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_6aa8;
+            },
+        );
+    }
+
+    /// Recv fixture: state word, link handle, destination buffer and
+    /// max length, plus the two-call datagram script (length, tag,
+    /// extra bytes per call).
+    pub(crate) fn channel_recv_fixture(c: &mut Cpu, seed: u32) {
+        install_channel_fakes();
+        channel_fixture(c, seed, 0x0025_6730);
+        let this = DATA + 0x400;
+        let dst = DATA + 0xa00;
+        let connected = seed % 2;
+        c.bus.write32(this + 0xc, [9, 2][connected as usize]);
+        c.bus.write32(this + 0x1c, DATA + 0x900);
+        c.bus.write32(this + 0x14, 0);
+        for i in 0..8u32 {
+            c.bus.write32(dst + 4 * i, 0xaaaaaaaa + i);
+        }
+        // Call 0: steer the first datagram; call 1 always ends the
+        // loop so the loop-back arm is covered exactly once per seed.
+        let (v0, b2, b3, ml) = match seed / 2 % 6 {
+            0 => (0, 0, 0, 4),
+            1 => (3, 4, 0, 4),
+            2 => (3, 5, 0, 4),
+            3 => (3, 5, 6, 4),
+            4 => (3, 5, 6, 8),
+            _ => (3, 5, 2, 8),
+        };
+        c.bus.write32(CHANNEL_RECV_SEQ, v0);
+        c.bus.write32(CHANNEL_RECV_SEQ + 4, b2);
+        c.bus.write32(CHANNEL_RECV_SEQ + 8, b3);
+        c.bus.write32(CHANNEL_RECV_SEQ + 12, 0);
+        c.bus.write32(CHANNEL_RECV_SEQ + 16, 0);
+        c.bus.write32(CHANNEL_RECV_SEQ + 20, 0);
+        c.bus.write32(CHANNEL_RECV_IDX, 0);
+        c.bus.write32(CHANNEL_RECV_GATE, CHANNEL_FAKE_MAGIC);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = dst as u64;
+        // Max length crosses the too-long loop-back arm (b3 = 6).
+        c.g[A2][0] = ml as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6730;
+    }
+
+    driven!(recv_generated, ee::s06::f_00256730__generated);
+
+    driven!(recv_hand, c_dsock_channel_recv);
+
+    #[test]
+    fn c_dsock_channel_recv_matches() {
+        // not-connected/empty/wrong-tag/empty-tag/too-long/copy arms.
+        const PATHS: &[u64] = &[22, 35, 37, 50, 52, 71, 99];
+        check_paths(
+            ee::s06::f_00256730__generated,
+            c_dsock_channel_recv,
+            72,
+            PATHS,
+            &channel_recv_fixture,
+        );
+    }
+
+    /// Recv event hook: service only the datagram loop head; the copy
+    /// call's checks report no event without servicing.
+    pub(crate) fn recv_rerun_event(c: &mut Cpu) -> bool {
+        if c.pc != 0x0025_6770 {
+            return false;
+        }
+        if c.cycles >= crate::difftest::CYCLE_BUDGET {
+            panic!(
+                "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+                c.cycles, c.pc
+            );
+        }
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    #[test]
+    fn c_dsock_channel_recv_events_matches() {
+        let resumes = check_events(recv_generated, recv_hand, 48, &|c, seed| {
+            // Unwind seeds force the looping variant (connected,
+            // empty tag); the rest keep the seed's own arms.
+            channel_recv_fixture(c, if seed % 3 == 1 { 5 } else { seed });
+            let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ (seed as u64) << 8 ^ 0x0025_6730);
+            let mode = schedule(c, &mut r, seed, 0x0025_6730);
+            if mode == Events::Unwind {
+                c.next_event = c.cycles;
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .sched
+                    .next_vblank = c.cycles;
+                c.hooks.event = recv_rerun_event;
+            }
+            mode
+        });
+        assert!(
+            resumes.get(&0x0025_6770).copied().unwrap_or(0) > 0,
+            "no unwind at head 0x256770 (resumes {resumes:x?})",
+        );
+    }
+
+    /// Connect/Listen fixture: channel with a vtable routing through
+    /// the real `EA_MemCopy`, a short hostname, and a steered port.
+    pub(crate) fn channel_open_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        install_channel_fakes();
+        channel_fixture(c, seed, entry);
+        let this = DATA + 0x400;
+        let host = DATA + 0xb00;
+        for (i, b) in b"peer\0".iter().enumerate() {
+            c.bus.write8(host + i as u32, *b);
+        }
+        c.bus.write32(CHANNEL_UTILCREATE_GATE, CHANNEL_FAKE_MAGIC);
+        c.bus.write32(CHANNEL_UTILCONNECT_GATE, CHANNEL_FAKE_MAGIC);
+        c.bus.write32(CHANNEL_SPRINTF_GATE, CHANNEL_FAKE_MAGIC);
+        c.bus.write32(
+            CHANNEL_UTILCREATE_RESULT,
+            [0, DATA + 0xc00][seed as usize % 2],
+        );
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = host as u64;
+        c.g[A2][0] = [0, 80, 443][seed as usize / 2 % 3] as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn c_dsock_channel_connect_matches() {
+        // create-fails/open-only arms (prologue accounts for the
+        // one-cycle split vs Listen).
+        const PATHS: &[u64] = &[42, 63, 126, 147, 188, 209];
+        check_paths(
+            ee::s06::f_002568f8__generated,
+            c_dsock_channel_connect,
+            64,
+            PATHS,
+            &|c, seed| channel_open_fixture(c, seed, 0x0025_68f8),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_listen_matches() {
+        // create-fails/open-only arms.
+        const PATHS: &[u64] = &[41, 62, 125, 146, 187, 208];
+        check_paths(
+            ee::s06::f_00256860__generated,
+            c_dsock_channel_listen,
+            64,
+            PATHS,
+            &|c, seed| channel_open_fixture(c, seed, 0x0025_6860),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_send_matches() {
+        // not-connected/busy/empty/sent arms.
+        const PATHS: &[u64] = &[16, 17, 50, 99];
+        check_paths(
+            ee::s06::f_002567e0__generated,
+            c_dsock_channel_send,
+            72,
+            PATHS,
+            &|c, seed| {
+                install_channel_fakes();
+                channel_fixture(c, seed, 0x0025_67e0);
+                let this = DATA + 0x400;
+                let src = DATA + 0xd00;
+                for i in 0..4u32 {
+                    c.bus.write32(src + 4 * i, 0x5152_5354 + i + seed);
+                }
+                let variant = seed % 4;
+                c.bus.write32(this + 0xc, [9, 2, 2, 2][variant as usize]);
+                c.bus.write32(this + 0x4, [0, 0, 7, 0][variant as usize]);
+                c.bus.write32(CHANNEL_LINKSEND_GATE, CHANNEL_FAKE_MAGIC);
+                c.bus
+                    .write32(CHANNEL_LINKSEND_RESULT, [0, 1][seed as usize / 4 % 2]);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = src as u64;
+                c.g[A2][0] = [0, 1, 8, 8][variant as usize] as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_67e0;
+            },
+        );
+    }
+
+    /// Fake-control block for this module's DirtySock fakes.
+    pub(crate) const LIFECYCLE_FAKE_BASE: u32 = DATA + 0x6_0000;
+
+    pub(crate) const LIFECYCLE_DESTROY_GATE: u32 = LIFECYCLE_FAKE_BASE;
+
+    pub(crate) const LIFECYCLE_UTILDESTROY_GATE: u32 = LIFECYCLE_FAKE_BASE + 4;
+
+    pub(crate) const LIFECYCLE_COMPLETE_GATE: u32 = LIFECYCLE_FAKE_BASE + 8;
+
+    pub(crate) const LIFECYCLE_COMPLETE_RESULT: u32 = LIFECYCLE_FAKE_BASE + 12;
+
+    pub(crate) const LIFECYCLE_LINKCREATE_GATE: u32 = LIFECYCLE_FAKE_BASE + 16;
+
+    pub(crate) const LIFECYCLE_LINKCREATE_RESULT: u32 = LIFECYCLE_FAKE_BASE + 20;
+
+    pub(crate) const LIFECYCLE_DELETE_GATE: u32 = LIFECYCLE_FAKE_BASE + 24;
+
+    pub(crate) const LIFECYCLE_FAKE_MAGIC: u32 = 0x5eed_0003;
+
+    /// `__builtin_delete`: fixed-cost stand-in (the real allocator walk
+    /// needs a heap block the fixture does not build).
+    pub(crate) fn lifecycle_delete_fake(c: &mut Cpu) {
+        if !gated(c, LIFECYCLE_DELETE_GATE, LIFECYCLE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(lifecycle_delete_fake),
+                ee::s10::f_00317e50__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameLinkDestroy`: result unused; fixed cost.
+    pub(crate) fn lifecycle_destroy_fake(c: &mut Cpu) {
+        if !gated(c, LIFECYCLE_DESTROY_GATE, LIFECYCLE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(lifecycle_destroy_fake),
+                ee::s14::f_003e67f8__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameUtilDestroy`: result unused; fixed cost.
+    pub(crate) fn lifecycle_utildestroy_fake(c: &mut Cpu) {
+        if !gated(c, LIFECYCLE_UTILDESTROY_GATE, LIFECYCLE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(lifecycle_utildestroy_fake),
+                ee::s14::f_003e6e70__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameUtilComplete`: pending-connect poll; forced completion.
+    pub(crate) fn lifecycle_complete_fake(c: &mut Cpu) {
+        if !gated(c, LIFECYCLE_COMPLETE_GATE, LIFECYCLE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(lifecycle_complete_fake),
+                ee::s14::f_003e6fc8__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(LIFECYCLE_COMPLETE_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    /// `NetGameLinkCreate`: link creation; forced handle.
+    pub(crate) fn lifecycle_linkcreate_fake(c: &mut Cpu) {
+        if !gated(c, LIFECYCLE_LINKCREATE_GATE, LIFECYCLE_FAKE_MAGIC) {
+            return fall_back(
+                c,
+                prev_cell(lifecycle_linkcreate_fake),
+                ee::s14::f_003e66f0__generated,
+            );
+        }
+        c.g[V0][0] = c.bus.read32(LIFECYCLE_LINKCREATE_RESULT) as u64;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn install_lifecycle_fakes() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E67F8),
+            lifecycle_destroy_fake,
+            prev_cell(lifecycle_destroy_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6E70),
+            lifecycle_utildestroy_fake,
+            prev_cell(lifecycle_utildestroy_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E6FC8),
+            lifecycle_complete_fake,
+            prev_cell(lifecycle_complete_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003E66F0),
+            lifecycle_linkcreate_fake,
+            prev_cell(lifecycle_linkcreate_fake),
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            lifecycle_delete_fake,
+            prev_cell(lifecycle_delete_fake),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_disconnect_matches() {
+        // state x link-handle x util-handle arms. (link,util)=(1,0)
+        // and (0,1) share a total; their stores differ and both are
+        // covered by the RAM comparison.
+        const PATHS: &[u64] = &[10, 23, 31, 39];
+        check_paths(
+            ee::s06::f_00256998__generated,
+            c_dsock_channel_disconnect,
+            64,
+            PATHS,
+            &|c, seed| {
+                install_lifecycle_fakes();
+                machine(c, seed, 0x0025_6998, 0);
+                let this = DATA + 0x211;
+                let state = [0, 1][seed as usize % 2];
+                let link = [0, (DATA + 0x400) as u32][seed as usize / 2 % 2];
+                let util = [0, (DATA + 0x500) as u32][seed as usize / 4 % 2];
+                c.bus.write32(this + 0xc, state);
+                c.bus.write32(this + 0x1c, link);
+                c.bus.write32(this + 0x18, util);
+                c.bus.write32(LIFECYCLE_DESTROY_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.bus
+                    .write32(LIFECYCLE_UTILDESTROY_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_6998;
+            },
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_ctor_matches() {
+        check_paths(
+            ee::s06::f_00256698__generated,
+            c_dsock_channel_ctor,
+            16,
+            &[26],
+            &|c, seed| {
+                machine(c, seed, 0x0025_6698, 0);
+                elf_image(c);
+                let this = DATA + 0x221;
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_6698;
+            },
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_update_connecting_matches() {
+        // complete? x created?: 2 x 2 arms.
+        const PATHS: &[u64] = &[16, 25, 27];
+        check_paths(
+            ee::s06::f_00256a58__generated,
+            c_dsock_channel_update_connecting,
+            64,
+            PATHS,
+            &|c, seed| {
+                install_lifecycle_fakes();
+                machine(c, seed, 0x0025_6a58, 0);
+                let this = DATA + 0x231;
+                c.bus.write32(this + 0x18, DATA + 0x600);
+                c.bus.write32(LIFECYCLE_COMPLETE_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.bus
+                    .write32(LIFECYCLE_LINKCREATE_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.bus.write32(
+                    LIFECYCLE_COMPLETE_RESULT,
+                    [0, DATA + 0x700][seed as usize % 2],
+                );
+                c.bus.write32(
+                    LIFECYCLE_LINKCREATE_RESULT,
+                    [0, DATA + 0x800][seed as usize / 2 % 2],
+                );
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_6a58;
+            },
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_dtor_matches() {
+        // free? x live-state: 2 x 2 arms (delete runs the fixed-cost
+        // fake on scratch).
+        const PATHS: &[u64] = &[38, 44, 51, 57];
+        check_paths(
+            ee::s06::f_002566e8__generated,
+            c_dsock_channel_dtor,
+            64,
+            PATHS,
+            &|c, seed| {
+                install_lifecycle_fakes();
+                machine(c, seed, 0x0025_66e8, 0);
+                let this = DATA + 0x241;
+                let live = seed % 2;
+                c.bus.write32(this + 0xc, live);
+                c.bus.write32(this + 0x1c, 0);
+                c.bus.write32(this + 0x18, 0);
+                c.bus.write32(LIFECYCLE_DESTROY_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.bus
+                    .write32(LIFECYCLE_UTILDESTROY_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.bus.write32(LIFECYCLE_DELETE_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.g[A0][0] = this as u64;
+                // `A1 & 1` steers the `__builtin_delete` arm (fixed-cost
+                // fake); the state word steers Disconnect's arms.
+                c.g[A1][0] = (seed / 2 % 2) as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_66e8;
+            },
+        );
+    }
+
+    pub(crate) fn fixture_const(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x181) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn dsock_channel_v05_matches() {
+        check_paths(
+            ee::s06::f_00256ba8__generated,
+            dsock_channel_v05,
+            40,
+            &[2],
+            &|c, seed| {
+                machine(c, seed, 0x0025_6ba8, 0);
+                let this = DATA + 0x191;
+                // Distinctive float bits incl. a negative and a denormal.
+                let bits = [0x3f80_0001, 0xbf80_0001, 0x0000_0001, 0x7f80_0000];
+                c.bus.write32(this + 0x10, bits[seed as usize % 4]);
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0025_6ba8;
+            },
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_base_update_matches() {
+        check_paths(
+            ee::s07::f_00267dc8__generated,
+            c_dsock_channel_base_update,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x0026_7dc8, 0x0026_7dc8),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_base_is_connected_matches() {
+        check_paths(
+            ee::s07::f_00267dd0__generated,
+            c_dsock_channel_base_is_connected,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x0026_7dd0, 0x0026_7dd0),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_base_v06_matches() {
+        check_paths(
+            ee::s07::f_00267de8__generated,
+            c_dsock_channel_base_v06,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x0026_7de8, 0x0026_7de8),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_base_recv_matches() {
+        check_paths(
+            ee::s07::f_00267df0__generated,
+            c_dsock_channel_base_recv,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x0026_7df0, 0x0026_7df0),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_base_send_matches() {
+        check_paths(
+            ee::s07::f_00267df8__generated,
+            c_dsock_channel_base_send,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x0026_7df8, 0x0026_7df8),
+        );
+    }
+
+    #[test]
+    fn c_dsock_channel_v06_matches() {
+        check_paths(
+            ee::s07::f_00267e10__generated,
+            c_dsock_channel_v06,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x0026_7e10, 0x0026_7e10),
         );
     }
 }

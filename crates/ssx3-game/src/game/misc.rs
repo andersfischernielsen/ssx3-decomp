@@ -552,6 +552,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_6240, ea_is_valid_pointer, "EA_IsValidPointer"),
     (0x003e_62b0, ea_assert_not_busy, "EA_AssertNotBusy"),
     (0x003e_62d0, ea_crc16, "EA_Crc16"),
+    (0x0031_ff20, eacore_global_ctor, "EACoreGlobal_ctor"),
+    (0x0031_ff38, eacore_global_dtor, "EACoreGlobal_dtor"),
+    (0x0032_0b28, eacore_global_ctors, "EACore_GlobalCtors"),
+    (0x0032_0b48, eacore_global_dtors, "EACore_GlobalDtors"),
+    (0x0042_45a0, libc_eio_stub_45a0, "libc_EioStub_45a0"),
+    (0x0042_45c8, libc_eio_stub_45c8, "libc_EioStub_45c8"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -32229,6 +32235,139 @@ pub fn ea_assert_not_busy(c: &mut Cpu) {
     }
 }
 
+/// `int libc_EioStub_45a0()` (0x4245a0): EIO errno stub: stores 5 in
+/// the reent errno slot and returns -1.
+pub fn libc_eio_stub_45a0(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x004245b0);
+        c.pc = 0x0041_5fb8;
+        ee::s15::__getreent(c);
+        if c.pc != 0x004245b0 {
+            return Ok(());
+        }
+        c.g[V1][0] = 0x5;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+        c.g[V0][0] = 0xffffffffffffffff;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int libc_EioStub_45c8()` (0x4245c8): EIO errno stub: stores 5 in
+/// the reent errno slot and returns -1.
+pub fn libc_eio_stub_45c8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x004245d8);
+        c.pc = 0x0041_5fb8;
+        ee::s15::__getreent(c);
+        if c.pc != 0x004245d8 {
+            return Ok(());
+        }
+        c.g[V1][0] = 0x5;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+        c.g[V0][0] = 0xffffffffffffffff;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void EACoreGlobal_dtor(EACoreGlobal *self, int free)` (0x31ff38):
+/// when `free` (`A1 & 1`) is set, deletes the global through
+/// `__builtin_delete`.
+pub fn eacore_global_dtor(c: &mut Cpu) {
+    use callee::*;
+    guest(c, |c| {
+        'b_31ff50: {
+            c.cycles += 4;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+            c.g[A1][0] = c.g[A1][0] & 0x1;
+            let t = c.g[A1][0] == 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            if t {
+                break 'b_31ff50;
+            } else {
+                c.cycles += 2;
+                C_BUILTIN_DELETE.call(c, 0x0031_ff50)?;
+                break 'b_31ff50;
+            }
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `void EACore_GlobalCtors()` (0x320b28): runs the EACore static
+/// initializers (`EACore_StaticInitDestroy(1, 0xffff)`).
+pub fn eacore_global_ctors(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+    c.g[A0][0] = 0x1;
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+    c.g[RA][0] = sx(0x00320b3c);
+    c.g[A1][0] = 0xffff;
+    c.pc = 0x00320550;
+    ee::s10::EACore_StaticInitDestroy(c);
+    if c.pc != 0x00320b3c {
+        return;
+    }
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+    c.pc = t;
+    return;
+}
+
+/// `void EACore_GlobalDtors()` (0x320b48): runs the EACore static
+/// destructors (`EACore_StaticInitDestroy(0, 0xffff)`).
+pub fn eacore_global_dtors(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+    c.g[A0][0] = 0u64;
+    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+    c.g[RA][0] = sx(0x00320b5c);
+    c.g[A1][0] = 0xffff;
+    c.pc = 0x00320550;
+    ee::s10::EACore_StaticInitDestroy(c);
+    if c.pc != 0x00320b5c {
+        return;
+    }
+    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+    c.pc = t;
+    return;
+}
+
+/// `EACoreGlobal *EACoreGlobal_ctor(EACoreGlobal *self)` (0x31ff20):
+/// zeroes the global's words at `+0x0/+0x4/+0x8/+0xc`, returns `self`.
+pub fn eacore_global_ctor(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = c.g[A0][0];
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x4), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x8), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0xc), 0u64);
+    let t = c.g[RA][0] as u32;
+    c.sw(c.g[A0][0] as u32, 0u64);
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -46849,6 +46988,112 @@ pub(crate) mod tests {
             },
         );
     }
+    pub(crate) use crate::game::mem::memstd::tests::install_lifecycle_fakes;
+    pub(crate) use crate::game::mem::memstd::tests::LIFECYCLE_DELETE_GATE;
+    pub(crate) use crate::game::mem::memstd::tests::LIFECYCLE_FAKE_MAGIC;
+
+    #[test]
+    fn libc_eio_stub_45a0_matches() {
+        check_paths(
+            ee::s15::f_004245a0__generated,
+            libc_eio_stub_45a0,
+            16,
+            &[13],
+            &|c, seed| {
+                machine(c, seed, 0x0042_45a0, 0);
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0042_45a0;
+            },
+        );
+    }
+
+    #[test]
+    fn libc_eio_stub_45c8_matches() {
+        check_paths(
+            ee::s15::f_004245c8__generated,
+            libc_eio_stub_45c8,
+            16,
+            &[13],
+            &|c, seed| {
+                machine(c, seed, 0x0042_45c8, 0);
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0042_45c8;
+            },
+        );
+    }
+
+    #[test]
+    fn eacore_global_dtor_matches() {
+        // free? arms (delete runs the fixed-cost fake on scratch).
+        const PATHS: &[u64] = &[7, 13];
+        check_paths(
+            ee::s10::f_0031ff38__generated,
+            eacore_global_dtor,
+            16,
+            PATHS,
+            &|c, seed| {
+                install_lifecycle_fakes();
+                machine(c, seed, 0x0031_ff38, 0);
+                c.g[A0][0] = (DATA + 0x261) as u64;
+                c.bus.write32(LIFECYCLE_DELETE_GATE, LIFECYCLE_FAKE_MAGIC);
+                c.g[A1][0] = (seed % 2) as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0031_ff38;
+            },
+        );
+    }
+
+    pub(crate) fn fixture_const(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x1a1) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn eacore_global_ctors_matches() {
+        check_paths(
+            ee::s10::f_00320b28__generated,
+            eacore_global_ctors,
+            16,
+            &[533],
+            &|c, seed| fixture_const(c, seed, 0x0032_0b28, 0x0032_0b28),
+        );
+    }
+
+    #[test]
+    fn eacore_global_dtors_matches() {
+        check_paths(
+            ee::s10::f_00320b48__generated,
+            eacore_global_dtors,
+            16,
+            &[45],
+            &|c, seed| fixture_const(c, seed, 0x0032_0b48, 0x0032_0b48),
+        );
+    }
+
+    #[test]
+    fn eacore_global_ctor_matches() {
+        check_paths(
+            ee::s10::f_0031ff20__generated,
+            eacore_global_ctor,
+            40,
+            &[6],
+            &|c, seed| {
+                machine(c, seed, 0x0031_ff20, 0);
+                let this = DATA + 0x1b1;
+                c.bus.write32(this, 0x1111_1111);
+                c.bus.write32(this + 4, 0x2222_2222);
+                c.bus.write32(this + 8, 0x3333_3333);
+                c.bus.write32(this + 0xc, 0x4444_4444);
+                // Clobber word so a missed `+0x0` store would show.
+                let _ = seed;
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x0031_ff20;
+            },
+        );
+    }
 }
 
 pub(crate) mod callee {
@@ -47474,6 +47719,7 @@ pub(crate) mod callee {
         addr: 0x003e_5d30,
         f: ee::s14::Debug_Printf,
     };
+    pub(crate) use crate::game::mem::memstd::callee::C_BUILTIN_DELETE;
 }
 
 pub(crate) mod table_callee {

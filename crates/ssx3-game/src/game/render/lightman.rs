@@ -7880,4 +7880,241 @@ pub(crate) mod tests {
             },
         );
     }
+    pub(crate) use crate::game::mem::memstd::tests::gated;
+    pub(crate) use crate::game::ui::uitext::render2d_draw_sprite_xform;
+    pub(crate) use crate::game::ui::uitext::render2d_draw_wipe_quad;
+
+    /// Control block for this module's submit-path fakes: the magic
+    /// word (without it they fall back to the generated bodies).
+    pub(crate) const SUBMIT_FAKE_BASE: u32 = DATA + 0x6_3000;
+
+    pub(crate) const SUBMIT_DRAWQUAD_GATE: u32 = SUBMIT_FAKE_BASE;
+
+    pub(crate) const SUBMIT_DRAWQUADROT90_GATE: u32 = SUBMIT_FAKE_BASE + 4;
+
+    pub(crate) const SUBMIT_DRAWQUADXFORM_GATE: u32 = SUBMIT_FAKE_BASE + 8;
+
+    pub(crate) const SUBMIT_DRAWQUADROT90XFORM_GATE: u32 = SUBMIT_FAKE_BASE + 12;
+
+    pub(crate) const SUBMIT_FAKE_MAGIC: u32 = 0x5eed_0004;
+
+    /// Submit-path fakes: results ignored, fixed cost each.
+    pub(crate) fn submit_drawquad_fake(c: &mut Cpu) {
+        if !gated(c, SUBMIT_DRAWQUAD_GATE, SUBMIT_FAKE_MAGIC) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(submit_drawquad_fake),
+                ee::s12::f_0038e118__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn submit_drawquadrot90_fake(c: &mut Cpu) {
+        if !gated(c, SUBMIT_DRAWQUADROT90_GATE, SUBMIT_FAKE_MAGIC) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(submit_drawquadrot90_fake),
+                ee::s12::f_0038e200__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn submit_drawquadxform_fake(c: &mut Cpu) {
+        if !gated(c, SUBMIT_DRAWQUADXFORM_GATE, SUBMIT_FAKE_MAGIC) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(submit_drawquadxform_fake),
+                ee::s12::f_0038e2e8__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn submit_drawquadrot90xform_fake(c: &mut Cpu) {
+        if !gated(c, SUBMIT_DRAWQUADROT90XFORM_GATE, SUBMIT_FAKE_MAGIC) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(submit_drawquadrot90xform_fake),
+                ee::s12::f_0038e468__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.cycles += 4;
+        crate::abi::ret(c);
+    }
+
+    pub(crate) fn install_submit_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038E118),
+            submit_drawquad_fake,
+            fakes::prev_cell(submit_drawquad_fake),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038E200),
+            submit_drawquadrot90_fake,
+            fakes::prev_cell(submit_drawquadrot90_fake),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038E2E8),
+            submit_drawquadxform_fake,
+            fakes::prev_cell(submit_drawquadxform_fake),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038E468),
+            submit_drawquadrot90xform_fake,
+            fakes::prev_cell(submit_drawquadrot90xform_fake),
+        );
+    }
+
+    #[test]
+    fn render2d_draw_sprite_xform_matches() {
+        // flip/u-swap/v-swap x plain/rotated submit: 2 x 2 x 2 arms.
+        const PATHS: &[u64] = &[191, 192, 193, 194, 195, 196];
+        check_paths(
+            ee::s13::f_003a2a00__generated,
+            render2d_draw_sprite_xform,
+            96,
+            PATHS,
+            &|c, seed| {
+                install_submit_fakes();
+                sprite_fixture(c, seed, 0x003a_2a00, (seed % 8) as u64);
+                c.bus.write32(SUBMIT_DRAWQUADXFORM_GATE, SUBMIT_FAKE_MAGIC);
+                c.bus
+                    .write32(SUBMIT_DRAWQUADROT90XFORM_GATE, SUBMIT_FAKE_MAGIC);
+            },
+        );
+    }
+
+    #[test]
+    fn render2d_draw_wipe_quad_matches() {
+        // plain/rotated submit arms.
+        const PATHS: &[u64] = &[182, 183];
+        check_paths(
+            ee::s13::f_003a2220__generated,
+            render2d_draw_wipe_quad,
+            64,
+            PATHS,
+            &|c, seed| {
+                install_submit_fakes();
+                sprite_fixture(c, seed, 0x003a_2220, [0, 4][seed as usize % 2] as u64);
+                // Wipe reads the flags from `A3`, not `T0`.
+                c.g[A3][0] = [0, 4][seed as usize % 2] as u64;
+                c.bus.write32(SUBMIT_DRAWQUAD_GATE, SUBMIT_FAKE_MAGIC);
+                c.bus.write32(SUBMIT_DRAWQUADROT90_GATE, SUBMIT_FAKE_MAGIC);
+            },
+        );
+    }
+
+    /// Sprite fixture words: context (tex + 4 colour floats), two
+    /// rects (the second with different words, so an `A1`/`A2` swap
+    /// would show), and the 4 matrix floats, all nonzero and
+    /// seed-varying.
+    pub(crate) fn sprite_fixture(c: &mut Cpu, seed: u32, entry: u32, flags: u64) {
+        machine(c, seed, entry as u64, 0);
+        elf_image(c);
+        let ctx = DATA + 0x300;
+        c.bus.write32(ctx, 0x0a0b_0c00 | (seed + 1));
+        c.bus.write32(ctx + 0xc, 0x3f80_0001 + seed);
+        c.bus.write32(ctx + 0x10, 0x4000_0001 + seed);
+        c.bus.write32(ctx + 0x14, 0xbf80_0001 + seed);
+        c.bus.write32(ctx + 0x18, 0x3f00_0001 + seed);
+        let rect = DATA + 0x340;
+        for i in 0..8u32 {
+            c.bus.write32(rect + 4 * i, 0x3f80_0000 + 0x10 * i + seed);
+        }
+        c.bus.write32(rect + 0x20, 0x0708_0900 | (seed + 2));
+        let rect2 = DATA + 0x368;
+        for i in 0..8u32 {
+            c.bus.write32(rect2 + 4 * i, 0x3f00_0000 + 0x10 * i + seed);
+        }
+        c.bus.write32(rect2 + 0x20, 0x0607_0800 | (seed + 3));
+        let mat = DATA + 0x3c0;
+        for i in 0..4u32 {
+            c.bus.write32(mat + 4 * i, 0x3f80_0000 + 0x20 * i + seed);
+        }
+        c.g[A0][0] = ctx as u64;
+        c.g[A1][0] = rect as u64;
+        c.g[A2][0] = rect2 as u64;
+        c.g[A3][0] = mat as u64;
+        c.g[T0][0] = flags;
+        c.g[RA][0] = TEST_RA as u64;
+        c.pc = entry;
+    }
+
+    driven!(sprite_xform_generated, ee::s13::f_003a2a00__generated);
+
+    driven!(sprite_xform_hand, render2d_draw_sprite_xform);
+
+    driven!(sprite_wipe_generated, ee::s13::f_003a2220__generated);
+
+    driven!(sprite_wipe_hand, render2d_draw_wipe_quad);
+
+    /// Sprite event hook: service only the two loop heads of the
+    /// sprite under test; every other check reports no event.
+    pub(crate) fn sprite_rerun_event(c: &mut Cpu) -> bool {
+        if c.pc != 0x003a_2af0 && c.pc != 0x003a_2b30 && c.pc != 0x003a_22d8 && c.pc != 0x003a_2318
+        {
+            return false;
+        }
+        if c.cycles >= crate::difftest::CYCLE_BUDGET {
+            panic!(
+                "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+                c.cycles, c.pc
+            );
+        }
+        (ssx3_ps2::platform::HOOKS.event)(c)
+    }
+
+    pub(crate) fn sprite_events(
+        c: &mut Cpu,
+        seed: u32,
+        entry: u32,
+        flags: u64,
+        loop2_at: u64,
+        a3: u32,
+    ) -> Events {
+        install_submit_fakes();
+        sprite_fixture(c, seed, entry, flags);
+        c.g[A3][0] = a3 as u64;
+        c.bus.write32(SUBMIT_DRAWQUAD_GATE, SUBMIT_FAKE_MAGIC);
+        c.bus.write32(SUBMIT_DRAWQUADROT90_GATE, SUBMIT_FAKE_MAGIC);
+        c.bus.write32(SUBMIT_DRAWQUADXFORM_GATE, SUBMIT_FAKE_MAGIC);
+        c.bus
+            .write32(SUBMIT_DRAWQUADROT90XFORM_GATE, SUBMIT_FAKE_MAGIC);
+        let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ (seed as u64) << 8 ^ entry as u64);
+        let mode = schedule(c, &mut r, seed, entry);
+        if mode == Events::Unwind {
+            // Steer the unwind into loop 1 (offset 0) or loop 2 by seed.
+            c.next_event = c.cycles + [0, loop2_at][seed as usize / 3 % 2];
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = c.cycles;
+            c.hooks.event = sprite_rerun_event;
+        }
+        mode
+    }
+
+    #[test]
+    fn render2d_draw_sprite_xform_events_matches() {
+        // Carry-on structured loop (see the tiled test): no resumes.
+        let _resumes = check_events(sprite_xform_generated, sprite_xform_hand, 48, &|c, seed| {
+            sprite_events(c, seed, 0x003a_2a00, (seed % 8) as u64, 87, DATA + 0x3c0)
+        });
+    }
+
+    #[test]
+    fn render2d_draw_wipe_quad_events_matches() {
+        // Carry-on structured loop (see the tiled test): no resumes.
+        let _resumes = check_events(sprite_wipe_generated, sprite_wipe_hand, 48, &|c, seed| {
+            sprite_events(c, seed, 0x003a_2220, 0, 83, 0)
+        });
+    }
 }

@@ -471,6 +471,45 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_module_unload_stub,
         "GameModule_UnloadStub",
     ),
+    (0x002c_4400, ps2_mem_card_get_490, "cPS2MemCard_Get490"),
+    (0x002c_4408, ps2_mem_card_set_24, "cPS2MemCard_Set24"),
+    (
+        0x002c_4758,
+        ps2_mem_card_defer_state_18,
+        "cPS2MemCard_DeferState18",
+    ),
+    (
+        0x002c_4890,
+        ps2_mem_card_defer_state_1e,
+        "cPS2MemCard_DeferState1E",
+    ),
+    (0x002c_5520, ps2_mem_card_v46, "cPS2MemCard_v46"),
+    (0x002c_6700, ps2_mem_card_v57, "cPS2MemCard_v57"),
+    (0x002c_6708, ps2_mem_card_v58, "cPS2MemCard_v58"),
+    (0x002c_6710, ps2_mem_card_v61, "cPS2MemCard_v61"),
+    (
+        0x002c_6748,
+        ps2_mem_card_get_block_size,
+        "cPS2MemCard_GetBlockSize",
+    ),
+    (0x002c_6750, ps2_mem_card_v21, "cPS2MemCard_v21"),
+    (0x002c_67a8, ps2_mem_card_v50, "cPS2MemCard_v50"),
+    (0x002c_67e0, ps2_mem_card_v25, "cPS2MemCard_v25"),
+    (
+        0x002d_37d8,
+        ps2_mem_card_get_current_port,
+        "cPS2MemCard_GetCurrentPort",
+    ),
+    (0x002d_3920, ps2_mem_card_v59, "cPS2MemCard_v59"),
+    (0x002d_3928, ps2_mem_card_v60, "cPS2MemCard_v60"),
+    (0x002d_3970, ps2_mem_card_get_14, "cPS2MemCard_Get14"),
+    (0x002d_3978, ps2_mem_card_v69, "cPS2MemCard_v69"),
+    (0x002d_39a8, ps2_mem_card_v72, "cPS2MemCard_v72"),
+    (
+        0x002d_39b0,
+        ps2_mem_card_is_sync_done,
+        "cPS2MemCard_IsSyncDone",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -10776,6 +10815,197 @@ pub fn game_module_unload_stub(c: &mut Cpu) {
     c.pc = c.g[RA][0] as u32;
 }
 
+/// `int cPS2MemCard_DeferState18(cPS2MemCard *self)` (0x2c4758):
+/// raises the deferred-state flag at `self+0x48`, returns 1.
+pub fn ps2_mem_card_defer_state_18(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x1;
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x48), c.g[V0][0]);
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_DeferState1E(cPS2MemCard *self)` (0x2c4890):
+/// raises the deferred-state flag at `self+0x44`, returns 1.
+pub fn ps2_mem_card_defer_state_1e(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x1;
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x44), c.g[V0][0]);
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_Get490(cPS2MemCard *self)` (0x2c4400): returns the
+/// word at `self+0x490`.
+pub fn ps2_mem_card_get_490(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x490));
+    c.pc = t;
+    return;
+}
+
+/// `void cPS2MemCard_Set24(cPS2MemCard *self, int v)` (0x2c4408): stores
+/// `A1` at `self+0x24`.
+pub fn ps2_mem_card_set_24(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x24), c.g[A1][0]);
+    c.pc = t;
+    return;
+}
+
+/// `void cPS2MemCard_v46(cPS2MemCard *self)` (0x2c5520): empty vtable
+/// slot.
+pub fn ps2_mem_card_v46(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v57(cPS2MemCard *self)` (0x2c6700): vtable slot
+/// returning 1.
+pub fn ps2_mem_card_v57(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x1;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v58(cPS2MemCard *self)` (0x2c6708): vtable slot
+/// returning 1.
+pub fn ps2_mem_card_v58(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x1;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v61(cPS2MemCard *self)` (0x2c6710): vtable slot
+/// returning 1.
+pub fn ps2_mem_card_v61(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x1;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_GetBlockSize(cPS2MemCard *self)` (0x2c6748):
+/// returns the card block size, 0x4000.
+pub fn ps2_mem_card_get_block_size(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x4000;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v21(cPS2MemCard *self)` (0x2c6750): vtable slot
+/// returning -1.
+pub fn ps2_mem_card_v21(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0xffffffffffffffff;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v50(cPS2MemCard *self)` (0x2c67a8): vtable slot
+/// returning 0.
+pub fn ps2_mem_card_v50(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v25(cPS2MemCard *self)` (0x2c67e0): vtable slot
+/// returning -1.
+pub fn ps2_mem_card_v25(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0xffffffffffffffff;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_GetCurrentPort(cPS2MemCard *self)` (0x2d37d8):
+/// returns the current port word at `self+0xc`.
+pub fn ps2_mem_card_get_current_port(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v59(cPS2MemCard *self)` (0x2d3920): vtable slot
+/// returning 0.
+pub fn ps2_mem_card_v59(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v60(cPS2MemCard *self)` (0x2d3928): vtable slot
+/// returning 0.
+pub fn ps2_mem_card_v60(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_Get14(cPS2MemCard *self)` (0x2d3970): returns the
+/// word at `self+0x14`.
+pub fn ps2_mem_card_get_14(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v69(cPS2MemCard *self)` (0x2d3978): vtable slot
+/// returning 2.
+pub fn ps2_mem_card_v69(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0x2;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_v72(cPS2MemCard *self)` (0x2d39a8): vtable slot
+/// returning 0.
+pub fn ps2_mem_card_v72(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = 0u64;
+    c.pc = t;
+    return;
+}
+
+/// `int cPS2MemCard_IsSyncDone(cPS2MemCard *self)` (0x2d39b0): returns the
+/// sync-done word at `self+0x3c`.
+pub fn ps2_mem_card_is_sync_done(c: &mut Cpu) {
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x3c));
+    c.pc = t;
+    return;
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17110,6 +17340,289 @@ pub(crate) mod tests {
             50,
             &|c, seed| {
                 oc1052_machine(c, seed, 0x1052_0007);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_defer_state_18_matches() {
+        check_paths(
+            ee::s08::f_002c4758__generated,
+            ps2_mem_card_defer_state_18,
+            40,
+            &[3],
+            &|c, seed| {
+                machine(c, seed, 0x002c_4758, 0);
+                let this = DATA + 0x1c1;
+                c.bus.write32(this + 0x48, [0, 1][seed as usize % 2]);
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x002c_4758;
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_defer_state_1e_matches() {
+        check_paths(
+            ee::s08::f_002c4890__generated,
+            ps2_mem_card_defer_state_1e,
+            40,
+            &[3],
+            &|c, seed| {
+                machine(c, seed, 0x002c_4890, 0);
+                let this = DATA + 0x1d1;
+                c.bus.write32(this + 0x44, [0, 1][seed as usize % 2]);
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x002c_4890;
+            },
+        );
+    }
+
+    pub(crate) fn fixture_const(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x151) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn ps2_mem_card_get_490_matches() {
+        check_paths(
+            ee::s08::f_002c4400__generated,
+            ps2_mem_card_get_490,
+            40,
+            &[2],
+            &|c, seed| {
+                machine(c, seed, 0x002c_4400, 0);
+                let this = DATA + 0x161;
+                c.bus.write32(this + 0x490, 0x1122_3300 | (seed + 7));
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x002c_4400;
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_set_24_matches() {
+        check_paths(
+            ee::s08::f_002c4408__generated,
+            ps2_mem_card_set_24,
+            40,
+            &[2],
+            &|c, seed| {
+                machine(c, seed, 0x002c_4408, 0);
+                let this = DATA + 0x171;
+                c.bus.write32(this + 0x24, 0xdead_beef);
+                c.g[A0][0] = this as u64;
+                // `A1` low byte nonzero so a byte-lane mix-up would show.
+                c.g[A1][0] = (0x0102_0300 | (seed + 9)) as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x002c_4408;
+            },
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v46_matches() {
+        check_paths(
+            ee::s08::f_002c5520__generated,
+            ps2_mem_card_v46,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x002c_5520, 0x002c_5520),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v57_matches() {
+        check_paths(
+            ee::s08::f_002c6700__generated,
+            ps2_mem_card_v57,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x002c_6700, 0x002c_6700),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v58_matches() {
+        check_paths(
+            ee::s08::f_002c6708__generated,
+            ps2_mem_card_v58,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x002c_6708, 0x002c_6708),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v61_matches() {
+        check_paths(
+            ee::s08::f_002c6710__generated,
+            ps2_mem_card_v61,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x002c_6710, 0x002c_6710),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_get_block_size_matches() {
+        check_paths(
+            ee::s08::f_002c6748__generated,
+            ps2_mem_card_get_block_size,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x002c_6748, 0x002c_6748),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v21_matches() {
+        check_paths(
+            ee::s08::f_002c6750__generated,
+            ps2_mem_card_v21,
+            16,
+            &[2],
+            &|c, seed| fixture_const(c, seed, 0x002c_6750, 0x002c_6750),
+        );
+    }
+
+    /// Fixture for the `+0x14` reader: `A0` has a nonzero low byte and the
+    /// word varies per seed.
+    pub(crate) fn fixture_14(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x002d_3970, 0);
+        let this = DATA + 0x121;
+        c.bus.write32(this + 0x14, 0x0a0b_0c00 | (seed + 3));
+        c.g[A0][0] = this as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x002d_3970;
+    }
+
+    /// Fixture for the `+0xc` reader.
+    pub(crate) fn fixture_0c(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x002d_37d8, 0);
+        let this = DATA + 0x131;
+        c.bus.write32(this + 0xc, 0x0506_0700 | (seed + 5));
+        c.g[A0][0] = this as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x002d_37d8;
+    }
+
+    /// Fixture for the constant-return slots: nothing read, but `A0` still
+    /// points at scratch so a stray load would fault.
+    pub(crate) fn fixture_const_2(c: &mut Cpu, seed: u32, entry: u32, salt: u64) {
+        machine(c, seed, salt, 0);
+        c.g[A0][0] = (DATA + 0x141) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn ps2_mem_card_v50_matches() {
+        check_paths(
+            ee::s08::f_002c67a8__generated,
+            ps2_mem_card_v50,
+            16,
+            &[2],
+            &|c, seed| fixture_const_2(c, seed, 0x002c_67a8, 0x002c_67a8),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v25_matches() {
+        check_paths(
+            ee::s08::f_002c67e0__generated,
+            ps2_mem_card_v25,
+            16,
+            &[2],
+            &|c, seed| fixture_const_2(c, seed, 0x002c_67e0, 0x002c_67e0),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_get_current_port_matches() {
+        check_paths(
+            ee::s09::f_002d37d8__generated,
+            ps2_mem_card_get_current_port,
+            40,
+            &[2],
+            &fixture_0c,
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v59_matches() {
+        check_paths(
+            ee::s09::f_002d3920__generated,
+            ps2_mem_card_v59,
+            16,
+            &[2],
+            &|c, seed| fixture_const_2(c, seed, 0x002d_3920, 0x002d_3920),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v60_matches() {
+        check_paths(
+            ee::s09::f_002d3928__generated,
+            ps2_mem_card_v60,
+            16,
+            &[2],
+            &|c, seed| fixture_const_2(c, seed, 0x002d_3928, 0x002d_3928),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_get_14_matches() {
+        check_paths(
+            ee::s09::f_002d3970__generated,
+            ps2_mem_card_get_14,
+            40,
+            &[2],
+            &fixture_14,
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v69_matches() {
+        check_paths(
+            ee::s09::f_002d3978__generated,
+            ps2_mem_card_v69,
+            16,
+            &[2],
+            &|c, seed| fixture_const_2(c, seed, 0x002d_3978, 0x002d_3978),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_v72_matches() {
+        check_paths(
+            ee::s09::f_002d39a8__generated,
+            ps2_mem_card_v72,
+            16,
+            &[2],
+            &|c, seed| fixture_const_2(c, seed, 0x002d_39a8, 0x002d_39a8),
+        );
+    }
+
+    #[test]
+    fn ps2_mem_card_is_sync_done_matches() {
+        check_paths(
+            ee::s09::f_002d39b0__generated,
+            ps2_mem_card_is_sync_done,
+            40,
+            &[2],
+            &|c, seed| {
+                machine(c, seed, 0x002d_39b0, 0);
+                let this = DATA + 0x111;
+                c.bus.write32(this + 0x3c, 0x0102_0300 | (seed + 1));
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = SENTINEL_RA as u64;
+                c.pc = 0x002d_39b0;
             },
         );
     }
