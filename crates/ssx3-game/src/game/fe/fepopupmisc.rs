@@ -1046,6 +1046,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_multiplayer_standings_empty_hook,
         "OVScreenMultiplayerStandings_EmptyHook",
     ),
+    (
+        0x001e_3460,
+        message_center_get_first_unread,
+        "MessageCenter_GetFirstUnread",
+    ),
+    (
+        0x001e_34d8,
+        message_center_get_next_in_group,
+        "MessageCenter_GetNextInGroup",
+    ),
+    (
+        0x001e_35f0,
+        message_center_get_entry,
+        "MessageCenter_GetEntry",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1230,6 +1245,88 @@ pub(crate) mod callee {
     pub const LOBBY_MAN_LOOKUP_PEER_ADDR: Callee = Callee {
         addr: 0x0025_a730,
         f: ee::s06::LobbyMan_LookupPeerAddr,
+    };
+
+    pub(crate) use crate::game::fe::debugfe::callee::EA_MEM_ALLOC_NAMED;
+
+    pub const OPERATOR_NEW_NAMED: Callee = Callee {
+        addr: 0x0031_7e30,
+        f: ee::s10::f_00317e30,
+    };
+
+    pub const BUILTIN_DELETE: Callee = Callee {
+        addr: 0x0031_7e50,
+        f: ee::s10::f_00317e50,
+    };
+
+    pub const EA_MEM_FREE: Callee = Callee {
+        addr: 0x0031_7e98,
+        f: ee::s10::f_00317e98,
+    };
+
+    pub const BE_LIBRARY_GET_INTERFACE_4: Callee = Callee {
+        addr: 0x0014_dd58,
+        f: ee::s01::f_0014dd58,
+    };
+
+    pub const C_GAME_COMM_UPDATE: Callee = Callee {
+        addr: 0x0025_70d8,
+        f: ee::s06::f_002570d8,
+    };
+
+    pub const C_COMM_SYSTEM_CTOR: Callee = Callee {
+        addr: 0x0025_58c0,
+        f: ee::s06::f_002558c0,
+    };
+
+    pub const C_COMM_SYSTEM_DTOR: Callee = Callee {
+        addr: 0x0025_59b0,
+        f: ee::s06::f_002559b0,
+    };
+
+    pub const C_DSOCK_CHANNEL_CTOR: Callee = Callee {
+        addr: 0x0025_6698,
+        f: ee::s06::f_00256698,
+    };
+
+    pub const C_DSOCK_CHANNEL_LISTEN: Callee = Callee {
+        addr: 0x0025_6860,
+        f: ee::s06::f_00256860,
+    };
+
+    pub const C_DSOCK_CHANNEL_CONNECT: Callee = Callee {
+        addr: 0x0025_68f8,
+        f: ee::s06::f_002568f8,
+    };
+
+    pub const EA_MEMSET: Callee = Callee {
+        addr: 0x003e_6448,
+        f: ee::s14::f_003e6448,
+    };
+
+    pub const EA_MUTEX_INIT: Callee = Callee {
+        addr: 0x003e_5698,
+        f: ee::s14::f_003e5698,
+    };
+
+    pub const EA_MUTEX_DESTROY: Callee = Callee {
+        addr: 0x003e_56e0,
+        f: ee::s14::f_003e56e0,
+    };
+
+    pub const NET_CONN_STARTUP: Callee = Callee {
+        addr: 0x003f_3b18,
+        f: ee::s14::f_003f3b18,
+    };
+
+    pub const MESSAGE_CENTER_GET_MESSAGE_ID: Callee = Callee {
+        addr: 0x001e_3620,
+        f: ee::s04::f_001e3620,
+    };
+
+    pub const MESSAGE_CENTER_GET_INBOX_5: Callee = Callee {
+        addr: 0x001e_39f8,
+        f: ee::s04::f_001e39f8,
     };
 }
 
@@ -21458,6 +21555,122 @@ pub fn ov_multiplayer_standings_empty_hook(c: &mut Cpu) {
     ret(c);
 }
 
+/// `MessageCenter_GetFirstUnread` (0x001e3460): Scan the inbox words for the first unread message.
+/// Bounded bit-scan loop with an event check.
+pub fn message_center_get_first_unread(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1e34c8: {
+            'b_1e34c0: {
+                c.cycles += 9;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.g[RA][0] = sx(0x001e3474);
+                c.g[S0][0] = c.g[A0][0];
+                callee::MESSAGE_CENTER_GET_INBOX_5.call(c, 0x001e3474)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[V0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0xcc));
+                let t = c.g[V0][0] == 0u64;
+                c.g[A0][0] = 0u64;
+                if t {
+                    break 'b_1e34c0;
+                } else {
+                    c.cycles += 3;
+                    c.g[A2][0] = 0x1;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc8));
+                    'l_1e3490: loop {
+                        'b_1e34b0: {
+                            c.cycles += 4;
+                            c.g[V1][0] = sx((c.g[A2][0] as u32) << ((c.g[A0][0] as u32) & 31));
+                            c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0xcc));
+                                break 'b_1e34b0;
+                            } else {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x001e34a8);
+                                c.sw(c.g[S0][0] as u32, c.g[A0][0]);
+                                callee::MESSAGE_CENTER_GET_MESSAGE_ID.call(c, 0x001e34a8)?;
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                break 'b_1e34c8;
+                            }
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc8));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x001e3490);
+                            }
+                            continue 'l_1e3490;
+                        } else {
+                            break 'b_1e34c0;
+                        }
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0xffffffffffffffff;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            break 'b_1e34c8;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `MessageCenter_GetNextInGroup` (0x001e34d8): Return the next message in the group.
+/// Straight-line.
+pub fn message_center_get_next_in_group(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[A2][0] = 0x18;
+        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+        c.mult(0, 4, 4, 6);
+        c.mult(0, 2, 7, 6);
+        c.g[A1][0] = 0x4c0000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6c08));
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = 0xffffffffffffffff;
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+        c.g[V1][0] = c.g[V1][0] ^ c.g[A1][0];
+        let t = c.g[RA][0] as u32;
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = c.g[A3][0];
+        }
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `MessageCenter_GetEntry` (0x001e35f0): Return the inbox entry pointer. Straight-line.
+pub fn message_center_get_entry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x001e3604);
+        c.g[S0][0] = c.g[A0][0];
+        callee::MESSAGE_CENTER_GET_INBOX_5.call(c, 0x001e3604)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32) << 3);
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -29507,6 +29720,466 @@ pub(crate) mod tests {
             &|c, seed| {
                 fakes::machine(c, seed, 0x969_0004, 0);
             },
+        );
+    }
+
+    use crate::difftest::check_paths;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::RA as SENTINEL_RA;
+    pub(crate) use crate::game::fe::debugfe::tests::base_machine_cleared;
+    pub(crate) use crate::game::fe::debugfe::tests::clear_words;
+    pub(crate) use crate::game::fe::debugfe::tests::COMMS_A;
+    pub(crate) use crate::game::fe::debugfe::tests::COMMS_B;
+    pub(crate) use crate::game::fe::debugfe::tests::FAKE_CHAR;
+    pub(crate) use crate::game::fe::debugfe::tests::FAKE_CTRL;
+    pub(crate) use crate::game::fe::debugfe::tests::FAKE_FLAG_ID;
+    pub(crate) use crate::game::fe::debugfe::tests::FAKE_INBOX;
+    pub(crate) use crate::game::fe::debugfe::tests::FIX;
+    pub(crate) use crate::game::fe::debugfe::tests::LOBBY;
+
+    pub(crate) const FAKE_DATA: u32 = FIX + 0x3000;
+
+    /// Inbox fixture behind the faked `GetInbox`.
+    pub(crate) fn inbox_fixture(c: &mut Cpu, seed: u32) {
+        clear_words(c, FAKE_INBOX, 0x40);
+        c.bus
+            .write8(FAKE_INBOX + 0xcc, if seed % 2 == 0 { 0x19 } else { 5 });
+    }
+
+    pub(crate) const SEEDS_13: u32 = 256;
+
+    pub(crate) const FAKE_MAGIC8: u32 = 0x0c11_8801;
+
+    pub(crate) const FAKE_ISTYPE_ID: u32 = FIX + 0xC10;
+
+    pub(crate) const FAKE_RIDER: u32 = FIX + 0xC14;
+
+    pub(crate) const FAKE_EARNED: u32 = FIX + 0xC18;
+
+    pub(crate) const FAKE_GOAL: u32 = FIX + 0xC20;
+
+    pub(crate) const STR: u32 = FIX + 0x1000;
+
+    pub(crate) fn comms_2(c: &mut Cpu) {
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), COMMS_A);
+        c.bus.write32(GAME_GP.wrapping_sub(0x238), COMMS_B);
+        c.bus.write32(GAME_GP.wrapping_sub(0xc8), LOBBY);
+        // DirtySock already started: the real `NetConnStartup` (no
+        // override slot) would otherwise issue an RPC `Call` that never
+        // completes in the test machine.
+        c.bus.write32(GAME_GP.wrapping_add(0x1ab0), 1);
+    }
+
+    pub(crate) fn str(c: &mut Cpu, addr: u32, s: &[u8]) {
+        for (i, &b) in s.iter().enumerate() {
+            c.bus.write8(addr + i as u32, b);
+        }
+        c.bus.write8(addr + s.len() as u32, 0);
+    }
+
+    pub(crate) fn alloc(c: &mut Cpu, size: u32) -> u32 {
+        str(c, STR, b"oc");
+        c.g[A0][0] = size as u64;
+        c.g[A1][0] = STR as u64;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        ee::s10::f_00317d70(c);
+        c.g[V0][0] as u32
+    }
+
+    pub(crate) fn gate_3(
+        c: &mut Cpu,
+        slot: u32,
+        prev: &'static std::sync::atomic::AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) -> bool {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC8 {
+            fakes::fall_back(c, prev, generated);
+            return false;
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, slot, ra);
+        true
+    }
+
+    /// `BENewPlayerInt_GetRiderStateFlag` with a steered flag.
+    pub(crate) fn get_rider_state_fake(c: &mut Cpu) {
+        if !gate_3(
+            c,
+            0x0014_6008,
+            fakes::prev_cell(get_rider_state_fake),
+            ee::s01::f_00146008__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_RIDER) as u64;
+        }
+    }
+
+    /// `BEEconInt_GetRiderTotalEarned` with a steered total.
+    pub(crate) fn get_earned_fake(c: &mut Cpu) {
+        if !gate_3(
+            c,
+            0x0015_09f8,
+            fakes::prev_cell(get_earned_fake),
+            ee::s01::f_001509f8__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_EARNED) as u64;
+        }
+    }
+
+    /// `BERewardInt_IsPeakGoalComplete` with a steered result.
+    pub(crate) fn goal_complete_fake(c: &mut Cpu) {
+        if !gate_3(
+            c,
+            0x0015_7bf0,
+            fakes::prev_cell(goal_complete_fake),
+            ee::s01::f_00157bf0__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_GOAL) as u64;
+        }
+    }
+
+    /// `BERewardInt_GetPointsThreshold` runs real (no override slot):
+    /// the threshold compare takes whichever arm the dummy BE state
+    /// gives; the other arm is listed unreached.
+
+    /// `MessageCenter_IsMessageOfType` with exactly the target type
+    /// set (same shape as the flag fake; the type is the second arg).
+    pub(crate) fn is_message_of_type_fake(c: &mut Cpu) {
+        let ty = c.g[A1][0] as u32;
+        if !gate_3(
+            c,
+            0x001e_2d58,
+            fakes::prev_cell(is_message_of_type_fake),
+            ee::s04::f_001e2d58__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = (ty == c.bus.read32(FAKE_ISTYPE_ID)) as u64;
+        }
+    }
+
+    pub(crate) fn is_flag_fake_8(c: &mut Cpu) {
+        let id = c.g[A0][0] as u32;
+        if !gate_3(
+            c,
+            0x001e_3a30,
+            fakes::prev_cell(is_flag_fake_8),
+            ee::s04::f_001e3a30__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = (id == c.bus.read32(FAKE_FLAG_ID)) as u64;
+        }
+    }
+
+    pub(crate) fn set_flag_fake_8(c: &mut Cpu) {
+        gate_3(
+            c,
+            0x001e_3a78,
+            fakes::prev_cell(set_flag_fake_8),
+            ee::s04::f_001e3a78__generated,
+        );
+    }
+
+    pub(crate) fn get_inbox_fake_8(c: &mut Cpu) {
+        if !gate_3(
+            c,
+            0x001e_39f8,
+            fakes::prev_cell(get_inbox_fake_8),
+            ee::s04::f_001e39f8__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = FAKE_INBOX as u64;
+        }
+    }
+
+    pub(crate) fn remove_message_fake_8(c: &mut Cpu) {
+        gate_3(
+            c,
+            0x001e_31b8,
+            fakes::prev_cell(remove_message_fake_8),
+            ee::s04::f_001e31b8__generated,
+        );
+    }
+
+    pub(crate) fn get_character_fake_8(c: &mut Cpu) {
+        if !gate_3(
+            c,
+            0x0014_7398,
+            fakes::prev_cell(get_character_fake_8),
+            ee::s01::f_00147398__generated,
+        ) {
+            return;
+        }
+        if c.pc == c.g[RA][0] as u32 {
+            c.g[V0][0] = c.bus.read32(FAKE_CHAR) as u64;
+        }
+    }
+
+    pub(crate) fn bolts_read_fake_8(c: &mut Cpu) {
+        gate_3(
+            c,
+            0x0014_be70,
+            fakes::prev_cell(bolts_read_fake_8),
+            ee::s01::f_0014be70__generated,
+        );
+    }
+
+    pub(crate) fn queue_open_fake_8(c: &mut Cpu) {
+        gate_3(
+            c,
+            0x003d_d4e8,
+            fakes::prev_cell(queue_open_fake_8),
+            ee::s14::f_003dd4e8__generated,
+        );
+    }
+
+    pub(crate) fn install_fakes_3() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s04::OVERRIDE_001E3A30),
+            is_flag_fake_8,
+            fakes::prev_cell(is_flag_fake_8),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s04::OVERRIDE_001E3A78),
+            set_flag_fake_8,
+            fakes::prev_cell(set_flag_fake_8),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s04::OVERRIDE_001E39F8),
+            get_inbox_fake_8,
+            fakes::prev_cell(get_inbox_fake_8),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s04::OVERRIDE_001E31B8),
+            remove_message_fake_8,
+            fakes::prev_cell(remove_message_fake_8),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_00147398),
+            get_character_fake_8,
+            fakes::prev_cell(get_character_fake_8),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_00146008),
+            get_rider_state_fake,
+            fakes::prev_cell(get_rider_state_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_001509F8),
+            get_earned_fake,
+            fakes::prev_cell(get_earned_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_00157BF0),
+            goal_complete_fake,
+            fakes::prev_cell(goal_complete_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s04::OVERRIDE_001E2D58),
+            is_message_of_type_fake,
+            fakes::prev_cell(is_message_of_type_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_0014BE70),
+            bolts_read_fake_8,
+            fakes::prev_cell(bolts_read_fake_8),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003DD4E8),
+            queue_open_fake_8,
+            fakes::prev_cell(queue_open_fake_8),
+        );
+    }
+
+    driven!(
+        message_center_get_group_message_id_generated,
+        ee::s04::f_001e2c80__generated
+    );
+
+    driven!(
+        message_center_get_group_message_id_hand,
+        message_center_get_group_message_id
+    );
+
+    driven!(
+        message_center_get_first_unread_generated,
+        ee::s04::f_001e3460__generated
+    );
+
+    driven!(
+        message_center_get_first_unread_hand,
+        message_center_get_first_unread
+    );
+
+    /// `GetGroupMessageId` fixture: the group word is either the table
+    /// word at the steered index (guaranteed hit) or an impossible
+    /// value (guaranteed miss); the flag target cycles every index.
+    pub(crate) fn group_id_fixture(c: &mut Cpu, seed: u32) -> Events {
+        let mut r = base_machine_cleared(c, seed, 0x001e_2c80);
+        elf_image(c);
+        install_fakes_3();
+        comms_2(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        inbox_fixture(c, seed);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC8);
+        let idx = seed % 61;
+        let hit = c.bus.read32(0x0044_1630 + idx * 0x14);
+        c.g[A0][0] = (if seed / 61 % 2 == 0 { hit } else { 0xffff_ffff }) as u64;
+        c.g[A1][0] = (if seed / 122 % 2 == 0 { 0 } else { 0x7fff_ffff }) as u64;
+        c.g[A2][0] = (if seed / 244 % 2 == 0 { 0 } else { FAKE_DATA }) as u64;
+        c.bus.write32(FAKE_FLAG_ID, (seed / 4 % 61) as u32);
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, 0x001e_2c80)
+    }
+
+    #[test]
+    fn message_center_get_group_message_id_matches_r2() {
+        check_events(
+            message_center_get_group_message_id_generated,
+            message_center_get_group_message_id_hand,
+            SEEDS_13,
+            &group_id_fixture,
+        );
+    }
+
+    /// `GetFirstUnread` fixture: the inbox count and mask steer a
+    /// long hit-run (the bit-scan loop always iterates, driving
+    /// events). The miss arm is a separate plain check below.
+    pub(crate) fn first_unread_fixture(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = base_machine_cleared(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms_2(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        inbox_fixture(c, seed);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC8);
+        c.bus.write8(FAKE_INBOX + 0xcc, (20 + seed % 40) as u8);
+        c.bus.write32(FAKE_INBOX + 0xc8, 0xffff_ffff);
+        c.g[A0][0] = FAKE_INBOX as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, entry)
+    }
+
+    #[test]
+    fn message_center_get_first_unread_matches() {
+        check_events(
+            message_center_get_first_unread_generated,
+            message_center_get_first_unread_hand,
+            SEEDS_13,
+            &|c, seed| first_unread_fixture(c, seed, 0x001e_3460),
+        );
+    }
+
+    /// `GetFirstUnread`'s `this`: its first word takes the unread index.
+    pub(crate) const UNREAD_OUT: u32 = FAKE_INBOX + 0x180;
+
+    /// Miss arm of `GetFirstUnread`: the first clear bit of the mask
+    /// word is index `k` (any of `0..count`), so the scan takes `k` set
+    /// bits before it stores `k` over a nonzero `*this` and goes on to
+    /// the real `GetMessageId`. Seeds 15 mod 16 have no messages and
+    /// take the empty exit.
+    pub(crate) fn first_unread_miss_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base_machine_cleared(c, seed, 0x001e_3460);
+        elf_image(c);
+        install_fakes_3();
+        comms_2(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        inbox_fixture(c, seed);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC8);
+        let count = if seed % 16 == 15 { 0 } else { 3 + seed % 8 };
+        let k = if count == 0 { 0 } else { seed / 16 % count };
+        c.bus.write8(FAKE_INBOX + 0xcc, count as u8);
+        c.bus.write32(FAKE_INBOX + 0xc8, !(1u32 << k));
+        c.bus.write32(UNREAD_OUT, 0xa5a5_0000 | seed);
+        c.g[A0][0] = UNREAD_OUT as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x001e_3460;
+    }
+
+    #[test]
+    fn message_center_get_first_unread_miss_matches() {
+        const PATHS: &[u64] = &[24, 50, 126];
+        check_paths(
+            ee::s04::f_001e3460__generated,
+            message_center_get_first_unread,
+            SEEDS_13,
+            PATHS,
+            &first_unread_miss_fixture,
+        );
+    }
+
+    /// The message group table `GetNextInGroup` reads: 0x18-byte rows,
+    /// the group id at +4.
+    pub(crate) const GROUP_TABLE: u32 = 0x004c_6c08;
+
+    /// `GetNextInGroup` / `GetEntry` fixture: message index `i` (0..60)
+    /// with rows `i` and `i + 1` in the same group (seeds below 120 and
+    /// from 240) or in adjacent groups (seeds 120..240).
+    pub(crate) fn entry_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let _r = base_machine_cleared(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms_2(c);
+        inbox_fixture(c, seed);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC8);
+        let i = seed % 60;
+        let group = 0x100 + seed / 60 % 3;
+        let next = if seed / 120 % 2 == 0 {
+            group
+        } else {
+            group + 1
+        };
+        c.bus.write32(GROUP_TABLE + i * 0x18 + 4, group);
+        c.bus.write32(GROUP_TABLE + (i + 1) * 0x18 + 4, next);
+        c.g[A0][0] = i as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn message_center_get_next_in_group_matches() {
+        const PATHS: &[u64] = &[14];
+        check_paths(
+            ee::s04::f_001e34d8__generated,
+            message_center_get_next_in_group,
+            SEEDS_13,
+            PATHS,
+            &|c, seed| entry_fixture(c, seed, 0x001e_34d8),
+        );
+    }
+
+    #[test]
+    fn message_center_get_entry_matches() {
+        const PATHS: &[u64] = &[15, 18, 20];
+        check_paths(
+            ee::s04::f_001e35f0__generated,
+            message_center_get_entry,
+            SEEDS_13,
+            PATHS,
+            &|c, seed| entry_fixture(c, seed, 0x001e_35f0),
         );
     }
 }

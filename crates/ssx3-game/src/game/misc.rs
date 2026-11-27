@@ -319,6 +319,68 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0040_f840, isnan, "isnan"),
     (0x0010_01d8, crt_frame_dummy, "frame_dummy"),
+    (0x0025_5860, c_comm_system_create, "cCommSystem_Create"),
+    (0x0025_5898, c_comm_system_destroy, "cCommSystem_Destroy"),
+    (0x0025_58c0, c_comm_system_ctor, "cCommSystem_ctor"),
+    (0x0025_59b0, c_comm_system_dtor, "cCommSystem_dtor"),
+    (
+        0x0025_5bf8,
+        c_comm_system_create_channel,
+        "cCommSystem_CreateChannel",
+    ),
+    (
+        0x0025_5cc8,
+        c_comm_system_close_channel,
+        "cCommSystem_CloseChannel",
+    ),
+    (
+        0x0025_5d50,
+        c_comm_system_is_channel_connected,
+        "cCommSystem_IsChannelConnected",
+    ),
+    (
+        0x0025_5d88,
+        c_comm_system_get_channel_latency,
+        "cCommSystem_GetChannelLatency",
+    ),
+    (
+        0x0025_5dc0,
+        c_comm_system_channel_recv,
+        "cCommSystem_ChannelRecv",
+    ),
+    (
+        0x0025_5e00,
+        c_comm_system_channel_send,
+        "cCommSystem_ChannelSend",
+    ),
+    (
+        0x0025_5e40,
+        c_comm_system_get_channel_status,
+        "cCommSystem_GetChannelStatus",
+    ),
+    (
+        0x0025_5e68,
+        c_comm_system_pool_alloc,
+        "cCommSystem_PoolAlloc",
+    ),
+    (0x0025_5ec0, c_comm_system_pool_free, "cCommSystem_PoolFree"),
+    (
+        0x0025_5f20,
+        net_config_query_connections,
+        "NetConfig_QueryConnections",
+    ),
+    (0x0025_5f50, c_comm_system_connect, "cCommSystem_Connect"),
+    (
+        0x0025_5fa0,
+        c_comm_system_disconnect,
+        "cCommSystem_Disconnect",
+    ),
+    (0x0025_5fe8, c_comm_system_set_error, "cCommSystem_SetError"),
+    (
+        0x0025_6038,
+        c_comm_system_get_local_addr,
+        "cCommSystem_GetLocalAddr",
+    ),
     (0x0041_8ef8, libc_qsort, "qsort"),
     (0x002c_8348, huff_about, "HUFF_about"),
     (0x002c_8468, huff_get_big_endian, "HUFF_GetBigEndian"),
@@ -15919,6 +15981,733 @@ pub fn libc_qsort(c: &mut Cpu) {
         Ok(())
     })
 }
+/// `cCommSystem_Create` (0x00255860): Allocate and construct the comm system, publishing it behind
+/// gp. Straight-line.
+pub fn c_comm_system_create(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = 0x480000;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x300));
+        c.g[A2][0] = 0x20000000;
+        c.g[A3][0] = 0u64;
+        c.g[RA][0] = sx(0x00255880);
+        c.g[A0][0] = 0x34;
+        callee::EA_MEM_ALLOC_NAMED.call(c, 0x00255880)?;
+        c.g[RA][0] = sx(0x00255888);
+        c.g[A0][0] = c.g[V0][0];
+        callee::C_COMM_SYSTEM_CTOR.call(c, 0x00255888)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x238), c.g[V0][0]);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_Destroy` (0x00255898): Tear down the comm system behind gp when present: free the
+/// pool and delete. Straight-line dispatch.
+pub fn c_comm_system_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2558b4: {
+            c.cycles += 4;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+            let t = c.g[A0][0] == 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            if t {
+                break 'b_2558b4;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x002558b0);
+                c.g[A1][0] = 0x3;
+                callee::C_COMM_SYSTEM_DTOR.call(c, 0x002558b0)?;
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x238), 0u64);
+                break 'b_2558b4;
+            }
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_ctor` (0x002558c0): Construct the comm system: mutex, pools, fixed clear loops and
+/// net startup. Two fixed loops with event checks.
+pub fn c_comm_system_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x002558d8);
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+        callee::EA_MUTEX_INIT.call(c, 0x002558d8)?;
+        c.g[A1][0] = 0u64;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[RA][0] = sx(0x002558e8);
+        c.g[A2][0] = 0x4;
+        callee::EA_MEMSET.call(c, 0x002558e8)?;
+        c.g[A1][0] = 0x480000;
+        c.g[A3][0] = 0u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x310));
+        c.g[A0][0] = 0xfc00;
+        c.g[RA][0] = sx(0x00255900);
+        c.g[A2][0] = 0x20000000;
+        callee::OPERATOR_NEW_NAMED.call(c, 0x00255900)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0u64;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+        c.g[RA][0] = sx(0x00255914);
+        c.g[A2][0] = 0xfc00;
+        callee::EA_MEMSET.call(c, 0x00255914)?;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+        c.g[A2][0] = 0xfc;
+        c.g[A1][0] = 0u64;
+        c.g[A0][0] = 0xfe;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+        'l_255928: loop {
+            c.cycles += 8;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0xfc));
+            c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+            let t = (c.g[A0][0] as i64) >= 0;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xfc));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00255928);
+                }
+                continue 'l_255928;
+            } else {
+                c.cycles += 2;
+                c.g[V1][0] = 0u64;
+                c.g[V0][0] = c.g[S0][0];
+                'l_255950: loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, 0u64);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                    let t = (c.g[V1][0] as i64) >= 0;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00255950);
+                        }
+                        continue 'l_255950;
+                    } else {
+                        c.cycles += 17;
+                        c.sw((c.g[GP][0] as u32).wrapping_sub(0x234), 0u64);
+                        c.g[V0][0] = 0x1;
+                        c.g[V1][0] = 0xffffffffffffffff;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), 0u64);
+                        c.g[A0][0] = 0x480000;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0u64);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x320));
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                        c.g[RA][0] = sx(0x0025599c);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+                        callee::NET_CONN_STARTUP.call(c, 0x0025599c)?;
+                        c.g[V0][0] = c.g[S0][0];
+                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        let t = c.g[RA][0] as u32;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.pc = t;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// `cCommSystem_dtor` (0x002559b0): Destroy the comm system: mutex teardown, pool free and
+/// conditional delete. Straight-line dispatch.
+pub fn c_comm_system_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2559e8: {
+            c.cycles += 11;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.g[A0][0];
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[RA][0] = sx(0x002559d0);
+            c.g[S1][0] = c.g[A1][0];
+            callee::EA_MUTEX_DESTROY.call(c, 0x002559d0)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
+            let t = c.g[A0][0] == 0u64;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+            if t {
+                break 'b_2559e8;
+            } else {
+                c.cycles += 3;
+                callee::EA_MEM_FREE.call(c, 0x002559e4)?;
+                c.g[V0][0] = c.g[S1][0] & 0x1;
+                break 'b_2559e8;
+            }
+        }
+        'b_2559fc: {
+            c.cycles += 3;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0u64);
+            let t = c.g[V0][0] == 0u64;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+            if t {
+                break 'b_2559fc;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x002559fc);
+                c.g[A0][0] = c.g[S0][0];
+                callee::BUILTIN_DELETE.call(c, 0x002559fc)?;
+                break 'b_2559fc;
+            }
+        }
+        c.cycles += 5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_CreateChannel` (0x00255bf8): Scan the channel slots, constructing (listen or
+/// connect) in the first empty one. Bounded scan loop with an event check.
+pub fn c_comm_system_create_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S3][0] = c.g[A1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S2][0] = 0u64;
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S4][0] = c.g[A2][0] & 0xffff;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S5][0] = c.g[A3][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = 0x480000;
+        'l_255c30: loop {
+            'b_255ca0: {
+                'b_255c94: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    if c.g[V0][0] != 0u64 {
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        break 'b_255c94;
+                    } else {
+                        'b_255c8c: {
+                            'b_255c78: {
+                                c.cycles += 9;
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x350));
+                                c.g[A0][0] = 0x20;
+                                c.g[A2][0] = 0x20000000;
+                                c.g[RA][0] = sx(0x00255c50);
+                                c.g[A3][0] = 0u64;
+                                callee::EA_MEM_ALLOC_NAMED.call(c, 0x00255c50)?;
+                                c.g[RA][0] = sx(0x00255c58);
+                                c.g[A0][0] = c.g[V0][0];
+                                callee::C_DSOCK_CHANNEL_CTOR.call(c, 0x00255c58)?;
+                                let t = c.g[S5][0] == 0u64;
+                                c.g[S0][0] = c.g[V0][0];
+                                if t {
+                                    break 'b_255c78;
+                                } else {
+                                    c.cycles += 6;
+                                    c.g[A1][0] = c.g[S3][0];
+                                    c.g[A2][0] = c.g[S4][0];
+                                    c.g[RA][0] = sx(0x00255c70);
+                                    c.g[A0][0] = c.g[S0][0];
+                                    callee::C_DSOCK_CHANNEL_CONNECT.call(c, 0x00255c70)?;
+                                    c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                                    break 'b_255c8c;
+                                }
+                            }
+                            c.cycles += 5;
+                            c.g[A1][0] = c.g[S3][0];
+                            c.g[A2][0] = c.g[S4][0];
+                            c.g[RA][0] = sx(0x00255c88);
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::C_DSOCK_CHANNEL_LISTEN.call(c, 0x00255c88)?;
+                            c.sw(c.g[S1][0] as u32, c.g[S0][0]);
+                            break 'b_255c8c;
+                        }
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[S2][0];
+                        break 'b_255ca0;
+                    }
+                }
+                c.cycles += 2;
+                let t = (c.g[S2][0] as i64) <= 0;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00255c30);
+                    }
+                    continue 'l_255c30;
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    break 'b_255ca0;
+                }
+            }
+            c.cycles += 9;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+            c.pc = t;
+            return Ok(());
+        }
+    })
+}
+
+/// `cCommSystem_CloseChannel` (0x00255cc8): Close the indexed channel through its vtable and clear
+/// the slot. Straight-line dispatch.
+pub fn c_comm_system_close_channel(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_255d04: {
+            c.cycles += 9;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+            c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+            c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+            if c.g[V0][0] == 0u64 {
+                c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                break 'b_255d04;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+                let t = c.g[V1][0] as u32;
+                c.g[RA][0] = sx(0x00255d00);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00255d00)?;
+                c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                break 'b_255d04;
+            }
+        }
+        'b_255d20: {
+            c.cycles += 2;
+            let t = c.g[A2][0] == 0u64;
+            c.g[A1][0] = 0x3;
+            if t {
+                break 'b_255d20;
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                let t = c.g[V1][0] as u32;
+                c.g[RA][0] = sx(0x00255d20);
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x00255d20)?;
+                break 'b_255d20;
+            }
+        }
+        c.cycles += 5;
+        c.sw(c.g[S0][0] as u32, 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_IsChannelConnected` (0x00255d50): Query the indexed channel through its vtable.
+/// Straight-line.
+pub fn c_comm_system_is_channel_connected(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00255d78);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00255d78)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_GetChannelLatency` (0x00255d88): Query the indexed channel latency through its
+/// vtable. Straight-line.
+pub fn c_comm_system_get_channel_latency(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[A1][0] = c.lw(c.g[A0][0] as u32);
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+        let t = c.g[V1][0] as u32;
+        c.g[RA][0] = sx(0x00255db0);
+        c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00255db0)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_ChannelRecv` (0x00255dc0): Receive on the indexed channel through its vtable.
+/// Straight-line vtable dispatch.
+pub fn c_comm_system_channel_recv(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[A1][0] = c.g[A2][0];
+        c.g[T0][0] = c.lw(c.g[A0][0] as u32);
+        c.g[A2][0] = c.g[A3][0];
+        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00255df0);
+        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00255df0)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_ChannelSend` (0x00255e00): Send on the indexed channel through its vtable.
+/// Straight-line vtable dispatch.
+pub fn c_comm_system_channel_send(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[A1][0] = c.g[A2][0];
+        c.g[T0][0] = c.lw(c.g[A0][0] as u32);
+        c.g[A2][0] = c.g[A3][0];
+        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x40));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
+        let t = c.g[V0][0] as u32;
+        c.g[RA][0] = sx(0x00255e30);
+        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x00255e30)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_GetChannelStatus` (0x00255e40): Return 1 while the status word is set, else the
+/// channel slot word. Straight-line dispatch.
+pub fn c_comm_system_get_channel_status(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x28));
+        let t = c.g[V0][0] != 0u64;
+        c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+        if t {
+            c.cycles += 2;
+            let t = c.g[RA][0] as u32;
+            c.g[V0][0] = 0x1;
+            c.pc = t;
+            return Ok(());
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            let t = c.g[RA][0] as u32;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+            c.pc = t;
+            return Ok(());
+        }
+    })
+}
+
+/// `cCommSystem_PoolAlloc` (0x00255e68): Pop the pool free-list head under the pool mutex.
+/// Straight-line.
+pub fn c_comm_system_pool_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x00255e8c);
+        c.g[A0][0] = c.g[S2][0];
+        callee::EA_MUTEX_LOCK.call(c, 0x00255e8c)?;
+        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+        c.g[A0][0] = c.g[S2][0];
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        c.g[RA][0] = sx(0x00255ea0);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
+        callee::EA_MUTEX_UNLOCK.call(c, 0x00255ea0)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.sw(c.g[S0][0] as u32, 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_PoolFree` (0x00255ec0): Push the block onto the pool free-list under the pool
+/// mutex. Straight-line.
+pub fn c_comm_system_pool_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x00255ee8);
+        c.g[A0][0] = c.g[S2][0];
+        callee::EA_MUTEX_LOCK.call(c, 0x00255ee8)?;
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
+        c.g[A0][0] = c.g[S2][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), 0u64);
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0u64);
+        c.g[RA][0] = sx(0x00255f04);
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x18), c.g[S0][0]);
+        callee::EA_MUTEX_UNLOCK.call(c, 0x00255f04)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `NetConfig_QueryConnections` (0x00255f20): Query the net connections and publish the count
+/// behind gp. Straight-line.
+pub fn net_config_query_connections(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[A0][0] = c.g[A1][0];
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = 0x530000;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x6790));
+        c.g[RA][0] = sx(0x00255f3c);
+        c.g[A2][0] = 0xa;
+        callee::NET_CONN_QUERY.call(c, 0x00255f3c)?;
+        c.sw((c.g[GP][0] as u32).wrapping_sub(0x234), c.g[V0][0]);
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V0][0] = 0x1;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_Connect` (0x00255f50): Disconnect, then publish the connect parameters.
+/// Straight-line.
+pub fn c_comm_system_connect(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[RA][0] = sx(0x00255f6c);
+        c.g[S1][0] = c.g[A1][0];
+        callee::C_COMM_SYSTEM_DISCONNECT.call(c, 0x00255f6c)?;
+        c.g[V0][0] = 0x1;
+        c.g[V1][0] = 0x2328;
+        c.g[A0][0] = 0x2;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[S1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[A0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x2c), 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_Disconnect` (0x00255fa0): Drop the connection unless already down, then clear the
+/// state words. Straight-line dispatch.
+pub fn c_comm_system_disconnect(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_255fc4: {
+            c.cycles += 7;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S0][0] = c.g[A0][0];
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            let t = (c.g[V0][0] as i64) < 0;
+            c.g[V0][0] = 0xffffffffffffffff;
+            if t {
+                break 'b_255fc4;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x00255fc4);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                callee::NET_CONN_DISCONNECT.call(c, 0x00255fc4)?;
+                break 'b_255fc4;
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = 0x1;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), 0u64);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_SetError` (0x00255fe8): Drop the connection unless already down, then publish the
+/// error state. Straight-line dispatch.
+pub fn c_comm_system_set_error(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_256014: {
+            c.cycles += 8;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c));
+            let t = (c.g[V0][0] as i64) < 0;
+            c.g[S1][0] = c.g[A1][0];
+            if t {
+                break 'b_256014;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffffffffffffffff;
+                c.g[RA][0] = sx(0x00256014);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+                callee::NET_CONN_DISCONNECT.call(c, 0x00256014)?;
+                break 'b_256014;
+            }
+        }
+        c.cycles += 9;
+        c.g[V0][0] = 0x6;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[S1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `cCommSystem_GetLocalAddr` (0x00256038): Read the local address into the out word when the
+/// status query hits. Straight-line dispatch.
+pub fn c_comm_system_get_local_addr(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_256078: {
+            c.cycles += 16;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+            c.g[A0][0] = 0x61640000;
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[A0][0] = c.g[A0][0] | 0x6472;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.g[S0][0] = c.g[A1][0];
+            c.sw(c.g[S0][0] as u32, 0u64);
+            c.g[A1][0] = 0u64;
+            c.g[RA][0] = sx(0x00256060);
+            c.g[A2][0] = 0u64;
+            callee::NET_CONN_STATUS.call(c, 0x00256060)?;
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V0][0] = 0xffffffffffff0000;
+            c.g[V0][0] = c.g[V0][0] | 0xff00;
+            c.g[V0][0] = c.g[V1][0] & c.g[V0][0];
+            if c.g[V0][0] != 0u64 {
+                c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                break 'b_256078;
+            } else {
+                break 'b_256078;
+            }
+        }
+        c.cycles += 4;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
+    })
+}
 
 // ---------------------------------------------------------------------------
 // HUFF_pack (0x002c9a48)
@@ -24865,13 +25654,636 @@ pub(crate) mod tests {
             },
         );
     }
-
     use crate::difftest::check_paths;
-    use crate::difftest::check_paths_lohi;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
+    use crate::difftest::RA as SENTINEL_RA;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::alloc;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::base_machine_cleared as base;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::clear_words;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::comms_2 as comms;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::install_fakes_3;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::str;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::COMMS_A;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::COMMS_B;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::FAKE_CTRL;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::FAKE_MAGIC8;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::FIX;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::LOBBY;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::SEEDS_13 as SEEDS;
+
+    /// `Create` fixture: no inputs; allocates and constructs on the
+    /// DLHeap arena, publishing behind gp. Plain check.
+    pub(crate) fn create_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let _r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn c_comm_system_create_matches() {
+        const PATHS: &[u64] = &[15916];
+        check_paths(
+            ee::s06::f_00255860__generated,
+            c_comm_system_create,
+            SEEDS,
+            PATHS,
+            &|c, seed| create_fixture(c, seed, 0x0025_5860),
+        );
+    }
+
+    /// `Destroy` fixture: the arena system with a null-or-arena pool
+    /// word, so the pool free and the delete see real arena pointers.
+    /// Seeds 3 mod 4 have no system (a null global, the early return).
+    pub(crate) fn destroy_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base(c, seed, 0x0025_5898);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let this = alloc(c, 0x400);
+        clear_words(c, this, 0x100);
+        let buf = alloc(c, 0x40);
+        c.bus
+            .write32(this + 0x14, if seed / 2 % 2 == 0 { 0 } else { buf });
+        c.bus.write32(
+            GAME_GP.wrapping_sub(0x238),
+            if seed % 4 == 3 { 0 } else { this },
+        );
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_5898;
+    }
+
+    #[test]
+    fn c_comm_system_destroy_matches() {
+        const PATHS: &[u64] = &[7, 228, 419];
+        check_paths(
+            ee::s06::f_00255898__generated,
+            c_comm_system_destroy,
+            SEEDS,
+            PATHS,
+            &destroy_fixture,
+        );
+    }
+
+    /// `cCommSystem_dtor` fixture: the arena system from the real
+    /// constructor, so the pool word and vtable are live; `A1` steers
+    /// the delete arm.
+    pub(crate) fn dtor_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base(c, seed, 0x0025_59b0);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        let this = alloc(c, 0x400);
+        clear_words(c, this, 0x100);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = 0u64;
+        c.g[RA][0] = sx(0x0025_59c4);
+        callee::C_COMM_SYSTEM_CTOR.call(c, 0x0025_59c4).unwrap();
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = (seed % 2) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_59b0;
+    }
+
+    /// Two totals: the no-delete and delete arms (`A1 & 1`).
+    #[test]
+    fn c_comm_system_dtor_matches() {
+        const PATHS: &[u64] = &[215, 404];
+        check_paths(
+            ee::s06::f_002559b0__generated,
+            c_comm_system_dtor,
+            SEEDS,
+            PATHS,
+            &dtor_fixture,
+        );
+    }
+
+    /// Channel-item fixture: the slot array with item blocks whose
+    /// vtable slots route to the miss-hook fake, each with a nonzero
+    /// `this` adjustment. Items whose first word is set (seeds 3..6 mod
+    /// 6) are open, so `CloseChannel` closes them before the destroy.
+    pub(crate) fn channel_item_fixture(c: &mut Cpu, seed: u32, entry: u32, null0: bool) {
+        let _r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let arr = FIX + 0x3000;
+        clear_words(c, arr, 0x10);
+        for i in 0..3u32 {
+            let item = FIX + 0x3100 + i * 0x40;
+            clear_words(c, item, 0x10);
+            let vt = FIX + 0x3300 + i * 0x40;
+            clear_words(c, vt, 0x10);
+            c.bus.write32(item, seed / 3 % 2);
+            c.bus.write32(item + 8, vt);
+            for slot in [0x8, 0x10, 0x20, 0x28] {
+                c.bus.write16(vt + slot, (0x10 + slot) as u16);
+                c.bus.write32(vt + slot + 4, fakes::FAKE);
+            }
+            c.bus
+                .write32(arr + i * 4, if null0 && i == 0 { 0 } else { item });
+        }
+        c.g[A0][0] = arr as u64;
+        c.g[A1][0] = (seed % 3) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn c_comm_system_close_channel_matches() {
+        const PATHS: &[u64] = &[16, 27, 30, 33, 34];
+        check_paths(
+            ee::s06::f_00255cc8__generated,
+            c_comm_system_close_channel,
+            SEEDS,
+            PATHS,
+            &|c, seed| channel_item_fixture(c, seed, 0x0025_5cc8, true),
+        );
+    }
+
+    #[test]
+    fn c_comm_system_is_channel_connected_matches() {
+        const PATHS: &[u64] = &[19, 22];
+        check_paths(
+            ee::s06::f_00255d50__generated,
+            c_comm_system_is_channel_connected,
+            SEEDS,
+            PATHS,
+            &|c, seed| channel_item_fixture(c, seed, 0x0025_5d50, false),
+        );
+    }
+
+    #[test]
+    fn c_comm_system_get_channel_latency_matches() {
+        const PATHS: &[u64] = &[16, 19, 23];
+        check_paths(
+            ee::s06::f_00255d88__generated,
+            c_comm_system_get_channel_latency,
+            SEEDS,
+            PATHS,
+            &|c, seed| channel_item_fixture(c, seed, 0x0025_5d88, false),
+        );
+    }
+
+    pub(crate) const FAKE_MAGIC0: u32 = 0x0c11_9001;
+
+    pub(crate) fn gate_2(
+        c: &mut Cpu,
+        slot: u32,
+        prev: &'static std::sync::atomic::AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) -> bool {
+        if c.bus.read32(FAKE_CTRL) != FAKE_MAGIC0 {
+            fakes::fall_back(c, prev, generated);
+            return false;
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, slot, ra);
+        true
+    }
+
+    /// `DirtyRpc_Call` / `DirtyRpc_InitRequest` logging the call and
+    /// returning: the real calls wait on a live peer via
+    /// `EAFile_AllocRequest`, which never completes in-test. Reached
+    /// through the real `ProtoPingCreate` (no override slot) on the
+    /// ctor path. The callers ignore the results.
+    pub(crate) fn dirty_rpc_call_fake(c: &mut Cpu) {
+        gate_2(
+            c,
+            0x003f_4c68,
+            fakes::prev_cell(dirty_rpc_call_fake),
+            ee::s14::f_003f4c68__generated,
+        );
+    }
+
+    pub(crate) fn dirty_rpc_init_fake(c: &mut Cpu) {
+        gate_2(
+            c,
+            0x003f_4c98,
+            fakes::prev_cell(dirty_rpc_init_fake),
+            ee::s14::f_003f4c98__generated,
+        );
+    }
+
+    /// Twins of the file-queue fakes gating on `FAKE_MAGIC0`:
+    /// identical bodies, for fixtures that arm the MAGIC0 gate.
+    pub(crate) fn bolts_read_fake_0(c: &mut Cpu) {
+        gate_2(
+            c,
+            0x0014_be70,
+            fakes::prev_cell(bolts_read_fake_0),
+            ee::s01::f_0014be70__generated,
+        );
+    }
+
+    pub(crate) fn queue_open_fake_0(c: &mut Cpu) {
+        gate_2(
+            c,
+            0x003d_d4e8,
+            fakes::prev_cell(queue_open_fake_0),
+            ee::s14::f_003dd4e8__generated,
+        );
+    }
+
+    pub(crate) fn install_fakes_2() {
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003F4C68),
+            dirty_rpc_call_fake,
+            fakes::prev_cell(dirty_rpc_call_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003F4C98),
+            dirty_rpc_init_fake,
+            fakes::prev_cell(dirty_rpc_init_fake),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s01::OVERRIDE_0014BE70),
+            bolts_read_fake_0,
+            fakes::prev_cell(bolts_read_fake_0),
+        );
+        fakes::hook(
+            std::ptr::addr_of_mut!(ee::s14::OVERRIDE_003DD4E8),
+            queue_open_fake_0,
+            fakes::prev_cell(queue_open_fake_0),
+        );
+    }
+
+    /// Channel-item fixture: the slot array with item blocks whose
+    /// vtable slots route to the miss-hook fake (IsConnected
+    /// `+0x20/+0x24`, latency `+0x28/+0x2c`, Recv `+0x38/+0x3c`, Send
+    /// `+0x40/+0x44`).
+    /// `A1` is the steered slot index; `A2`/`A3` are passed through to
+    /// the vtable call.
+    pub(crate) fn channel_fixture(c: &mut Cpu, seed: u32, entry: u32) {
+        let _r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let arr = FIX + 0x3000;
+        clear_words(c, arr, 0x10);
+        for i in 0..3u32 {
+            let item = FIX + 0x3100 + i * 0x40;
+            clear_words(c, item, 0x10);
+            let vt = FIX + 0x3300 + i * 0x40;
+            clear_words(c, vt, 0x14);
+            c.bus.write32(item + 8, vt);
+            c.bus.write16(vt + 0x20, 0);
+            c.bus.write32(vt + 0x24, fakes::FAKE);
+            c.bus.write16(vt + 0x28, 0);
+            c.bus.write32(vt + 0x2c, fakes::FAKE);
+            c.bus.write16(vt + 0x38, 0);
+            c.bus.write32(vt + 0x3c, fakes::FAKE);
+            c.bus.write16(vt + 0x40, 0);
+            c.bus.write32(vt + 0x44, fakes::FAKE);
+            c.bus.write32(item + 0xc, fakes::FAKE);
+            c.bus.write32(arr + i * 4, item);
+        }
+        c.g[A0][0] = arr as u64;
+        c.g[A1][0] = (seed % 3) as u64;
+        c.g[A2][0] = (seed / 3 % 5) as u64;
+        c.g[A3][0] = (seed / 15 % 5) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn c_comm_system_channel_recv_matches() {
+        const PATHS: &[u64] = &[18, 20, 21, 22, 23, 24, 25];
+        check_paths(
+            ee::s06::f_00255dc0__generated,
+            c_comm_system_channel_recv,
+            SEEDS,
+            PATHS,
+            &|c, seed| channel_fixture(c, seed, 0x0025_5dc0),
+        );
+    }
+
+    #[test]
+    fn c_comm_system_channel_send_matches() {
+        const PATHS: &[u64] = &[18, 20, 21, 22, 23, 24, 25];
+        check_paths(
+            ee::s06::f_00255e00__generated,
+            c_comm_system_channel_send,
+            SEEDS,
+            PATHS,
+            &|c, seed| channel_fixture(c, seed, 0x0025_5e00),
+        );
+    }
+
+    /// `GetChannelStatus` fixture: the status word steers the early-1
+    /// arm; otherwise the steered slot resolves through a mapped item
+    /// whose `+4` word is the returned status.
+    pub(crate) fn status_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base(c, seed, 0x0025_5e40);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let this = FIX + 0x3100;
+        clear_words(c, this, 0x10);
+        for i in 0..3u32 {
+            let item = FIX + 0x3200 + i * 0x40;
+            clear_words(c, item, 0x10);
+            c.bus.write32(item + 4, (seed / 6 % 3 * 8) as u32);
+            c.bus.write32(this + i * 4, item);
+        }
+        c.bus.write32(this + 0x28, (seed % 2) as u32);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = (seed / 2 % 3) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_5e40;
+    }
+
+    #[test]
+    fn c_comm_system_get_channel_status_matches() {
+        const PATHS: &[u64] = &[5, 7];
+        check_paths(
+            ee::s06::f_00255e40__generated,
+            c_comm_system_get_channel_status,
+            SEEDS,
+            PATHS,
+            &status_fixture,
+        );
+    }
+
+    /// Pool fixture: the mutex word cleared (unlocked) and the head
+    /// word pointing at a mapped node (empty-list would read address
+    /// zero on both sides, so it stays mapped).
+    pub(crate) fn pool_fixture(c: &mut Cpu, seed: u32, entry: u32, is_free: bool) {
+        let _r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let this = FIX + 0x3100;
+        clear_words(c, this, 0x10);
+        let node = FIX + 0x3200;
+        clear_words(c, node, 8);
+        let next = FIX + 0x3260;
+        clear_words(c, next, 8);
+        c.bus.write32(node, if seed % 2 == 0 { 0 } else { next });
+        c.bus.write32(this + 0x18, node);
+        c.g[A0][0] = this as u64;
+        if is_free {
+            // Nonzero, so the node's two cleared words are seen.
+            let give = FIX + 0x3240;
+            for w in 0..8 {
+                c.bus.write32(give + 4 * w, 0x5a5a_0001 + w);
+            }
+            c.g[A1][0] = give as u64;
+        }
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn c_comm_system_pool_alloc_matches() {
+        const PATHS: &[u64] = &[111];
+        check_paths(
+            ee::s06::f_00255e68__generated,
+            c_comm_system_pool_alloc,
+            SEEDS,
+            PATHS,
+            &|c, seed| pool_fixture(c, seed, 0x0025_5e68, false),
+        );
+    }
+
+    #[test]
+    fn c_comm_system_pool_free_matches() {
+        const PATHS: &[u64] = &[112];
+        check_paths(
+            ee::s06::f_00255ec0__generated,
+            c_comm_system_pool_free,
+            SEEDS,
+            PATHS,
+            &|c, seed| pool_fixture(c, seed, 0x0025_5ec0, true),
+        );
+    }
+
+    /// `QueryConnections` fixture: the connection id is seed-steered;
+    /// the real `NetConnQuery` runs on the cleared net block.
+    pub(crate) fn query_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base(c, seed, 0x0025_5f20);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        c.g[A1][0] = (seed % 3) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_5f20;
+    }
+
+    #[test]
+    fn net_config_query_connections_matches() {
+        const PATHS: &[u64] = &[113];
+        check_paths(
+            ee::s06::f_00255f20__generated,
+            net_config_query_connections,
+            SEEDS,
+            PATHS,
+            &query_fixture,
+        );
+    }
+
+    /// `Connect` fixture: the cleared block; the fellow `Disconnect`
+    /// runs real, then the parameters publish. `A1` is stored only.
+    pub(crate) fn connect_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base(c, seed, 0x0025_5f50);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let this = FIX + 0x3100;
+        clear_words(c, this, 0x10);
+        prefill_link_words(c, this);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = (seed % 2) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_5f50;
+    }
+
+    #[test]
+    fn c_comm_system_connect_matches() {
+        const PATHS: &[u64] = &[128];
+        check_paths(
+            ee::s06::f_00255f50__generated,
+            c_comm_system_connect,
+            SEEDS,
+            PATHS,
+            &connect_fixture,
+        );
+    }
+
+    /// Nonzero state words `+0x20..+0x30` (none is read before it is
+    /// written), so the zero stores of `Connect`, `Disconnect` and
+    /// `SetError` are seen.
+    pub(crate) fn prefill_link_words(c: &mut Cpu, this: u32) {
+        for off in (0x20..=0x30).step_by(4) {
+            c.bus.write32(this + off, 0x5a5a_0000 + off);
+        }
+    }
+
+    /// `Disconnect` / `SetError` fixture: the `+0x1c` word steers the
+    /// already-down skip (-1) vs the real `NetConnDisconnect` call.
+    pub(crate) fn disc_fixture(c: &mut Cpu, seed: u32, entry: u32, is_error: bool) {
+        let _r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let this = FIX + 0x3100;
+        clear_words(c, this, 0x10);
+        prefill_link_words(c, this);
+        c.bus
+            .write32(this + 0x1c, [-1i32 as u32, 0, 5][(seed % 3) as usize]);
+        c.g[A0][0] = this as u64;
+        if is_error {
+            c.g[A1][0] = (seed / 3 % 3) as u64;
+        }
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = entry;
+    }
+
+    #[test]
+    fn c_comm_system_disconnect_matches() {
+        const PATHS: &[u64] = &[15, 108];
+        check_paths(
+            ee::s06::f_00255fa0__generated,
+            c_comm_system_disconnect,
+            SEEDS,
+            PATHS,
+            &|c, seed| disc_fixture(c, seed, 0x0025_5fa0, false),
+        );
+    }
+
+    #[test]
+    fn c_comm_system_set_error_matches() {
+        const PATHS: &[u64] = &[17, 111];
+        check_paths(
+            ee::s06::f_00255fe8__generated,
+            c_comm_system_set_error,
+            SEEDS,
+            PATHS,
+            &|c, seed| disc_fixture(c, seed, 0x0025_5fe8, true),
+        );
+    }
+
+    /// `GetLocalAddr` fixture: a nonzero out word. The real
+    /// `NetConnStatus` returns the stack word its request leaves at
+    /// `sp - 0x7c`: a status with no address bits on even seeds (the
+    /// skip arm, so only the initial clear lands), an address on odd ones.
+    pub(crate) fn addr_fixture(c: &mut Cpu, seed: u32) {
+        let _r = base(c, seed, 0x0025_6038);
+        elf_image(c);
+        install_fakes_2();
+        comms(c);
+        let out = FIX + 0x3100;
+        clear_words(c, out, 4);
+        c.bus.write32(out, 0x5a5a_5a5a);
+        c.bus.write32(
+            crate::difftest::SP.wrapping_sub(0x7c),
+            if seed % 2 == 0 {
+                0x0000_00a5
+            } else {
+                0xc0a8_0102
+            },
+        );
+        c.g[A1][0] = out as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6038;
+    }
+
+    #[test]
+    fn c_comm_system_get_local_addr_matches() {
+        const PATHS: &[u64] = &[141];
+        check_paths(
+            ee::s06::f_00256038__generated,
+            c_comm_system_get_local_addr,
+            SEEDS,
+            PATHS,
+            &addr_fixture,
+        );
+    }
+
+    driven!(c_comm_system_ctor_generated, ee::s06::f_002558c0__generated);
+
+    driven!(c_comm_system_ctor_hand, c_comm_system_ctor);
+
+    driven!(
+        c_comm_system_create_channel_generated,
+        ee::s06::f_00255bf8__generated
+    );
+
+    driven!(
+        c_comm_system_create_channel_hand,
+        c_comm_system_create_channel
+    );
+
+    /// `cCommSystem_ctor` fixture: the arena block; the first fixed
+    /// loop takes the events (the second runs once: its counter starts
+    /// at zero); net startup runs real on the cleared block.
+    pub(crate) fn ccomm_ctor_fixture(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms(c);
+        let this = alloc(c, 0x400);
+        clear_words(c, this, 0x100);
+        c.g[A0][0] = this as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, entry)
+    }
+
+    #[test]
+    fn c_comm_system_ctor_matches() {
+        check_events(
+            c_comm_system_ctor_generated,
+            c_comm_system_ctor_hand,
+            SEEDS,
+            &|c, seed| ccomm_ctor_fixture(c, seed, 0x0025_58c0),
+        );
+    }
+
+    /// `CreateChannel` fixture: slot 0 is used on seeds 0 mod 4 (no
+    /// free channel, -1); otherwise the channel is built in slot 0 (a
+    /// used slot further on is never read), with `A3` steering listen
+    /// vs connect.
+    pub(crate) fn ccomm_create_channel_fixture(c: &mut Cpu, seed: u32, entry: u32) -> Events {
+        let mut r = base(c, seed, entry as u64);
+        elf_image(c);
+        install_fakes_3();
+        comms(c);
+        clear_words(c, COMMS_A, 0x100);
+        clear_words(c, COMMS_B, 0x100);
+        clear_words(c, LOBBY, 0x100);
+        let arr = FIX + 0x3000;
+        clear_words(c, arr, 0x10);
+        let used = FIX + 0x3200;
+        c.bus.write32(arr + (seed % 4) * 4, used);
+        c.bus.write32(FAKE_CTRL, FAKE_MAGIC8);
+        c.g[A0][0] = arr as u64;
+        c.g[A1][0] = (seed / 16 % 2) as u64;
+        c.g[A2][0] = (seed / 4 % 64) as u64;
+        c.g[A3][0] = (seed / 8 % 2) as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        schedule(c, &mut r, seed, entry)
+    }
+
+    #[test]
+    fn c_comm_system_create_channel_matches() {
+        check_events(
+            c_comm_system_create_channel_generated,
+            c_comm_system_create_channel_hand,
+            SEEDS,
+            &|c, seed| ccomm_create_channel_fixture(c, seed, 0x0025_5bf8),
+        );
+    }
+
+    use crate::difftest::check_paths_lohi;
     use crate::game::lib::eafile::tests::ea_fake_cost;
     use crate::game::lib::eafile::tests::ea_fixed_costs;
 
@@ -26469,8 +27881,94 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
     pub(crate) use crate::game::bx::cubicspline::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::C_COMM_SYSTEM_CTOR;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::C_COMM_SYSTEM_DTOR;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::C_DSOCK_CHANNEL_CONNECT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::C_DSOCK_CHANNEL_CTOR;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::C_DSOCK_CHANNEL_LISTEN;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::EA_MEMSET;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::EA_MUTEX_DESTROY;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::EA_MUTEX_INIT;
+    pub(crate) use crate::game::fe::fepopupmisc::callee::NET_CONN_STARTUP;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_AZIMUTH;
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_ELEVATION;
+
+    pub const BE_NETWORK_INT_GET_SYNC_DATA_SIZE: Callee = Callee {
+        addr: 0x0014_e2c0,
+        f: ee::s01::f_0014e2c0,
+    };
+
+    pub const C_COMM_SYSTEM_DISCONNECT: Callee = Callee {
+        addr: 0x0025_5fa0,
+        f: ee::s06::f_00255fa0,
+    };
+
+    pub const C_GAME_COMM_CTOR: Callee = Callee {
+        addr: 0x0025_6c78,
+        f: ee::s06::f_00256c78,
+    };
+
+    pub const C_GAME_COMM_DTOR: Callee = Callee {
+        addr: 0x0025_6ee0,
+        f: ee::s06::f_00256ee0,
+    };
+
+    pub const C_GAME_COMM_FREE_PACKET: Callee = Callee {
+        addr: 0x0025_81b8,
+        f: ee::s06::f_002581b8,
+    };
+
+    pub const C_GAME_COMM_UPDATE_MAX_LATENCY: Callee = Callee {
+        addr: 0x0025_8330,
+        f: ee::s06::f_00258330,
+    };
+
+    pub const C_GAME_COMM_SET_TIMEOUT_TIMER: Callee = Callee {
+        addr: 0x0025_8870,
+        f: ee::s06::f_00258870,
+    };
+
+    pub const SSX_CLEAR_TRAY_OPENED: Callee = Callee {
+        addr: 0x0031_ad18,
+        f: ee::s10::f_0031ad18,
+    };
+
+    pub const EA_MUTEX_LOCK: Callee = Callee {
+        addr: 0x003e_5700,
+        f: ee::s14::f_003e5700,
+    };
+
+    pub const EA_MUTEX_UNLOCK: Callee = Callee {
+        addr: 0x003e_5760,
+        f: ee::s14::f_003e5760,
+    };
+
+    pub const PROTO_PING_CREATE: Callee = Callee {
+        addr: 0x003e_7340,
+        f: ee::s14::f_003e7340,
+    };
+
+    pub const PROTO_PING_DESTROY: Callee = Callee {
+        addr: 0x003e_73e0,
+        f: ee::s14::f_003e73e0,
+    };
+
+    pub const NET_CONN_QUERY: Callee = Callee {
+        addr: 0x003f_3bc8,
+        f: ee::s14::f_003f3bc8,
+    };
+
+    pub const NET_CONN_STATUS: Callee = Callee {
+        addr: 0x003f_3cc0,
+        f: ee::s14::f_003f3cc0,
+    };
+
+    pub const NET_CONN_DISCONNECT: Callee = Callee {
+        addr: 0x003f_40b8,
+        f: ee::s14::f_003f40b8,
+    };
     pub(crate) use crate::game::main::ssxapp::callee::WORLD_PAINTER_GET_SUN_TEXTURE;
 
     /// `char *strcpy(char*, const char*)` (`a0`, `a1` in, `v0` out).

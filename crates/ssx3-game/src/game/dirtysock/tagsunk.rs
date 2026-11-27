@@ -1094,6 +1094,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         buddy_man_remove_temp_entry_at,
         "BuddyMan_RemoveTempEntryAt",
     ),
+    (0x0025_6bb0, net_rpc_alloc, "Net_RpcAlloc"),
+    (0x0025_6bd8, net_rpc_free, "Net_RpcFree"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -26289,6 +26291,51 @@ pub fn lobby_man_dtor(c: &mut Cpu) {
     })
 }
 
+/// `Net_RpcAlloc` (0x00256bb0): Allocate an RPC block on the game heap. Straight-line.
+pub fn net_rpc_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        c.g[A1][0] = 0x480000;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x478));
+        c.g[A2][0] = 0x20000000;
+        c.g[RA][0] = sx(0x00256bcc);
+        c.g[A3][0] = 0u64;
+        callee::OPERATOR_NEW_NAMED.call(c, 0x00256bcc)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `Net_RpcFree` (0x00256bd8): Free the RPC block unless null. Straight-line dispatch.
+pub fn net_rpc_free(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_256bec: {
+            c.cycles += 3;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+            let t = c.g[A0][0] == 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            if t {
+                break 'b_256bec;
+            } else {
+                c.cycles += 2;
+                callee::EA_MEM_FREE.call(c, 0x00256bec)?;
+                break 'b_256bec;
+            }
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -38689,6 +38736,63 @@ pub(crate) mod tests {
                 assert_eq!(c.bus.read8(record + off + 7), b'r');
                 c.bus.write8(record + off + 7, b'q');
             },
+        );
+    }
+    pub(crate) use crate::game::misc::tests::base as rpc_base;
+    pub(crate) use crate::game::misc::tests::clear_words;
+    pub(crate) use crate::game::misc::tests::comms;
+    pub(crate) use crate::game::misc::tests::install_fakes_2 as install_fakes;
+    pub(crate) use crate::game::misc::tests::FIX;
+    pub(crate) use crate::game::misc::tests::SEEDS as SEEDS_6;
+    use ssx3_ee_rt::cpu::sx;
+
+    /// `RpcAlloc` fixture: the size is seed-steered; the real
+    /// `operator_new` allocates on the DLHeap arena deterministically.
+    pub(crate) fn rpc_alloc_fixture(c: &mut Cpu, seed: u32) {
+        let _r = rpc_base(c, seed, 0x0025_6bb0);
+        elf_image(c);
+        install_fakes();
+        comms(c);
+        c.g[A0][0] = [0x40u32, 0x200][(seed % 2) as usize] as u64;
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6bb0;
+    }
+
+    #[test]
+    fn net_rpc_alloc_matches() {
+        const PATHS: &[u64] = &[1217];
+        check_paths(
+            ee::s06::f_00256bb0__generated,
+            net_rpc_alloc,
+            SEEDS_6,
+            PATHS,
+            &rpc_alloc_fixture,
+        );
+    }
+
+    /// `RpcFree` fixture: null takes the early return, an arena block
+    /// the real free.
+    pub(crate) fn rpc_free_fixture(c: &mut Cpu, seed: u32) {
+        let _r = rpc_base(c, seed, 0x0025_6bd8);
+        elf_image(c);
+        install_fakes();
+        comms(c);
+        let blk = FIX + 0x3100;
+        clear_words(c, blk, 0x10);
+        c.g[A0][0] = if seed % 2 == 0 { 0 } else { blk as u64 };
+        c.g[RA][0] = SENTINEL_RA as u64;
+        c.pc = 0x0025_6bd8;
+    }
+
+    #[test]
+    fn net_rpc_free_matches() {
+        const PATHS: &[u64] = &[6, 195, 420, 429];
+        check_paths(
+            ee::s06::f_00256bd8__generated,
+            net_rpc_free,
+            SEEDS_6,
+            PATHS,
+            &rpc_free_fixture,
         );
     }
 }
