@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -16,6 +17,7 @@ pub(crate) use crate::game::fe::uitemplatemap::OC758_CTRL;
 pub(crate) use crate::game::fe::uitemplatemap::OC758_MAGIC;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
+pub(crate) use crate::game::worldpainter::quadtree::oc1052_at;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use crate::tick;
@@ -60,6 +62,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_15b0, memitter_free_data, "mEmitter_FreeData"),
     (0x002d_5048, c_anger_fx_render, "cAngerFX_Render"),
     (0x002d_48f0, c_anger_fx_ctor, "cAngerFX_ctor"),
+    (0x002d_4a70, anger_fx_dtor, "cAngerFX_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1382,6 +1385,172 @@ pub fn c_anger_fx_ctor(c: &mut Cpu) {
     return;
 }
 
+/// Destructor of `cAngerFX` (0x2d4a70): copies the effect's two static tables
+/// onto the stack when `a1 == 0` (the object is not freed from its own
+/// destructor), then releases the object's two buffers as its flags say.
+pub fn anger_fx_dtor(c: &mut Cpu) {
+    guest(c, anger_fx_dtor_body);
+}
+
+pub(crate) fn anger_fx_dtor_body(c: &mut Cpu) -> Flow {
+    c.cycles += 21;
+    let f = Frame::open(c, 0x130);
+    c.g[V0][0] = 0x49_0000;
+    f.save(c, S0, 0x120);
+    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7540));
+    f.save(c, S1, 0x110);
+    c.g[S0][0] = c.g[A0][0];
+    f.save_ra(c, 0x100);
+    c.g[S1][0] = c.g[A1][0];
+    c.g[A0][0] = 0x46_0000;
+    c.g[A3][0] = c.g[V0][0];
+    c.g[V1][0] = oc1052_at(c, S0, 0).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6470));
+    let table_a = c.g[A2][0];
+    oc1052_at(c, V1, 0x6e8).sw(c, table_a);
+    c.g[V1][0] = 0x49_0000;
+    c.g[A1][0] = oc1052_at(c, S0, 0).lw(c);
+    c.g[T2][0] = c.g[V1][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x74f8));
+    let name = c.g[A0][0];
+    oc1052_at(c, A1, 0x6d0).sw(c, name);
+    c.g[V0][0] = oc1052_at(c, S0, 0).lw(c);
+    let has_flags = c.g[S1][0] != 0;
+    let table_b = c.g[V1][0];
+    oc1052_at(c, V0, 0x6c0).sw(c, table_b);
+    'copy: {
+        if has_flags {
+            break 'copy;
+        }
+        // 0x2d4ac8: copy the two tables (two words each) to the stack.
+        c.cycles += 4;
+        c.g[A1][0] = c.g[A2][0];
+        c.g[V1][0] = c.g[SP][0];
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+        c.g[T0][0] = sx(sp(c).wrapping_add(0x50));
+        loop {
+            c.cycles += 11;
+            c.g[A0][0] = Addr(c.g[A1][0] as u32).ld(c);
+            c.g[A2][0] = Addr((c.g[A1][0] as u32).wrapping_add(8)).ld(c);
+            c.g[T1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x10)).ld(c);
+            c.g[T3][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x18)).ld(c);
+            let v = c.g[A0][0];
+            Addr(c.g[V1][0] as u32).sd(c, v);
+            let v = c.g[A2][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(8)).sd(c, v);
+            let v = c.g[T1][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x10)).sd(c, v);
+            let v = c.g[T3][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x18)).sd(c, v);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+            let more = c.g[A1][0] != c.g[V0][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_4ad4);
+                }
+                continue;
+            }
+            // 0x2d4b00: the second table, from the static block to the stack.
+            c.cycles += 14;
+            c.g[V0][0] = oc1052_at(c, S0, 0).lw(c);
+            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7540));
+            c.g[A2][0] = Addr(c.g[A1][0] as u32).ld(c);
+            let v = c.g[A2][0];
+            Addr(c.g[V1][0] as u32).sd(c, v);
+            let v = c.g[SP][0];
+            oc1052_at(c, V0, 0x6e8).sw(c, v);
+            c.g[A2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x74f8));
+            c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(8)).lhu(c);
+            c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+            c.g[V0][0] = oc1052_at(c, S0, 0).lw(c);
+            c.g[A1][0] = c.g[T0][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
+            c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            let v = c.g[V1][0];
+            oc1052_at(c, SP, 8).sh(c, v);
+            loop {
+                c.cycles += 11;
+                c.g[V0][0] = Addr(c.g[A2][0] as u32).ld(c);
+                c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(8)).ld(c);
+                c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x10)).ld(c);
+                c.g[T3][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x18)).ld(c);
+                let v = c.g[V0][0];
+                Addr(c.g[A1][0] as u32).sd(c, v);
+                let v = c.g[V1][0];
+                Addr((c.g[A1][0] as u32).wrapping_add(8)).sd(c, v);
+                let v = c.g[A0][0];
+                Addr((c.g[A1][0] as u32).wrapping_add(0x10)).sd(c, v);
+                let v = c.g[T3][0];
+                Addr((c.g[A1][0] as u32).wrapping_add(0x18)).sd(c, v);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                let more = c.g[A2][0] != c.g[T1][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002d_4b38);
+                    }
+                    continue;
+                }
+                break;
+            }
+            c.cycles += 10;
+            c.g[V0][0] = Addr(c.g[A2][0] as u32).ld(c);
+            c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(8)).ld(c);
+            let v = c.g[V0][0];
+            Addr(c.g[A1][0] as u32).sd(c, v);
+            let v = c.g[V1][0];
+            Addr((c.g[A1][0] as u32).wrapping_add(8)).sd(c, v);
+            c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x74f8));
+            c.g[A0][0] = oc1052_at(c, S0, 0).lw(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(8)).lhu(c);
+            let v = c.g[T0][0];
+            oc1052_at(c, A0, 0x6c0).sw(c, v);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            let v = c.g[V1][0];
+            oc1052_at(c, SP, 0x58).sh(c, v);
+            break 'copy;
+        }
+    }
+    // 0x2d4ba4: the first owned buffer (+4) goes back to the allocator.
+    c.cycles += 3;
+    c.g[A0][0] = oc1052_at(c, S0, 4).lw(c);
+    let no_buffer = c.g[A0][0] == 0;
+    c.g[V0][0] = c.g[S1][0] & 2;
+    if !no_buffer {
+        c.cycles += 3;
+        call_ptr(c, 0x0031_7e98, 0x002d_4ba0)?;
+        c.g[V0][0] = c.g[S1][0] & 2;
+    }
+    // 0x2d4bbc: the second owned block, when flagged.
+    c.cycles += 2;
+    let no_block = c.g[V0][0] == 0;
+    c.g[V0][0] = c.g[S1][0] & 1;
+    if !no_block {
+        c.cycles += 4;
+        c.g[A0][0] = oc1052_at(c, S0, 0).lw(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0011_b978, 0x002d_4bb8)?;
+        c.g[V0][0] = c.g[S1][0] & 1;
+    }
+    // 0x2d4bd0: the object itself, when the low flag says so.
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        f.restore(c, S0, 0x120);
+    } else {
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0031_7e50, 0x002d_4bcc)?;
+        f.restore(c, S0, 0x120);
+    }
+    c.cycles += 4;
+    f.restore(c, S1, 0x110);
+    f.restore_ra(c, 0x100);
+    f.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1909,6 +2078,27 @@ pub(crate) mod tests {
             c_anger_fx_ctor,
             120,
             &|c, seed| oc758_ctor_setup(c, seed, 0x2d48f0, 0x002d_48f0),
+        );
+    }
+
+    pub(crate) use crate::game::worldpainter::quadtree::tests::oc1052_machine;
+
+    #[test]
+    fn anger_fx_dtor_matches() {
+        check(
+            ee::s09::f_002d4a70__generated,
+            anger_fx_dtor,
+            300,
+            &|c, seed| {
+                oc1052_machine(c, seed, 0x1052_0008);
+                let fx = DATA + 0x2000;
+                c.g[A0][0] = sx(fx);
+                // a1 == 0 copies the tables; otherwise the flags pick the frees.
+                c.g[A1][0] = (seed % 8) as u64;
+                c.bus.write32(fx, DATA + 0x2100);
+                c.bus
+                    .write32(fx + 4, if seed % 2 == 1 { DATA + 0x4000 } else { 0 });
+            },
         );
     }
 }

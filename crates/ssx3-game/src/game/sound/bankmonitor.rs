@@ -8,8 +8,11 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::events;
 use crate::events::back_edge_unwinds;
@@ -645,6 +648,210 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_4ae8,
         music_player_get_song_data_buffer,
         "MusicPlayer_GetSongDataBuffer",
+    ),
+    (0x002a_ce40, bank_monitor_dtor, "BankMonitor_dtor"),
+    (
+        0x002a_d358,
+        bank_monitor_fade_out_handle,
+        "BankMonitor_FadeOutHandle",
+    ),
+    (
+        0x002a_d730,
+        bank_monitor_count_playing,
+        "BankMonitor_CountPlaying",
+    ),
+    (
+        0x002a_d7a8,
+        bank_monitor_count_active,
+        "BankMonitor_CountActive",
+    ),
+    (0x002a_dac8, bank_monitor_base_dtor, "BankMonitor_BaseDtor"),
+    (
+        0x002a_df80,
+        sound_manager_ref_stop_all,
+        "SoundManagerRef_StopAll",
+    ),
+    (0x002a_dfc8, path_plat_alloc, "PATH_PlatAlloc"),
+    (0x002a_e000, path_plat_free, "PATH_PlatFree"),
+    (
+        0x002a_ea38,
+        path_plat_get_track_position,
+        "PATH_PlatGetTrackPosition",
+    ),
+    (
+        0x002a_eb40,
+        path_plat_find_queued_by_id,
+        "PATH_PlatFindQueuedById",
+    ),
+    (
+        0x002a_ec58,
+        path_plat_get_track_status,
+        "PATH_PlatGetTrackStatus",
+    ),
+    (
+        0x002a_f480,
+        path_plat_get_track_handle,
+        "PATH_PlatGetTrackHandle",
+    ),
+    (0x002a_f4e0, path_plat_set_aux_send_2, "PATH_PlatSetAuxSend"),
+    (0x002a_fb38, speech_instance_dtor, "SpeechInstance_dtor"),
+    (
+        0x002b_07c0,
+        speech_instance_is_playing,
+        "SpeechInstance_IsPlaying",
+    ),
+    (
+        0x002b_07e8,
+        speech_instance_set_param8c4,
+        "SpeechInstance_SetParam8c4",
+    ),
+    (
+        0x002b_07f0,
+        speech_instance_set_param8c8,
+        "SpeechInstance_SetParam8c8",
+    ),
+    (0x002b_0ae8, speech_system_dtor, "SpeechSystem_dtor"),
+    (
+        0x002b_0f10,
+        speech_system_load_speech_inf,
+        "SpeechSystem_LoadSpeechInf",
+    ),
+    (
+        0x002b_0fe8,
+        speech_system_set_instance_param8c4,
+        "SpeechSystem_SetInstanceParam8c4",
+    ),
+    (
+        0x002b_1020,
+        speech_system_set_instance_param_8c8,
+        "SpeechSystem_SetInstanceParam8c8",
+    ),
+    (
+        0x002b_1058,
+        speech_system_request_event,
+        "SpeechSystem_RequestEvent",
+    ),
+    (
+        0x002b_1128,
+        speech_system_flush_instance,
+        "SpeechSystem_FlushInstance",
+    ),
+    (
+        0x002b_11e8,
+        speech_system_is_instance_playing,
+        "SpeechSystem_IsInstancePlaying",
+    ),
+    (
+        0x002b_1780,
+        music_player_create_stream,
+        "MusicPlayer_CreateStream",
+    ),
+    (
+        0x002b_1a70,
+        music_player_stop_stream,
+        "MusicPlayer_StopStream",
+    ),
+    (
+        0x002b_2140,
+        song_instance_path_cmd_b,
+        "SongInstance_PathCmdB",
+    ),
+    (
+        0x002b_2500,
+        song_instance_pick_random_phrase_offset,
+        "SongInstance_PickRandomPhraseOffset",
+    ),
+    (
+        0x002b_2550,
+        song_instance_get_path_status_field,
+        "SongInstance_GetPathStatusField",
+    ),
+    (
+        0x002b_2578,
+        song_instance_get_stream_status,
+        "SongInstance_GetStreamStatus",
+    ),
+    (
+        0x002b_2640,
+        song_instance_get_time_remaining,
+        "SongInstance_GetTimeRemaining",
+    ),
+    (
+        0x002b_26b8,
+        song_instance_get_phrase_ms,
+        "SongInstance_GetPhraseMs",
+    ),
+    (
+        0x002b_26f8,
+        song_instance_get_time_remaining_wrapper,
+        "SongInstance_GetTimeRemaining_Wrapper",
+    ),
+    (
+        0x002b_2778,
+        song_instance_get_beat_index,
+        "SongInstance_GetBeatIndex",
+    ),
+    (
+        0x002b_27c0,
+        song_instance_is_loop_bank_busy,
+        "SongInstance_IsLoopBankBusy",
+    ),
+    (0x002b_3398, music_player_dtor, "MusicPlayer_dtor"),
+    (0x002b_3c60, music_player_path_cmd_b, "MusicPlayer_PathCmdB"),
+    (
+        0x002b_3cd8,
+        music_player_apply_song_volume,
+        "MusicPlayer_ApplySongVolume",
+    ),
+    (
+        0x002b_3d80,
+        music_player_fade_song_volume,
+        "MusicPlayer_FadeSongVolume",
+    ),
+    (
+        0x002b_4180,
+        music_player_skip_songs,
+        "MusicPlayer_SkipSongs",
+    ),
+    (
+        0x002b_4470,
+        music_player_start_loops,
+        "MusicPlayer_StartLoops",
+    ),
+    (
+        0x002b_44d8,
+        music_player_stop_loops,
+        "MusicPlayer_StopLoops",
+    ),
+    (
+        0x002b_4540,
+        music_player_timer_forward_slot1,
+        "MusicPlayer_TimerForwardSlot1",
+    ),
+    (
+        0x002b_4568,
+        music_player_schedule_loop,
+        "MusicPlayer_ScheduleLoop",
+    ),
+    (
+        0x002b_4620,
+        music_player_attach_loop_bank,
+        "MusicPlayer_AttachLoopBank",
+    ),
+    (
+        0x002b_4740,
+        music_player_loop_timer_callback,
+        "MusicPlayer_LoopTimerCallback",
+    ),
+    (
+        0x002b_47c0,
+        music_player_loop_bank_idle_callback,
+        "MusicPlayer_LoopBankIdleCallback",
+    ),
+    (
+        0x002b_48c8,
+        music_player_get_sed_value,
+        "MusicPlayer_GetSedValue",
     ),
 ];
 
@@ -20697,6 +20904,3339 @@ pub fn oc817_music_player_empty_playlist_hook(c: &mut Cpu) {
     ret(c);
 }
 
+/// `int PATH_PlatGetTrackStatus(int slot, int* elapsed_ms, int* remaining_ms)`
+/// (0x2aec58): reads one of the 24 sound-bank monitor slots (`D_004D3E98[slot]`),
+/// locks the sound system and refreshes the slot's stream state (in-memory
+/// streams: position from the stream header; streaming ones: each sub-request's
+/// state), stores the two out values, and returns 0, -1 (no slot) or -2 (no
+/// stream handle). Straight transcription of the generated body (labels kept).
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_mut,
+    unreachable_code,
+    unused_variables
+)]
+pub fn path_plat_get_track_status(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2aef80: {
+            'b_2aeca8: {
+                c.cycles += 18;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x130));
+                c.g[V0][0] = 0x4d0000;
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x100));
+                c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xe0));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e98));
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x110));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0xf0));
+                c.g[S4][0] = c.g[A1][0];
+                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                c.g[S2][0] = c.g[A2][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0xc0), c.g[RA][0]);
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x120));
+                c.g[S0][0] = c.lw(c.g[A0][0] as u32);
+                c.sw(c.g[S4][0] as u32, 0u64);
+                let t = c.g[S0][0] != 0u64;
+                c.sw(c.g[S2][0] as u32, 0u64);
+                if t {
+                    break 'b_2aeca8;
+                } else {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    if t {
+                        break 'b_2aef80;
+                    } else {
+                        break 'b_2aeca8;
+                    }
+                }
+            }
+            'b_2aecc4: {
+                c.cycles += 5;
+                c.g[V1][0] = 0x1;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                c.g[S5][0] = 0xfffffffffffffff8;
+                let t = (c.g[V0][0] as i64) >= 0;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x58), c.g[V1][0]);
+                if t {
+                    break 'b_2aecc4;
+                } else {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0xfffffffffffffffe;
+                    if t {
+                        break 'b_2aef80;
+                    } else {
+                        break 'b_2aecc4;
+                    }
+                }
+            }
+            'b_2aef6c: {
+                'b_2aef68: {
+                    'b_2aeddc: {
+                        c.cycles += 5;
+                        c.g[RA][0] = sx(0x002aeccc);
+                        c.sb((c.g[S0][0] as u32).wrapping_add(0x65), c.g[V1][0]);
+                        call_ptr(c, 0x003b58a0, 0x002aeccc)?;
+                        c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x64));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                            break 'b_2aeddc;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                            if (c.g[A1][0] as i64) < 0 {
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), c.g[S4][0]);
+                                break 'b_2aef6c;
+                            } else {
+                                c.cycles += 4;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                                let t = (c.g[V1][0] as i64) < 0;
+                                c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    break 'b_2aef68;
+                                } else {
+                                    'b_2aedac: {
+                                        c.cycles += 7;
+                                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                                        c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                                        c.g[RA][0] = sx(0x002aed04);
+                                        c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
+                                        call_ptr(c, 0x003b6670, 0x002aed04)?;
+                                        c.g[S5][0] = c.g[V0][0];
+                                        if (c.g[S5][0] as i64) < 0 {
+                                            c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                                            break 'b_2aedac;
+                                        } else {
+                                            'b_2aed3c: {
+                                                c.cycles += 6;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                                c.g[RA][0] = sx(0x002aed1c);
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                                                call_ptr(c, 0x003b8ad8, 0x002aed1c)?;
+                                                c.g[V1][0] = c.g[V0][0];
+                                                let t = (c.g[V1][0] as i64) >= 0;
+                                                c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                                                if t {
+                                                    break 'b_2aed3c;
+                                                } else {
+                                                    c.cycles += 5;
+                                                    c.sw(c.g[S2][0] as u32, 0u64);
+                                                    c.g[V1][0] = 0xffffffffffffffff;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                                    let t = true;
+                                                    c.sw(
+                                                        (c.g[V0][0] as u32).wrapping_add(0x4),
+                                                        c.g[V1][0],
+                                                    );
+                                                    if t {
+                                                        break 'b_2aef68;
+                                                    } else {
+                                                        break 'b_2aed3c;
+                                                    }
+                                                }
+                                            }
+                                            'b_2aed7c: {
+                                                'b_2aed60: {
+                                                    c.cycles += 5;
+                                                    c.g[V0][0] = 0xa;
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0xa0));
+                                                    c.mult(0, 2, 3, 2);
+                                                    let t = (c.g[A0][0] as i64) < 0;
+                                                    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                                                    if t {
+                                                        break 'b_2aed60;
+                                                    } else {
+                                                        c.cycles += 4;
+                                                        c.mtc1(4, 2);
+                                                        c.cvt_s_w(2, 2);
+                                                        let t = true;
+                                                        c.g[V0][0] = c.lhu(
+                                                            (c.g[SP][0] as u32).wrapping_add(0x20),
+                                                        );
+                                                        if t {
+                                                            break 'b_2aed7c;
+                                                        } else {
+                                                            break 'b_2aed60;
+                                                        }
+                                                    }
+                                                }
+                                                c.cycles += 7;
+                                                c.g[V1][0] = sx((c.g[A0][0] as u32) >> 1);
+                                                c.g[V0][0] = c.g[A0][0] & 0x1;
+                                                c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+                                                c.mtc1(2, 2);
+                                                c.cvt_s_w(2, 2);
+                                                c.add_s(2, 2, 2);
+                                                c.g[V0][0] =
+                                                    c.lhu((c.g[SP][0] as u32).wrapping_add(0x20));
+                                                break 'b_2aed7c;
+                                            }
+                                            c.cycles += 12;
+                                            c.g[AT][0] = 0x447a0000;
+                                            c.mtc1(1, 1);
+                                            c.mtc1(2, 0);
+                                            c.cvt_s_w(0, 0);
+                                            c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                                            c.div_s(0, 2, 0);
+                                            c.mul_s(0, 0, 1);
+                                            c.cvt_w_s(1, 0);
+                                            c.mfc1(2, 1);
+                                            c.g[V0][0] =
+                                                sx((c.g[V0][0] as u32)
+                                                    .wrapping_sub(c.g[V1][0] as u32));
+                                            c.sw(c.g[S4][0] as u32, c.g[V0][0]);
+                                            c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                                            break 'b_2aedac;
+                                        }
+                                    }
+                                    c.cycles += 12;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                                    c.sw((c.g[S0][0] as u32).wrapping_add(0x50), c.g[V0][0]);
+                                    c.g[RA][0] = sx(0x002aedc8);
+                                    c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                                    call_ptr(c, 0x003b86c0, 0x002aedc8)?;
+                                    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                                    let t = true;
+                                    c.sw((c.g[S0][0] as u32).wrapping_add(0x5c), c.g[V1][0]);
+                                    if t {
+                                        break 'b_2aef68;
+                                    } else {
+                                        break 'b_2aeddc;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    'b_2aee00: {
+                        c.cycles += 9;
+                        c.g[RA][0] = sx(0x002aede4);
+                        c.g[A1][0] = c.g[SP][0];
+                        call_ptr(c, 0x003b7b48, 0x002aede4)?;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x50), 0u64);
+                        c.g[S5][0] = c.g[V0][0];
+                        c.g[V1][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x66));
+                        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        if c.g[V0][0] == 0u64 {
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x58), 0u64);
+                            break 'b_2aee00;
+                        } else {
+                            break 'b_2aee00;
+                        }
+                    }
+                    'b_2aef5c: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x66));
+                        let t = (c.g[V0][0] as i64) <= 0;
+                        c.g[S3][0] = 0u64;
+                        if t {
+                            break 'b_2aef5c;
+                        } else {
+                            c.cycles += 1;
+                            c.g[S1][0] = 0u64;
+                            'l_2aee10: loop {
+                                'b_2aef4c: {
+                                    c.cycles += 8;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                    c.g[V0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                                    c.sw((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
+                                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                    c.g[V1][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                                    if (c.g[A0][0] as i64) < 0 {
+                                        c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x66));
+                                        break 'b_2aef4c;
+                                    } else {
+                                        'b_2aef48: {
+                                            'b_2aef3c: {
+                                                'b_2aeeb8: {
+                                                    'b_2aee70: {
+                                                        c.cycles += 6;
+                                                        c.g[RA][0] = sx(0x002aee38);
+                                                        c.g[A1][0] =
+                                                            sx((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                        call_ptr(c, 0x003b7c40, 0x002aee38)?;
+                                                        c.g[V1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x10));
+                                                        c.g[V0][0] = 0x1;
+                                                        let t = c.g[V1][0] == c.g[V0][0];
+                                                        c.g[V0][0] =
+                                                            ((c.g[V1][0] as i64) < 2i64) as u64;
+                                                        if t {
+                                                            break 'b_2aee70;
+                                                        } else {
+                                                            'b_2aee60: {
+                                                                c.cycles += 2;
+                                                                let t = c.g[V0][0] == 0u64;
+                                                                c.g[V0][0] = 0x2;
+                                                                if t {
+                                                                    break 'b_2aee60;
+                                                                } else {
+                                                                    c.cycles += 2;
+                                                                    let t = c.g[V1][0] == 0u64;
+                                                                    c.g[V0][0] = c
+                                                                        .lw((c.g[SP][0] as u32)
+                                                                            .wrapping_add(0x14));
+                                                                    if t {
+                                                                        break 'b_2aeeb8;
+                                                                    } else {
+                                                                        c.cycles += 2;
+                                                                        let t = true;
+                                                                        c.g[V0][0] = c.lw((c.g[S0]
+                                                                            [0]
+                                                                            as u32)
+                                                                            .wrapping_add(0x6c));
+                                                                        if t {
+                                                                            break 'b_2aef3c;
+                                                                        } else {
+                                                                            break 'b_2aee60;
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            c.cycles += 2;
+                                                            let t = c.g[V1][0] == c.g[V0][0];
+                                                            c.g[V0][0] = c.lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x14));
+                                                            if t {
+                                                                break 'b_2aeeb8;
+                                                            } else {
+                                                                c.cycles += 2;
+                                                                let t = true;
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[S0][0] as u32)
+                                                                        .wrapping_add(0x6c));
+                                                                if t {
+                                                                    break 'b_2aef3c;
+                                                                } else {
+                                                                    break 'b_2aee70;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    c.cycles += 18;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                                    c.g[V0][0] = sx((c.g[S1][0] as u32)
+                                                        .wrapping_add(c.g[V0][0] as u32));
+                                                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                                                    c.sw(
+                                                        (c.g[V0][0] as u32).wrapping_add(0x8),
+                                                        c.g[V1][0],
+                                                    );
+                                                    c.g[A1][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x54));
+                                                    c.g[A1][0] = sx((c.g[S1][0] as u32)
+                                                        .wrapping_add(c.g[A1][0] as u32));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x50));
+                                                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                                                    c.g[V1][0] = sx((c.g[V1][0] as u32)
+                                                        .wrapping_add(c.g[V0][0] as u32));
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x54),
+                                                        c.g[V1][0],
+                                                    );
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x58),
+                                                        0u64,
+                                                    );
+                                                    c.g[A0][0] = sx((c.g[A0][0] as u32)
+                                                        .wrapping_add(c.g[V0][0] as u32));
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x50),
+                                                        c.g[A0][0],
+                                                    );
+                                                    c.g[V0][0] =
+                                                        c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                                                    let t = true;
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x5c),
+                                                        c.g[V0][0],
+                                                    );
+                                                    if t {
+                                                        break 'b_2aef48;
+                                                    } else {
+                                                        break 'b_2aeeb8;
+                                                    }
+                                                }
+                                                'b_2aeee8: {
+                                                    'b_2aeee4: {
+                                                        c.cycles += 4;
+                                                        c.g[V1][0] = c
+                                                            .lw((c.g[SP][0] as u32)
+                                                                .wrapping_add(0x18));
+                                                        c.sw(c.g[S4][0] as u32, c.g[V0][0]);
+                                                        let t = c.g[S4][0] != 0u64;
+                                                        c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                                                        if t {
+                                                            break 'b_2aeee4;
+                                                        } else {
+                                                            c.cycles += 2;
+                                                            if c.g[S2][0] != 0u64 {
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[S0][0] as u32)
+                                                                        .wrapping_add(0x6c));
+                                                                break 'b_2aeee8;
+                                                            } else {
+                                                                c.cycles += 5;
+                                                                c.sw(c.g[S2][0] as u32, 0u64);
+                                                                c.g[V0][0] = c
+                                                                    .lw((c.g[S0][0] as u32)
+                                                                        .wrapping_add(0x6c));
+                                                                c.g[V0][0] = sx((c.g[S1][0]
+                                                                    as u32)
+                                                                    .wrapping_add(
+                                                                        c.g[V0][0] as u32,
+                                                                    ));
+                                                                c.g[V1][0] =
+                                                                    c.lw(c.g[V0][0] as u32);
+                                                                c.sw(c.g[S2][0] as u32, c.g[V1][0]);
+                                                                break 'b_2aeee4;
+                                                            }
+                                                        }
+                                                    }
+                                                    c.cycles += 1;
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                                    break 'b_2aeee8;
+                                                }
+                                                'b_2aef28: {
+                                                    c.cycles += 16;
+                                                    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                                                    c.g[V0][0] = sx((c.g[S1][0] as u32)
+                                                        .wrapping_add(c.g[V0][0] as u32));
+                                                    c.sw(
+                                                        (c.g[V0][0] as u32).wrapping_add(0x8),
+                                                        c.g[V1][0],
+                                                    );
+                                                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x54));
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[S0][0] as u32).wrapping_add(0x50));
+                                                    c.g[V0][0] = sx((c.g[V0][0] as u32)
+                                                        .wrapping_add(c.g[A1][0] as u32));
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x54),
+                                                        c.g[V0][0],
+                                                    );
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                                    c.g[A0][0] = sx((c.g[A0][0] as u32)
+                                                        .wrapping_add(c.g[V1][0] as u32));
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x50),
+                                                        c.g[A0][0],
+                                                    );
+                                                    c.g[V0][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x1c));
+                                                    c.g[V1][0] = c
+                                                        .lw((c.g[SP][0] as u32).wrapping_add(0x18));
+                                                    c.g[V0][0] = ((c.g[V0][0] as i64)
+                                                        < (c.g[V1][0] as i64))
+                                                        as u64;
+                                                    if c.g[V0][0] != 0u64 {
+                                                        c.sw(
+                                                            (c.g[S0][0] as u32).wrapping_add(0x58),
+                                                            0u64,
+                                                        );
+                                                        break 'b_2aef28;
+                                                    } else {
+                                                        break 'b_2aef28;
+                                                    }
+                                                }
+                                                c.cycles += 5;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                                                c.g[V0][0] = sx((c.g[S1][0] as u32)
+                                                    .wrapping_add(c.g[V0][0] as u32));
+                                                c.g[V1][0] =
+                                                    c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                                                let t = true;
+                                                c.sw(
+                                                    (c.g[S0][0] as u32).wrapping_add(0x5c),
+                                                    c.g[V1][0],
+                                                );
+                                                if t {
+                                                    break 'b_2aef48;
+                                                } else {
+                                                    break 'b_2aef3c;
+                                                }
+                                            }
+                                            c.cycles += 3;
+                                            c.g[V1][0] = 0xffffffffffffffff;
+                                            c.g[V0][0] =
+                                                sx((c.g[S1][0] as u32)
+                                                    .wrapping_add(c.g[V0][0] as u32));
+                                            c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                                            break 'b_2aef48;
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x66));
+                                        break 'b_2aef4c;
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                                c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x002aee10);
+                                    }
+                                    continue 'l_2aee10;
+                                } else {
+                                    break 'b_2aef5c;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[RA][0] = sx(0x002aef64);
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    call_ptr(c, 0x003b7f18, 0x002aef64)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                    break 'b_2aef68;
+                }
+                c.cycles += 1;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x48), c.g[S4][0]);
+                break 'b_2aef6c;
+            }
+            c.cycles += 5;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), c.g[S2][0]);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x60), c.g[S5][0]);
+            c.g[RA][0] = sx(0x002aef7c);
+            c.sb((c.g[S0][0] as u32).wrapping_add(0x65), 0u64);
+            call_ptr(c, 0x003b58d8, 0x002aef7c)?;
+            c.g[V0][0] = 0u64;
+            break 'b_2aef80;
+        }
+        c.cycles += 9;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x120));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x110));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x100));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0xf0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xc0));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x130));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `int MusicPlayer_CreateStream(SNDPLAYOPTS* opts, a1, a2, a3, t0)` (0x2b1780): pushes a
+/// new bank-monitor instance on the music system's bank manager (default play
+/// options, zeroed per-instance fields, delay 100/90/50, max volume 127, close on
+/// end), copies `*opts` into its level slot, creates stream 2 and returns its
+/// handle. Straight-line transcription of the generated body.
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_mut,
+    unreachable_code,
+    unused_variables
+)]
+pub fn music_player_create_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 188;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x6fc));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = 0x18;
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.g[A3][0];
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S4][0] = c.g[T0][0];
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S5][0] = c.g[A2][0];
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S6][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S7][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[A1][0] = 0u64;
+        c.g[A2][0] = 0x8;
+        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+        c.g[S0][0] = c.lw(c.g[V1][0] as u32);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1d8));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1f4), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.mult(0, 3, 3, 18);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.ldl(2, (c.g[S0][0] as u32).wrapping_add(0x1e3));
+        c.ldr(2, (c.g[S0][0] as u32).wrapping_add(0x1dc));
+        c.ldl(4, (c.g[S0][0] as u32).wrapping_add(0x1eb));
+        c.ldr(4, (c.g[S0][0] as u32).wrapping_add(0x1e4));
+        c.ldl(7, (c.g[S0][0] as u32).wrapping_add(0x1f3));
+        c.ldr(7, (c.g[S0][0] as u32).wrapping_add(0x1ec));
+        c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
+        c.sdr(2, c.g[V1][0] as u32);
+        c.sdl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
+        c.sdr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
+        c.sdl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
+        c.sdr(7, (c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x1fc), 0u64);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x20));
+        c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+        c.mult(0, 4, 4, 18);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+        c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 3);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[RA][0] = sx(0x002b1898);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+        call_ptr(c, 0x00416210, 0x002b1898)?;
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[A0][0] = 0x64;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x60));
+        c.g[T3][0] = 0x5a;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[T4][0] = 0x32;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[T5][0] = 0x7f;
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[T6][0] = 0x1;
+        c.g[A3][0] = c.g[S3][0];
+        c.g[T0][0] = c.g[S4][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[T1][0] = c.g[S6][0];
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
+        c.g[T2][0] = c.g[S5][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[A2][0] = 0u64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A1][0] = 0x2;
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x68));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6c));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, c.g[A0][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[T4][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x80));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, 0u64);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, 0u64);
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x78));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.sw(c.g[V0][0] as u32, c.g[T5][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.sw(c.g[V1][0] as u32, c.g[T6][0]);
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x6fc));
+        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+        c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
+        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f8));
+        c.mult(0, 2, 2, 18);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.ldl(11, (c.g[S7][0] as u32).wrapping_add(0x7));
+        c.ldr(11, c.g[S7][0] as u32);
+        c.ldl(12, (c.g[S7][0] as u32).wrapping_add(0xf));
+        c.ldr(12, (c.g[S7][0] as u32).wrapping_add(0x8));
+        c.ldl(2, (c.g[S7][0] as u32).wrapping_add(0x17));
+        c.ldr(2, (c.g[S7][0] as u32).wrapping_add(0x10));
+        c.sdl(11, (c.g[V1][0] as u32).wrapping_add(0x7));
+        c.sdr(11, c.g[V1][0] as u32);
+        c.sdl(12, (c.g[V1][0] as u32).wrapping_add(0xf));
+        c.sdr(12, (c.g[V1][0] as u32).wrapping_add(0x8));
+        c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0x17));
+        c.sdr(2, (c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x6fc));
+        c.g[RA][0] = sx(0x002b1a20);
+        c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+        Callee {
+            addr: 0x002aa870,
+            f: ee::s08::StreamArray_CreateStreamEx,
+        }
+        .call(c, 0x002b1a20)?;
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x6fc));
+        c.g[A1][0] = 0x2;
+        c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+        c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1f4));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+        c.sw((c.g[A0][0] as u32).wrapping_add(0x1f4), c.g[V0][0]);
+        c.g[RA][0] = sx(0x002b1a44);
+        c.g[A0][0] = c.lw(c.g[A2][0] as u32);
+        Callee {
+            addr: 0x002ab128,
+            f: ee::s08::StreamArray_GetStreamHandle,
+        }
+        .call(c, 0x002b1a44)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `void MusicPlayer_dtor(MusicPlayer* self, int flags)` (0x2b3398): resets the vtables of
+/// the stream system's bank manager and sound system (rebased on `self` when
+/// `flags == 0`), destroys the song configurations (virtual dtor, flag 3), frees
+/// the MPF file and song instance, clears `gMusicSys`, then by `flags` runs the
+/// sub-object destructors (bit 1) and `operator_delete` (bit 0). Transcription of
+/// the generated body (labels kept).
+#[allow(
+    unused_labels,
+    unused_assignments,
+    unused_mut,
+    unreachable_code,
+    unused_variables
+)]
+pub fn music_player_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_2b34bc: {
+            c.cycles += 29;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xc0));
+            c.g[V0][0] = 0x480000;
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x38f8));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+            c.g[S2][0] = c.g[A0][0];
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xa0));
+            c.g[A3][0] = 0x480000;
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
+            c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x3928));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[A0][0] = 0x480000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3b48));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x5440), c.g[V0][0]);
+            c.g[T0][0] = 0x480000;
+            c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+            c.g[T5][0] = sx((c.g[T0][0] as u32).wrapping_add(0x3948));
+            c.g[T6][0] = c.g[A1][0];
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[A2][0]);
+            c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            c.sw((c.g[V1][0] as u32).wrapping_add(0xab0), c.g[A0][0]);
+            c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            let t = c.g[T6][0] != 0u64;
+            c.sw((c.g[V1][0] as u32).wrapping_add(0x1d4), c.g[T5][0]);
+            if t {
+                break 'b_2b34bc;
+            } else {
+                c.cycles += 44;
+                c.g[A1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x3928));
+                c.g[T4][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+                c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                c.sd(c.g[SP][0] as u32, c.g[A1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x18), c.g[A0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                c.g[A0][0] = c.lhu((c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[T1][0] = c.ld((c.g[T0][0] as u32).wrapping_add(0x3948));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+                c.g[T2][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x8));
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[SP][0]);
+                c.g[T3][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x10));
+                c.g[A3][0] = c.lw(c.g[S2][0] as u32);
+                c.g[T0][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x18));
+                c.g[V1][0] = c.lw(c.g[A3][0] as u32);
+                c.g[A2][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x20));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1d8));
+                c.g[V1][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x30));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5448));
+                c.g[A1][0] = c.ld((c.g[T5][0] as u32).wrapping_add(0x28));
+                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[V1][0]);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[T1][0]);
+                c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x28), c.g[T2][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[T3][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x38), c.g[T0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[A2][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+                c.g[A0][0] = c.lhu((c.g[T5][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = c.lw(c.g[A3][0] as u32);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x1d4), c.g[T4][0]);
+                c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5450));
+                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.sh((c.g[SP][0] as u32).wrapping_add(0x28), c.g[A0][0]);
+                break 'b_2b34bc;
+            }
+        }
+        'b_2b350c: {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x3e4));
+            c.g[S4][0] = c.g[T6][0] & 0x1;
+            c.g[S1][0] = 0u64;
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[S3][0] = c.g[T6][0] & 0x2;
+            if t {
+                break 'b_2b350c;
+            } else {
+                c.cycles += 2;
+                c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));
+                'l_2b34d8: loop {
+                    'b_2b34f8: {
+                        c.cycles += 3;
+                        c.g[A2][0] = c.lw(c.g[S0][0] as u32);
+                        let t = c.g[A2][0] == 0u64;
+                        c.g[A1][0] = 0x3;
+                        if t {
+                            break 'b_2b34f8;
+                        } else {
+                            c.cycles += 5;
+                            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xa8));
+                            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                            let t = c.g[V1][0] as u32;
+                            c.g[RA][0] = sx(0x002b34f8);
+                            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                            call_ptr(c, t, 0x002b34f8)?;
+                            break 'b_2b34f8;
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x3e4));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002b34d8);
+                        }
+                        continue 'l_2b34d8;
+                    } else {
+                        break 'b_2b350c;
+                    }
+                }
+            }
+        }
+        'b_2b3524: {
+            c.cycles += 3;
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x5434));
+            if c.g[A0][0] == 0u64 {
+                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x408));
+                break 'b_2b3524;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x002b3520);
+                call_ptr(c, 0x00317e98, 0x002b3520)?;
+                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x408));
+                break 'b_2b3524;
+            }
+        }
+        'b_2b3534: {
+            c.cycles += 2;
+            let t = c.g[A0][0] == 0u64;
+
+            if t {
+                break 'b_2b3534;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x002b3534);
+                c.g[A1][0] = 0x3;
+                Callee {
+                    addr: 0x002b1f78,
+                    f: ee::s08::SongInstance_dtor,
+                }
+                .call(c, 0x002b3534)?;
+                break 'b_2b3534;
+            }
+        }
+        'b_2b356c: {
+            c.cycles += 2;
+            let t = c.g[S3][0] == 0u64;
+            c.sw((c.g[GP][0] as u32).wrapping_add(0x6fc), 0u64);
+            if t {
+                break 'b_2b356c;
+            } else {
+                c.cycles += 12;
+                c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                c.g[RA][0] = sx(0x002b3548);
+                c.g[A1][0] = 0u64;
+                Callee {
+                    addr: 0x002aa648,
+                    f: ee::s08::StreamArray_dtor,
+                }
+                .call(c, 0x002b3548)?;
+                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x002b3558);
+                c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+                call_ptr(c, 0x0028bb10, 0x002b3558)?;
+                c.g[V1][0] = c.lw(c.g[S2][0] as u32);
+                c.g[A1][0] = 0u64;
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[RA][0] = sx(0x002b356c);
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1d8));
+                Callee {
+                    addr: 0x002adee8,
+                    f: ee::s08::SoundManagerRef_dtor,
+                }
+                .call(c, 0x002b356c)?;
+                break 'b_2b356c;
+            }
+        }
+        'b_2b3580: {
+            c.cycles += 2;
+            let t = c.g[S4][0] == 0u64;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+            if t {
+                break 'b_2b3580;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x002b357c);
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x00317e50, 0x002b357c)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                break 'b_2b3580;
+            }
+        }
+        c.cycles += 7;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `void BankMonitor_dtor(BankMonitor* self, int flags)` (0x2ace40): with a
+/// non-zero flag the monitor's instance table (`self+0x8ec`, count in the
+/// word before it) is destroyed from the last instance down to the first,
+/// then the base and the sound manager reference, when `flags` asks for them.
+/// With a zero flag the monitor's vtable slot is set and the sound
+/// manager's table is cleared instead.
+pub fn bank_monitor_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = 0x0048_0000;
+        frame.save(c, S1, 0x50);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3b48));
+        frame.save(c, S0, 0x60);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        c.g[A0][0] = 0x0048_0000;
+        frame.save(c, S3, 0x30);
+        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3b88));
+        frame.save_ra(c, 0x20);
+        c.g[T0][0] = c.g[A1][0];
+        let this = c.g[S1][0] as u32;
+        let stamp = c.g[V0][0];
+        Addr(this.wrapping_add(0x8d8)).sw(c, stamp);
+        c.g[V1][0] = Addr(this).lw(c);
+        let flags_zero = c.g[T0][0] == 0;
+        let obj = c.g[V1][0] as u32;
+        let a3 = c.g[A3][0];
+        Addr(obj.wrapping_add(4)).sw(c, a3);
+        if flags_zero {
+            c.cycles += 16;
+            c.g[A2][0] = Addr(c.g[A0][0] as u32).off(0x3b88).ld(c);
+            c.g[V0][0] = Addr(c.g[A3][0] as u32).off(8).ld(c);
+            c.g[V1][0] = Addr(c.g[A3][0] as u32).off(0x10).ld(c);
+            c.g[A0][0] = Addr(c.g[A3][0] as u32).off(0x18).ld(c);
+            c.g[A1][0] = Addr(this).lw(c);
+            let (v0_val, v1_val, a0_val, a2_val) = (c.g[V0][0], c.g[V1][0], c.g[A0][0], c.g[A2][0]);
+            Addr(frame.at(c, 8)).sd(c, v0_val);
+            Addr(frame.at(c, 0x10)).sd(c, v1_val);
+            Addr(frame.at(c, 0)).sd(c, a2_val);
+            Addr(frame.at(c, 0x18)).sd(c, a0_val);
+            let sp_now = c.g[SP][0];
+            Addr((c.g[A1][0] as u32).wrapping_add(4)).sw(c, sp_now);
+            c.g[V1][0] = Addr(c.g[A3][0] as u32).off(8).lhu(c);
+            c.g[V0][0] = Addr(this).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8f0));
+            c.g[V0][0] = sx(this.wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let half = c.g[V1][0];
+            Addr(frame.at(c, 8)).sh(c, half);
+        }
+        // 'b_2acf14: the instance table.
+        c.cycles += 4;
+        c.g[A1][0] = Addr(this.wrapping_add(0x8ec)).lw(c);
+        c.g[S3][0] = c.g[T0][0] & 0x1;
+        let no_table = c.g[A1][0] == 0;
+        c.g[S2][0] = c.g[T0][0] & 0x2;
+        if !no_table {
+            c.cycles += 6;
+            c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_sub(0x10)).lw(c);
+            c.g[V0][0] = 0xc0;
+            // a0 = v1 * v0 (the instance count times the instance size)
+            c.mult(0, A0, V1, V0);
+            c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            if c.g[A1][0] == c.g[S0][0] {
+                c.g[A0][0] = Addr(this.wrapping_add(0x8ec)).lw(c);
+            } else {
+                c.cycles += 2;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc0));
+                loop {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0;
+                    c.g[RA][0] = sx(0x002a_cefc);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x002a_ba18,
+                        f: ee::s08::f_002aba18,
+                    }
+                    .call(c, 0x002a_cefc)?;
+                    c.g[V0][0] = Addr(this.wrapping_add(0x8ec)).lw(c);
+                    if c.g[V0][0] != c.g[S0][0] {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc0));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002a_cef0);
+                        }
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = Addr(this.wrapping_add(0x8ec)).lw(c);
+                        break;
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[RA][0] = sx(0x002a_cf14);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x10));
+            call_ptr(c, 0x0031_7e98, 0x002a_cf14)?;
+        }
+        // 'b_2acf34: the base class.
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[RA][0] = sx(0x002a_cf20);
+        c.g[A1][0] = 0;
+        Callee {
+            addr: 0x002a_dac8,
+            f: ee::s08::f_002adac8,
+        }
+        .call(c, 0x002a_cf20)?;
+        if c.g[S2][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(this).lw(c);
+            c.g[RA][0] = sx(0x002a_cf34);
+            c.g[A1][0] = 0;
+            Callee {
+                addr: 0x002a_dee8,
+                f: ee::s08::f_002adee8,
+            }
+            .call(c, 0x002a_cf34)?;
+        }
+        // 'b_2acf48: the optional table call.
+        c.cycles += 2;
+        frame.restore(c, S0, 0x60);
+        if c.g[S3][0] != 0 {
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x002a_cf44);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x002a_cf44)?;
+            frame.restore(c, S0, 0x60);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void BankMonitor_FadeOutHandle(BankMonitor* self, float secs)`
+/// (0x2ad358): find the instance playing the handle; if there is one, fade
+/// its volume out over `secs` (the same float, kept in f20).
+pub fn bank_monitor_fade_out_handle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save_fpr(c, 20, 0x10);
+        frame.save_ra(c, 0);
+        c.g[RA][0] = sx(0x002a_d36c);
+        c.mov_s(20, 12);
+        Callee {
+            addr: 0x002a_d550,
+            f: ee::s08::f_002ad550,
+        }
+        .call(c, 0x002a_d36c)?;
+        let missing = c.g[V0][0] == 0;
+        c.g[A0][0] = c.g[V0][0];
+        if !missing {
+            c.cycles += 4;
+            c.mov_s(12, 20);
+            c.g[A1][0] = u64::MAX;
+            c.g[RA][0] = sx(0x002a_d384);
+            c.g[A2][0] = 0;
+            Callee {
+                addr: 0x002a_cb80,
+                f: ee::s08::f_002acb80,
+            }
+            .call(c, 0x002a_d384)?;
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int BankMonitor_CountPlaying(BankMonitor* self)` (0x2ad730): the number
+/// of instances (of the 64 slots) whose handle at +0x8 is set and whose
+/// `BankMonitorInstance_PollFree` is reached busy.
+pub fn bank_monitor_count_playing(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = 0;
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = 0x3f;
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x8ec)).lw(c);
+            c.g[RA][0] = sx(0x002a_d764);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+            Callee {
+                addr: 0x002a_bb80,
+                f: ee::s08::f_002abb80,
+            }
+            .call(c, 0x002a_d764)?;
+            let busy = c.g[V0][0] != 0;
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(1));
+            if !busy {
+                c.cycles += 5;
+                c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x8ec)).lw(c);
+                c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(8)).lw(c);
+                if c.g[V1][0] != 0 {
+                    c.g[S1][0] = c.g[A0][0];
+                }
+            }
+            c.cycles += 2;
+            let more = (c.g[S3][0] as i64) >= 0;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc0));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002a_d758);
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int BankMonitor_CountActive(BankMonitor* self)` (0x2ad7a8): the number
+/// of the 64 instance slots whose `BankMonitorInstance_PollFree` returns 0
+/// (free).
+pub fn bank_monitor_count_active(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = 0;
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0x3f;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A0][0];
+        loop {
+            c.cycles += 8;
+            c.g[A0][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x8ec)).lw(c);
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+            c.g[RA][0] = sx(0x002a_d7e0);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+            Callee {
+                addr: 0x002a_bb80,
+                f: ee::s08::f_002abb80,
+            }
+            .call(c, 0x002a_d7e0)?;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0xc0));
+            c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+            let more = (c.g[S1][0] as i64) >= 0;
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = c.g[V1][0];
+            }
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002a_d7d0);
+            }
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `D_004D3E98`: the sound paths' player table (`tPathPlayer*[]`), 4-byte slots.
+#[cfg(test)]
+pub(crate) const PATH_PLAYER_TABLE: u32 = 0x004d_3e98;
+
+/// `PATH_PlatRefreshStatus` (0x2aefa8): refreshes a dirty player.
+pub(crate) const PATH_PLAT_REFRESH_STATUS: Callee = Callee {
+    addr: 0x002a_efa8,
+    f: ee::s08::f_002aefa8,
+};
+
+/// `SndPlayParams_dtor` (0x2a97c0).
+pub(crate) const SND_PLAY_PARAMS_DTOR: Callee = Callee {
+    addr: 0x002a_97c0,
+    f: ee::s08::f_002a97c0,
+};
+
+/// `BankMonitor_TimerDtor` (0x2ad860): one monitor instance's destructor.
+pub(crate) const BANK_MONITOR_TIMER_DTOR: Callee = Callee {
+    addr: 0x002a_d860,
+    f: ee::s08::f_002ad860,
+};
+
+/// The sound system's destructor (`cSoundSys` dtor, 0x2adee8).
+pub(crate) const SOUND_SYS_DTOR: Callee = Callee {
+    addr: 0x002a_dee8,
+    f: ee::s08::f_002adee8,
+};
+
+/// `BankMonitor` layout: the first word is its sound system (`mpVSoundSys`);
+/// the monitor instances run from `+0x98` up to `+0x8d8` in 0x2c steps
+/// (48 of them); `mVtbl` is at `+0x8d8`.
+pub(crate) const BM_INSTANCES: u32 = 0x98;
+
+pub(crate) const BM_INSTANCES_END: u32 = 0x8d8;
+
+pub(crate) const BM_INSTANCE_SIZE: u32 = 0x2c;
+
+/// `gMonitor` (gp + 0x688).
+pub(crate) const BM_G_MONITOR: u32 = 0x688;
+
+/// `void BankMonitor_BaseDtor(BankMonitor* self, int flags)` (0x2adac8):
+/// the sound system's vtable is pointed at the bank monitor's (on flags 0, a
+/// copy on the stack with its `this` adjusted), the 100 Hz client is removed,
+/// the monitor instances are destroyed from the end down, then the play
+/// options (`SndPlayParams_dtor`), the sound system if flags bit 1 is set, and
+/// the object itself (`__builtin_delete`) if bit 0 is set.
+pub fn bank_monitor_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = 0x48_0000;
+        frame.save(c, S0, 0x80);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3ba8));
+        frame.save(c, S2, 0x60);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S5, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x70);
+        c.g[A0][0] = 0x48_0000;
+        frame.save(c, S3, 0x50);
+        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3bc0));
+        frame.save(c, S4, 0x40);
+        c.g[S5][0] = sx((c.g[S2][0] as u32).wrapping_add(BM_INSTANCES_END));
+        frame.save_ra(c, 0x20);
+        let this = c.g[S2][0] as u32;
+        let monitor_vtbl = c.g[V0][0]; // cMonitor_vtbl (0x483ba8)
+        Addr(this.wrapping_add(BM_INSTANCES_END)).sw(c, monitor_vtbl);
+        c.g[V1][0] = Addr(this).lw(c);
+        let sound_sys_vtbl = c.g[A3][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, sound_sys_vtbl);
+        if c.g[S0][0] == 0 {
+            // flags == 0: the sound system's vtable is a stack copy whose
+            // entry 1 has `this` adjusted by the offset of the monitor.
+            c.cycles += 16;
+            c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x3bc0)).ld(c);
+            c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x8)).ld(c);
+            c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x10)).ld(c);
+            c.g[A0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x18)).ld(c);
+            c.g[A1][0] = Addr(this).lw(c);
+            let (v0, v1, a2, a0) = (c.g[V0][0], c.g[V1][0], c.g[A2][0], c.g[A0][0]);
+            Addr(frame.at(c, 0x8)).sd(c, v0);
+            Addr(frame.at(c, 0x10)).sd(c, v1);
+            Addr(frame.at(c, 0)).sd(c, a2);
+            Addr(frame.at(c, 0x18)).sd(c, a0);
+            let sp_val = c.g[SP][0];
+            Addr((c.g[A1][0] as u32).wrapping_add(0x4)).sw(c, sp_val);
+            c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x8)).lhu(c);
+            c.g[V0][0] = Addr(this).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8dc));
+            c.g[V0][0] = sx(this.wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let delta = c.g[V1][0];
+            Addr(frame.at(c, 0x8)).sh(c, delta);
+        }
+
+        // The 100 Hz client, then the monitor instances (end first).
+        c.cycles += 8;
+        c.g[A0][0] = 0x2b_0000;
+        c.g[S4][0] = c.g[S0][0] & 0x1;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2668));
+        c.g[S1][0] = sx(this.wrapping_add(BM_INSTANCES));
+        call_ptr(c, 0x003b_5948, 0x002a_db68)?;
+        c.g[S3][0] = c.g[S0][0] & 0x2;
+        let instances_null = c.g[S1][0] == 0;
+        Addr((c.g[GP][0] as u32).wrapping_add(BM_G_MONITOR)).sw(c, 0);
+        // `tail` is the fall-through of the instance block: a0 = self, +1 cycle.
+        let mut tail = true;
+        if !instances_null {
+            c.cycles += 3;
+            c.g[S0][0] = c.g[S5][0];
+            let empty = c.g[S1][0] == c.g[S0][0];
+            c.g[A0][0] = c.g[S2][0];
+            if empty {
+                tail = false;
+            } else {
+                c.cycles += 2;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(BM_INSTANCE_SIZE));
+                loop {
+                    c.cycles += 5;
+                    c.g[A1][0] = 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    BANK_MONITOR_TIMER_DTOR.call(c, 0x002a_db94)?;
+                    if c.g[S1][0] != c.g[S0][0] {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(BM_INSTANCE_SIZE));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002a_db88);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S2][0];
+        }
+
+        // The play options, then the sound system (flags bit 1).
+        c.cycles += 4;
+        c.g[A1][0] = 0;
+        SND_PLAY_PARAMS_DTOR.call(c, 0x002a_dba8)?;
+        if c.g[S3][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(this).lw(c);
+            c.g[A1][0] = 0;
+            SOUND_SYS_DTOR.call(c, 0x002a_dbbc)?;
+        }
+
+        // The object itself (flags bit 0): `__builtin_delete(self)`.
+        c.cycles += 2;
+        let no_delete = c.g[S4][0] == 0;
+        frame.restore(c, S0, 0x80);
+        if !no_delete {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0031_7e50, 0x002a_dbcc)?;
+            frame.restore(c, S0, 0x80);
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SoundManagerRef_StopAll(SoundManagerRef* self, int a)` (0x2adf80):
+/// calls the object's vtable slot `+0x14` (adjusted by its `+0x10` delta) with
+/// the object as `a0`.
+pub fn sound_manager_ref_stop_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[V1][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x10)).lh(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x14)).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x002a_dfa0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void *PATH_PlatAlloc(int size)` (0x2adfc8): `size` bytes from the sound
+/// path allocator (`gp + 0x69c`, called with the name `str_pathxSND`, `size`,
+/// 0), or null when no allocator is set.
+pub fn path_plat_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x69c)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[V0][0] = 0;
+        if c.g[V1][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = 0x48_0000;
+            c.g[A2][0] = 0;
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3288));
+            call_ptr(c, target, 0x002a_dff0)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void PATH_PlatFree(void* block)` (0x2ae000): `MEM_Free`, the block passed
+/// through in `a0`.
+pub fn path_plat_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, 0x0025_23a8, 0x002a_e010)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PATH_PlatGetTrackPosition(int idx)` (0x2aea38): the player's buffered
+/// amount (`+0x50`), after refreshing it if it is dirty. A null player
+/// (`idx` slot empty) gives the address of its `+0x3e98` slot, as the generated
+/// body does (the read through it is the caller's problem).
+pub fn path_plat_get_track_position(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        c.g[V1][0] = 0x4d_0000;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[V1][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x3e98));
+        c.g[V0][0] = sx((c.g[S0][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x3e98));
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x65)).lb(c);
+            let clean = c.g[V0][0] == 0;
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x3e98));
+            if !clean {
+                c.cycles += 3;
+                c.g[A0][0] = 0;
+                PATH_PLAT_REFRESH_STATUS.call(c, 0x002a_ea80)?;
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x3e98));
+            }
+        }
+        c.cycles += 9;
+        c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        frame.restore(c, S0, 0x20);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        frame.restore(c, S1, 0x10);
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x50)).lw(c);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PATH_PlatFindQueuedById(int idx, int key)` (0x2aeb40): the position of
+/// the request whose handle (`+4`) is `key`, in the player's request list
+/// (`+0x6c`, 12-byte records, count `+0x66`), after refreshing the player if it
+/// is dirty; -8 when there is none. The list walk tests the count as signed.
+pub fn path_plat_find_queued_by_id(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x4d_0000;
+        frame.save(c, S1, 0x10);
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e98));
+        frame.save(c, S0, 0x20);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = Addr(c.g[A0][0] as u32).lw(c);
+        let null = c.g[S0][0] == 0;
+        c.g[S1][0] = c.g[A1][0];
+        // A clean player's count is read at once; otherwise (null or dirty)
+        // the count is read after the (dirty) refresh.
+        let mut count_read = false;
+        if !null {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x65)).lb(c);
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x66)).lb(c);
+                count_read = true;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = 0;
+                PATH_PLAT_REFRESH_STATUS.call(c, 0x002a_eb80)?;
+            }
+        }
+        if !count_read {
+            c.cycles += 1;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x66)).lb(c);
+        }
+
+        // The walk over the requests: found → v0 = its position (+8).
+        let mut found = false;
+        'walk: {
+            c.cycles += 2;
+            let no_requests = (c.g[V0][0] as i64) <= 0;
+            c.g[V1][0] = 0;
+            if no_requests {
+                break 'walk;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x6c)).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x4)).lw(c);
+                if c.g[V0][0] != c.g[S1][0] {
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x8)).lw(c);
+                    found = true;
+                    break 'walk;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002a_eb98);
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = 0xffff_ffff_ffff_fff8;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PATH_PlatGetTrackHandle(int idx)` (0x2af480): the player's word at
+/// `+0x14` (the reference calls it the dry level), or -8 for an empty slot.
+/// A leaf: no calls.
+pub fn path_plat_get_track_handle(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[V0][0] = 0x4d_0000;
+    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e98));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = Addr(c.g[A0][0] as u32).lw(c);
+    let empty = c.g[A0][0] == 0;
+    c.g[V0][0] = 0xffff_ffff_ffff_fff8;
+    if empty {
+        c.cycles += 2;
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x14)).lw(c);
+    }
+    abi::ret(c);
+}
+
+/// `int PATH_PlatSetAuxSend(int idx, int effectBus, int sendLevel)` (0x2af4e0):
+/// the player's send to `effectBus` at `sendLevel`, inside the sound critical
+/// section: the bank player's (`+0x64`) sends go through the bank function
+/// (0x3b88c8), the others through 0x3b8050; the level is kept at `+0x10`.
+/// Returns the send's result, or -8 for an empty slot.
+pub fn path_plat_set_aux_send_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x4d_0000;
+        frame.save(c, S1, 0x30);
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+        frame.save(c, S2, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e98));
+        frame.save(c, S3, 0x10);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A2][0];
+        c.g[S0][0] = Addr(c.g[A0][0] as u32).lw(c);
+        let null = c.g[S0][0] == 0;
+        c.g[S1][0] = 0xffff_ffff_ffff_fff8;
+        if !null {
+            c.cycles += 5;
+            call_ptr(c, 0x003b_58a0, 0x002a_f524)?;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x64)).lb(c);
+            let plain = c.g[V0][0] == 0;
+            c.g[A1][0] = c.g[S3][0];
+            let mut bank_send = false;
+            if !plain {
+                c.cycles += 5;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x003b_88c8, 0x002a_f53c)?;
+                bank_send = true;
+            }
+            if !bank_send {
+                c.cycles += 3;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x003b_8050, 0x002a_f550)?;
+            }
+            c.cycles += 3;
+            c.g[S1][0] = c.g[V0][0];
+            call_ptr(c, 0x003b_58d8, 0x002a_f558)?;
+            let level = c.g[S2][0];
+            Addr((c.g[S0][0] as u32).wrapping_add(0x10)).sw(c, level);
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `base + off` as a guest address (32-bit wrapping, as the generated code).
+pub(crate) fn speech_addr(base: u64, off: u32) -> Addr {
+    Addr((base as u32).wrapping_add(off))
+}
+
+/// `bool SpeechInstance_IsPlaying(SpeechInstance* self)` (0x2b07c0): whether the
+/// stream array (global at `gp+0x6c4`) reports this instance's stream as playing.
+pub fn speech_instance_is_playing(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = speech_addr(c.g[GP][0], 0x6c4).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = speech_addr(c.g[A0][0], 4).lw(c);
+        c.g[A0][0] = speech_addr(c.g[V0][0], 0).lw(c);
+        call_ptr(c, 0x002a_b028, 0x002b_07d8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void SpeechInstance_SetParam8c4(SpeechInstance* self, int v)` (0x2b07e8):
+/// stores `v` at `self+0x8c4`.
+pub fn speech_instance_set_param8c4(c: &mut Cpu) {
+    c.cycles += 2;
+    let v = c.g[A1][0];
+    speech_addr(c.g[A0][0], 0x8c4).sw(c, v);
+    ret(c);
+}
+
+/// `void SpeechInstance_SetParam8c8(SpeechInstance* self, int v)` (0x2b07f0):
+/// stores `v` at `self+0x8c8`.
+pub fn speech_instance_set_param8c8(c: &mut Cpu) {
+    c.cycles += 2;
+    let v = c.g[A1][0];
+    speech_addr(c.g[A0][0], 0x8c8).sw(c, v);
+    ret(c);
+}
+
+/// `void SpeechSystem_LoadSpeechInf(SpeechSystem* self, int index)` (0x2b0f10):
+/// `SpeechInstance_LoadSpeechInf(inst, index, 0)` on `self->instances[index]`,
+/// unless that instance pointer is null.
+pub fn speech_system_load_speech_inf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = speech_addr(c.g[A0][0], 4).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[A0][0] = speech_addr(c.g[V0][0], 0).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x002b_0088, 0x002b_0f38)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void SpeechSystem_SetInstanceParam8c4(SpeechSystem* self, int index, int v)`
+/// (0x2b0fe8): `SpeechInstance_SetParam8c4(inst, v)` on `self->instances[index]`,
+/// unless that instance pointer is null.
+pub fn speech_system_set_instance_param8c4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = speech_addr(c.g[A0][0], 4).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = speech_addr(c.g[A1][0], 0).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[A2][0];
+            call_ptr(c, 0x002b_07e8, 0x002b_1010)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cSpeechInstance::~cSpeechInstance` (0x2afb38; a0 = self, a1 = flags, bit 0
+/// frees the object through `__builtin_delete`). Destroys the bank objects
+/// (count at `+0xf0`, pointers at `+0xf4`), the stream at `gp+0x6c4`, the
+/// per-entry pointer pairs at `+0x8d4` / `+0xd0` / `+0xcc` (count `+0xec`) and
+/// updates the counter at `gp+0x6c8`.
+pub fn speech_instance_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = 0;
+        c.g[S3][0] = c.g[A0][0];
+        c.g[V0][0] = speech_addr(c.g[S3][0], 0xf0).lw(c);
+        c.g[S2][0] = c.g[A1][0];
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_add(0xf4));
+            // Bank loop: destroy each bank object.
+            loop {
+                c.cycles += 3;
+                c.g[A0][0] = speech_addr(c.g[S1][0], 0).lw(c);
+                if c.g[A0][0] == 0 {
+                    c.g[V0][0] = speech_addr(c.g[S3][0], 0xf0).lw(c);
+                } else {
+                    c.cycles += 3;
+                    c.g[A1][0] = 3;
+                    call_ptr(c, 0x002a_f900, 0x002a_fb94)?;
+                    c.g[V0][0] = speech_addr(c.g[S3][0], 0xf0).lw(c);
+                }
+                c.cycles += 4;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                let more = (c.g[S0][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002a_fb80);
+                }
+            }
+        }
+        // 'b_2afc38: the counter at gp+0x6c8 and the pointer-pair tables.
+        c.cycles += 8;
+        c.g[V0][0] = speech_addr(c.g[GP][0], 0x6c8).lw(c);
+        c.g[FP][0] = c.g[S2][0] & 1;
+        c.g[V1][0] = speech_addr(c.g[S3][0], 0xf0).lw(c);
+        c.g[S0][0] = 0;
+        c.g[A0][0] = speech_addr(c.g[S3][0], 0xec).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        let entries = (c.g[A0][0] as i64) > 0;
+        let counter = c.g[V0][0];
+        speech_addr(c.g[GP][0], 0x6c8).sw(c, counter);
+        if entries {
+            c.cycles += 4;
+            c.g[S7][0] = sx((c.g[S3][0] as u32).wrapping_add(0x8d4));
+            c.g[S6][0] = sx((c.g[S3][0] as u32).wrapping_add(0xd0));
+            c.g[S5][0] = sx((c.g[S3][0] as u32).wrapping_add(0xcc));
+            c.g[S2][0] = sx((c.g[S0][0] as u32) << 3);
+            // Entry loop: free the two pointers of each entry.
+            loop {
+                c.cycles += 4;
+                c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                c.g[S1][0] = 1;
+                loop {
+                    c.cycles += 3;
+                    c.g[A0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+                    let null = c.g[A0][0] == 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+                    if !null {
+                        c.cycles += 2;
+                        call_ptr(c, 0x0025_23a8, 0x002a_fbfc)?;
+                    }
+                    c.cycles += 2;
+                    let more = (c.g[S1][0] as i64) >= 0;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002a_fbe8);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                // 'b_2afc24: the second pointer of the entry, then clear both slots.
+                c.cycles += 4;
+                c.g[S1][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[V0][0] = speech_addr(c.g[S1][0], 0).lw(c);
+                let zero = c.g[V0][0] == 0;
+                c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                if !zero {
+                    c.cycles += 4;
+                    c.g[A0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+                    call_ptr(c, 0x0025_23a8, 0x002a_fc1c)?;
+                    speech_addr(c.g[S1][0], 0).sw(c, 0);
+                    speech_addr(c.g[S0][0], 0).sw(c, 0);
+                }
+                c.cycles += 5;
+                c.g[V0][0] = speech_addr(c.g[S3][0], 0xec).lw(c);
+                c.g[S0][0] = c.g[S4][0];
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S2][0] = sx((c.g[S0][0] as u32) << 3);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002a_fbd8);
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        // 'b_2afc5c: the stream, then the object itself when a1 & 1.
+        c.cycles += 6;
+        c.g[V0][0] = speech_addr(c.g[GP][0], 0x6c4).lw(c);
+        c.g[A1][0] = speech_addr(c.g[S3][0], 4).lw(c);
+        c.g[A0][0] = speech_addr(c.g[V0][0], 0).lw(c);
+        call_ptr(c, 0x002a_abd0, 0x002a_fc48)?;
+        let flag_clear = c.g[FP][0] == 0;
+        frame.restore(c, S0, 0x90);
+        if !flag_clear {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, 0x0031_7e50, 0x002a_fc58)?;
+            frame.restore(c, S0, 0x90);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cSpeechSys::~cSpeechSys` (0x2b0ae8; a0 = self, a1 = flags: bit 1 destroys
+/// the stream array, the bank manager and the sound manager reference; bit 0
+/// frees the object). When a1 is zero, the vtable words of the system and of
+/// its sub-objects are (re)written first.
+pub fn speech_system_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = 0x0048_0000;
+        frame.save(c, S0, 0x80);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3870));
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x60);
+        c.g[A3][0] = 0x0048_0000;
+        let vt = c.g[V0][0];
+        speech_addr(c.g[S0][0], 0x1bc).sw(c, vt);
+        c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x38a0));
+        c.g[V1][0] = speech_addr(c.g[S0][0], 0).lw(c);
+        c.g[A0][0] = 0x0048_0000;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3b48));
+        c.g[T0][0] = 0x0048_0000;
+        c.g[V0][0] = speech_addr(c.g[V1][0], 0).lw(c);
+        c.g[T5][0] = sx((c.g[T0][0] as u32).wrapping_add(0x38c0));
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V1][0] = speech_addr(c.g[V0][0], 0x1d8).lw(c);
+        let a2 = c.g[A2][0];
+        speech_addr(c.g[V1][0], 4).sw(c, a2);
+        c.g[V0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+        c.g[V1][0] = speech_addr(c.g[V0][0], 0).lw(c);
+        let a0 = c.g[A0][0];
+        speech_addr(c.g[V1][0], 0xab0).sw(c, a0);
+        c.g[V0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+        c.g[V1][0] = speech_addr(c.g[V0][0], 0).lw(c);
+        let t5 = c.g[T5][0];
+        speech_addr(c.g[V1][0], 0x1d4).sw(c, t5);
+        if c.g[S1][0] == 0 {
+            c.cycles += 44;
+            c.g[A1][0] = speech_addr(c.g[A3][0], 0x38a0).ld(c);
+            c.g[T4][0] = sx(sp(c).wrapping_add(0x20));
+            c.g[V1][0] = speech_addr(c.g[A2][0], 0x10).ld(c);
+            c.g[A0][0] = speech_addr(c.g[A2][0], 0x18).ld(c);
+            c.g[V0][0] = speech_addr(c.g[A2][0], 0x8).ld(c);
+            let a1 = c.g[A1][0];
+            speech_addr(c.g[SP][0], 0).sd(c, a1);
+            let a0 = c.g[A0][0];
+            speech_addr(c.g[SP][0], 0x18).sd(c, a0);
+            let v1 = c.g[V1][0];
+            speech_addr(c.g[SP][0], 0x10).sd(c, v1);
+            let v0 = c.g[V0][0];
+            speech_addr(c.g[SP][0], 0x8).sd(c, v0);
+            c.g[V0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+            c.g[A0][0] = speech_addr(c.g[A2][0], 0x8).lhu(c);
+            c.g[V1][0] = speech_addr(c.g[V0][0], 0).lw(c);
+            c.g[T1][0] = speech_addr(c.g[T0][0], 0x38c0).ld(c);
+            c.g[V0][0] = speech_addr(c.g[V1][0], 0x1d8).lw(c);
+            c.g[T2][0] = speech_addr(c.g[T5][0], 8).ld(c);
+            let spv = c.g[SP][0];
+            speech_addr(c.g[V0][0], 4).sw(c, spv);
+            c.g[T3][0] = speech_addr(c.g[T5][0], 0x10).ld(c);
+            c.g[A3][0] = speech_addr(c.g[S0][0], 0).lw(c);
+            c.g[T0][0] = speech_addr(c.g[T5][0], 0x18).ld(c);
+            c.g[V1][0] = speech_addr(c.g[A3][0], 0).lw(c);
+            c.g[A2][0] = speech_addr(c.g[T5][0], 0x20).ld(c);
+            c.g[V0][0] = speech_addr(c.g[V1][0], 0x1d8).lw(c);
+            c.g[V1][0] = speech_addr(c.g[T5][0], 0x30).ld(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1c0));
+            c.g[A1][0] = speech_addr(c.g[T5][0], 0x28).ld(c);
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            let v1 = c.g[V1][0];
+            speech_addr(c.g[SP][0], 0x50).sd(c, v1);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let t1 = c.g[T1][0];
+            speech_addr(c.g[SP][0], 0x20).sd(c, t1);
+            let a0 = c.g[A0][0];
+            speech_addr(c.g[SP][0], 0x8).sh(c, a0);
+            let t2 = c.g[T2][0];
+            speech_addr(c.g[SP][0], 0x28).sd(c, t2);
+            let t3 = c.g[T3][0];
+            speech_addr(c.g[SP][0], 0x30).sd(c, t3);
+            let t0 = c.g[T0][0];
+            speech_addr(c.g[SP][0], 0x38).sd(c, t0);
+            let a2 = c.g[A2][0];
+            speech_addr(c.g[SP][0], 0x40).sd(c, a2);
+            let a1 = c.g[A1][0];
+            speech_addr(c.g[SP][0], 0x48).sd(c, a1);
+            c.g[A0][0] = speech_addr(c.g[T5][0], 8).lhu(c);
+            c.g[V0][0] = speech_addr(c.g[A3][0], 0).lw(c);
+            let t4 = c.g[T4][0];
+            speech_addr(c.g[V0][0], 0x1d4).sw(c, t4);
+            c.g[V1][0] = speech_addr(c.g[S0][0], 0).lw(c);
+            c.g[V0][0] = speech_addr(c.g[V1][0], 0).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1c8));
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let a0 = c.g[A0][0];
+            speech_addr(c.g[SP][0], 0x28).sh(c, a0);
+        }
+        // 'b_2b0c18: the instance at this+4 (a nonzero pointer is destroyed).
+        c.cycles += 3;
+        c.g[A0][0] = speech_addr(c.g[S0][0], 4).lw(c);
+        let has_part = c.g[A0][0] != 0;
+        c.g[V0][0] = c.g[S1][0] & 2;
+        if has_part {
+            c.cycles += 3;
+            call_ptr(c, 0x0031_7e98, 0x002b_0c14)?;
+            c.g[V0][0] = c.g[S1][0] & 2;
+        }
+        // 'b_2b0c50: clear the global, then the stream array, the bank manager
+        // and the sound manager reference when a1 & 2.
+        c.cycles += 2;
+        let no_managers = c.g[V0][0] == 0;
+        speech_addr(c.g[GP][0], 0x6c4).sw(c, 0);
+        if !no_managers {
+            c.cycles += 12;
+            c.g[A0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x002a_a648, 0x002b_0c2c)?;
+            c.g[V0][0] = speech_addr(c.g[S0][0], 0).lw(c);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = speech_addr(c.g[V0][0], 0).lw(c);
+            call_ptr(c, 0x0028_bb10, 0x002b_0c3c)?;
+            c.g[V1][0] = speech_addr(c.g[S0][0], 0).lw(c);
+            c.g[A1][0] = 0;
+            c.g[V0][0] = speech_addr(c.g[V1][0], 0).lw(c);
+            c.g[A0][0] = speech_addr(c.g[V0][0], 0x1d8).lw(c);
+            call_ptr(c, 0x002a_dee8, 0x002b_0c50)?;
+        }
+        // 'b_2b0c68: free the object when a1 & 1.
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S1][0] & 1;
+        if c.g[V0][0] == 0 {
+            frame.restore(c, S0, 0x80);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_7e50, 0x002b_0c64)?;
+            frame.restore(c, S0, 0x80);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Callees of this module's replacements (the generated alias of each, which
+/// dispatches through its override slot).
+pub(crate) const SPEECH_INSTANCE_SET_PARAM_8C8: Callee = Callee {
+    addr: 0x002b_07f0,
+    f: ee::s08::f_002b07f0,
+};
+
+pub(crate) const SPEECH_SYSTEM_REQUEST_EVENT: Callee = Callee {
+    addr: 0x002b_1058,
+    f: ee::s08::f_002b1058,
+};
+
+pub(crate) const SPEECH_INSTANCE_IS_PLAYING: Callee = Callee {
+    addr: 0x002b_07c0,
+    f: ee::s08::f_002b07c0,
+};
+
+pub(crate) const STREAM_ARRAY_STOP_FROM_MUSIC: Callee = Callee {
+    addr: 0x002a_ae40,
+    f: ee::s08::f_002aae40,
+};
+
+pub(crate) const AUDIO_RAND_FOR_PHRASE: Callee = Callee {
+    addr: 0x002a_df60,
+    f: ee::s08::f_002adf60,
+};
+
+/// `cSpeechSys::mSpeechInstance`: the channel table pointer at +0x4.
+pub(crate) const SPEECH_CHANNEL_TABLE: u32 = 0x4;
+
+/// Instance fields written by the speech channel code.
+pub(crate) const SPEECH_INST_RADIUS: u32 = 0x8f4;
+
+pub(crate) const SPEECH_INST_POSITION: u32 = 0x8cc;
+
+pub(crate) const SPEECH_INST_USER_INFO: u32 = 0x8d0;
+
+/// `cSpeechSys` callback fields.
+pub(crate) const SPEECH_SYS_CALLBACK: u32 = 0xc;
+
+pub(crate) const SPEECH_SYS_CALLBACK_INSTANCE: u32 = 0x10;
+
+/// Game-image word that counts the speech flush (`gp + 0x6cc`).
+pub(crate) const SPEECH_FLUSH_FLAG_GP: u32 = 0x6cc;
+
+/// Speech sentence player entry (`0x3d8040`), called through the table.
+pub(crate) const SPEECH_PLAYER_PLAY: u32 = 0x003d_8040;
+
+/// `void SpeechSystem_SetInstanceParam8c8(cSpeechSys* self, int idx, int hold)`
+/// (0x2b1020): when channel `idx` holds an instance, store `hold` in its
+/// `+0x8c8` word (`SpeechInstance_SetParam8c8`).
+pub fn speech_system_set_instance_param_8c8(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        let empty = c.g[A0][0] == 0;
+        frame.restore_ra(c, 0);
+        if !empty {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[A2][0];
+            SPEECH_INSTANCE_SET_PARAM_8C8.call(c, 0x002b_1048)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SpeechSystem_RequestEvent(cSpeechSys* self, int idx, int playArg,
+/// void (*callback)(int), int volumeArg, float radius)` (0x2b1058): play the
+/// sentence on channel `idx` if it holds an instance. The instance gets the
+/// position, radius (kept only when `radius > 0`) and user info; a callback
+/// is registered for the duration of the player call, then cleared, and the
+/// instance's radius, position and user info are reset to zero.
+pub fn speech_system_request_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        c.g[S1][0] = sx((c.g[A0][0] as u32) << 2);
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        if c.g[V0][0] != 0 {
+            // Radius: only when the float argument is positive (f20 = 0.0).
+            c.cycles += 5;
+            c.mtc1(0, 20);
+            c.c_lt_s(20, 12);
+            let not_positive = !c.fcc();
+            let play_pos = c.g[A2][0];
+            Addr((c.g[V0][0] as u32).wrapping_add(SPEECH_INST_POSITION)).sw(c, play_pos);
+            if !not_positive {
+                c.cycles += 4;
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.swc1(12, (c.g[V1][0] as u32).wrapping_add(SPEECH_INST_RADIUS));
+            }
+            // User info, then the callback pair when a callback is given.
+            c.cycles += 5;
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            let no_callback = c.g[A3][0] == 0;
+            let volume = c.g[T0][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(SPEECH_INST_USER_INFO)).sw(c, volume);
+            if !no_callback {
+                c.cycles += 2;
+                let callback = c.g[A3][0];
+                Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_SYS_CALLBACK)).sw(c, callback);
+                let idx = c.g[A0][0];
+                Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_SYS_CALLBACK_INSTANCE)).sw(c, idx);
+            }
+            c.cycles += 18;
+            call_ptr(c, SPEECH_PLAYER_PLAY, 0x002b_10d4)?;
+            // Clear the callback and reset the instance's fields.
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            let minus_one = c.g[V0][0];
+            Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_SYS_CALLBACK_INSTANCE)).sw(c, minus_one);
+            Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_SYS_CALLBACK)).sw(c, 0);
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+            c.swc1(20, (c.g[V1][0] as u32).wrapping_add(SPEECH_INST_RADIUS));
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            Addr((c.g[V1][0] as u32).wrapping_add(SPEECH_INST_POSITION)).sw(c, 0);
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            Addr((c.g[V1][0] as u32).wrapping_add(SPEECH_INST_USER_INFO)).sw(c, 0);
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SpeechSystem_FlushInstance(cSpeechSys* self, int idx)` (0x2b1128):
+/// when channel `idx` holds an instance, request its event four times
+/// (`idx`, `idx`, `idx`, `idx`, with no argument and zero radius), with the
+/// flush flag set around the loop.
+pub fn speech_system_flush_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
+        c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        let empty = c.g[A0][0] == 0;
+        c.g[V0][0] = 1;
+        if !empty {
+            c.cycles += 3;
+            c.g[S0][0] = 3;
+            let flag = c.g[V0][0];
+            Addr((c.g[GP][0] as u32).wrapping_add(SPEECH_FLUSH_FLAG_GP)).sw(c, flag);
+            loop {
+                c.cycles += 10;
+                c.mtc1(0, 12);
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                c.g[T0][0] = 0;
+                SPEECH_SYSTEM_REQUEST_EVENT.call(c, 0x002b_1184)?;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+                if (c.g[S0][0] as i64) >= 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002b_1168);
+                    }
+                } else {
+                    c.cycles += 1;
+                    Addr((c.g[GP][0] as u32).wrapping_add(SPEECH_FLUSH_FLAG_GP)).sw(c, 0);
+                    break;
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool SpeechSystem_IsInstancePlaying(cSpeechSys* self, int idx)`
+/// (0x2b11e8): whether channel `idx` holds an instance that is playing.
+pub fn speech_system_is_instance_playing(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(SPEECH_CHANNEL_TABLE)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        let empty = c.g[A0][0] == 0;
+        c.g[V0][0] = 0;
+        if !empty {
+            c.cycles += 2;
+            SPEECH_INSTANCE_IS_PLAYING.call(c, 0x002b_1210)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_StopStream(void)` (0x2b1a70): stop stream slot 2 of the
+/// music system's stream array (`StreamArray_Stop`).
+pub fn music_player_stop_stream(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_add(GP_MUSIC_SYS)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 2;
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        STREAM_ARRAY_STOP_FROM_MUSIC.call(c, 0x002b_1a88)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SongInstance_PathCmdB(void)` (0x2b2140): `PATH` command 0x11000001
+/// through the path table (`0x3d15c8`), returning what it returns.
+pub fn song_instance_path_cmd_b(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x1100_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A0][0] | 0x1;
+        call_ptr(c, PATH_FIND_TRACK, 0x002b_2154)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SongInstance_PickRandomPhraseOffset(SongInstance* self)` (0x2b2500):
+/// a random phrase index (`Audio_Rand % (phrasesPerBank - 1)`) times the
+/// configuration's phrase alignment.
+pub fn song_instance_pick_random_phrase_offset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(GP_SOUND_RAND)).lw(c);
+        AUDIO_RAND_FOR_PHRASE.call(c, 0x002b_2518)?;
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x6c)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+        // Both branches of the zero test fall through to the same code, so
+        // only the division itself is kept.
+        c.divu(0, 2, 3);
+        c.cycles += 7;
+        c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x74)).lw(c);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        c.g[A0][0] = c.hi[0];
+        c.mult(0, 2, 4, 2);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SongInstance_GetPathStatusField(void)` (0x2b2550): the status word
+/// the path table writes at `buf[9]` (`PATH_status`).
+pub fn song_instance_get_path_status_field(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        c.g[A0][0] = 0x1100_0000;
+        frame.save_ra(c, 0x30);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A0][0] = c.g[A0][0] | 0x1;
+        call_ptr(c, PATH_STATUS, 0x002b_2568)?;
+        c.g[V0][0] = Addr(frame.at(c, 0x24)).lw(c);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Game-image words the functions above read (`gp + off`).
+pub(crate) const GP_MUSIC_SYS: u32 = 0x6fc;
+
+pub(crate) const GP_SOUND_RAND: u32 = 0x68c;
+
+/// Path table entries (`0x3d15c8` FindTrack, `0x3d11b8` status).
+pub(crate) const PATH_FIND_TRACK: u32 = 0x003d_15c8;
+
+pub(crate) const PATH_STATUS: u32 = 0x003d_11b8;
+
+/// `int64 SongInstance_GetStreamStatus(SongInstance* self, void* out)`
+/// (0x2b2578): -1 when the song has no stream handle; else the stream's
+/// status, from `SNDSTRM_GetStatus(handle, out)`.
+pub fn song_instance_get_stream_status(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        Callee {
+            addr: 0x002b_2488,
+            f: ee::s08::f_002b2488,
+        }
+        .call(c, 0x002b_2594)?;
+        let no_handle = (c.g[V0][0] as i64) < 0;
+        c.g[V0][0] = u64::MAX;
+        if !no_handle {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x002b_2488,
+                f: ee::s08::f_002b2488,
+            }
+            .call(c, 0x002b_25a4)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x003b_7b48, 0x002b_25b0)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `s64 SongInstance_GetTimeRemaining(SongInstance* self)` (0x2b2640): the
+/// request status's position word (`out + 8`) when the status is 2
+/// (playing), else the phrase length from `SongInstance_GetPhraseMs`.
+pub fn song_instance_get_time_remaining(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x002b_25c8,
+            f: ee::s08::f_002b25c8,
+        }
+        .call(c, 0x002b_2658)?;
+        c.g[V1][0] = Addr(sp(c)).lw(c);
+        c.g[V0][0] = 2;
+        let playing = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = Addr(sp(c)).off(0x8).lw(c);
+        if playing {
+            c.cycles += 3;
+            c.mtc1(2, 0);
+            c.cvt_s_w(0, 0);
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x002b_26b8,
+                f: ee::s08::f_002b26b8,
+            }
+            .call(c, 0x002b_2670)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float SongInstance_GetPhraseMs(SongInstance* self)` (0x2b26b8): the beat
+/// length (`SongInstance_GetBeatMs`) times the song's two beat-count fields
+/// (`+0x64`, `+0x68`, as floats).
+pub fn song_instance_get_phrase_ms(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x002b_2690,
+            f: ee::s08::f_002b2690,
+        }
+        .call(c, 0x002b_26cc)?;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        frame.restore(c, S0, 0x10);
+        c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(0x64));
+        c.cvt_s_w(1, 1);
+        frame.restore_ra(c, 0);
+        c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x68));
+        c.cvt_s_w(2, 2);
+        c.mul_s(0, 0, 1);
+        c.mul_s(0, 0, 2);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `s64 SongInstance_GetTimeRemaining_Wrapper(SongInstance* self)`
+/// (0x2b26f8): a forwarding wrapper for `SongInstance_GetTimeRemaining`.
+pub fn song_instance_get_time_remaining_wrapper(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(Callee {
+            addr: 0x002b_2640,
+            f: ee::s08::f_002b2640,
+        }),
+        0x002b_2708,
+    );
+}
+
+/// `int SongInstance_GetBeatIndex(SongInstance* self)` (0x2b2778): the
+/// playback position divided by the beat length, truncated to an int.
+pub fn song_instance_get_beat_index(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x20);
+        Callee {
+            addr: 0x002b_2600,
+            f: ee::s08::f_002b2600,
+        }
+        .call(c, 0x002b_2790)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(20, 0);
+        Callee {
+            addr: 0x002b_2690,
+            f: ee::s08::f_002b2690,
+        }
+        .call(c, 0x002b_279c)?;
+        c.div_s(20, 20, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        c.cvt_w_s(0, 20);
+        c.mfc1(2, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool SongInstance_IsLoopBankBusy(SongInstance* self, MusicPlayer* mp)`
+/// (0x2b27c0): true while the song's loops are active (`+0x4c`); else, when
+/// the bank entry of the song's bank (`mp+0xacc`, 0x60 bytes each) is
+/// marked, whether its bank is in use. The sound lock is held around the
+/// bank query.
+pub fn song_instance_is_loop_bank_busy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x4c).lw(c);
+        let loops_active = c.g[V0][0] != 0;
+        c.g[S1][0] = c.g[A1][0];
+        let busy = if loops_active {
+            true
+        } else {
+            c.cycles += 11;
+            c.g[S0][0] = Addr(c.g[A0][0] as u32).off(0x34).lw(c);
+            c.g[S2][0] = 0;
+            call_ptr(c, 0x003b_58a0, 0x002b_27ec)?;
+            c.g[V1][0] = 0x60;
+            c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0xacc).lw(c);
+            c.mult(0, V1, S0, V1);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            c.g[V0][0] ^= 1;
+            let entry_not_marked = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S1][0];
+            if !entry_not_marked {
+                c.cycles += 6;
+                c.g[A1][0] = c.g[S0][0];
+                Callee {
+                    addr: 0x002b_9f88,
+                    f: ee::s08::f_002b9f88,
+                }
+                .call(c, 0x002b_2814)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x003b_65d0, 0x002b_281c)?;
+                c.g[V0][0] ^= 1;
+                c.g[S2][0] = (c.g[V0][0] < 0x1) as u64;
+            }
+            c.cycles += 4;
+            call_ptr(c, 0x003b_58d8, 0x002b_282c)?;
+            c.g[V0][0] = 0;
+            c.g[S2][0] != 0
+        };
+        if busy {
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_PathCmdB(MusicPlayer* mp)` (0x2b3c60): when the player
+/// has a current song (`+0x418`) with a song object (`+0x408`), forward to
+/// `SongInstance_PathCmdB` on that song.
+pub fn music_player_path_cmd_b(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x418).lw(c);
+        let no_song = c.g[V0][0] == 0;
+        frame.restore_ra(c, 0);
+        if !no_song {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(c.g[A0][0] as u32).off(0x408).lw(c);
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                Callee {
+                    addr: 0x002b_2140,
+                    f: ee::s08::f_002b2140,
+                }
+                .call(c, 0x002b_3c88)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_ApplySongVolume(MusicPlayer* mp, int volume)`
+/// (0x2b3cd8): when the player has a current song (`+0x418`) with a song
+/// object (`+0x408`), set that song's volume through `SongInstance_SetVolume`.
+pub fn music_player_apply_song_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x418).lw(c);
+        let no_song = c.g[V0][0] == 0;
+        frame.restore_ra(c, 0);
+        if !no_song {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(c.g[A0][0] as u32).off(0x408).lw(c);
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                Callee {
+                    addr: 0x002b_2160,
+                    f: ee::s08::f_002b2160,
+                }
+                .call(c, 0x002b_3d00)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Callees (the generated alias of each, which dispatches through its override slot).
+pub(crate) const MPL_ADD_TIMER: Callee = Callee {
+    addr: 0x002a_dca0,
+    f: ee::s08::f_002adca0,
+};
+
+pub(crate) const MPL_KILL_TIMERS: Callee = Callee {
+    addr: 0x002a_dde0,
+    f: ee::s08::f_002adde0,
+};
+
+pub(crate) const MPL_SELECT_NEXT_SONG: Callee = Callee {
+    addr: 0x002b_42b8,
+    f: ee::s08::f_002b42b8,
+};
+
+pub(crate) const MPL_CLEAR_LOOPS_ACTIVE: Callee = Callee {
+    addr: 0x002b_4708,
+    f: ee::s08::f_002b4708,
+};
+
+pub(crate) const MPL_SCHEDULE_LOOP: Callee = Callee {
+    addr: 0x002b_4568,
+    f: ee::s08::f_002b4568,
+};
+
+pub(crate) const MPL_SONG_BEAT_MS: Callee = Callee {
+    addr: 0x002b_2690,
+    f: ee::s08::f_002b2690,
+};
+
+pub(crate) const MPL_SONG_MS_TO_NEXT: Callee = Callee {
+    addr: 0x002b_2718,
+    f: ee::s08::f_002b2718,
+};
+
+pub(crate) const MPL_SONG_BEAT_INDEX: Callee = Callee {
+    addr: 0x002b_2778,
+    f: ee::s08::f_002b2778,
+};
+
+pub(crate) const MPL_SONG_PICK_PHRASE: Callee = Callee {
+    addr: 0x002b_2500,
+    f: ee::s08::f_002b2500,
+};
+
+/// `cMusicSys` fields.
+pub(crate) const MPL_STREAMS: u32 = 0x0;
+
+pub(crate) const MPL_CURRENT_SONG_NUM: u32 = 0x3f0;
+
+pub(crate) const MPL_SONG: u32 = 0x408;
+
+/// Fade state: the per-tick step (float), the start volume (float), the target.
+pub(crate) const MPL_FADE_STEP: u32 = 0x40c;
+
+pub(crate) const MPL_FADE_START: u32 = 0x410;
+
+pub(crate) const MPL_FADE_TARGET: u32 = 0x414;
+
+/// The loop timer object: a halfword offset and a function pointer (v01).
+pub(crate) const MPL_LOOP_OBJ: u32 = 0x5440;
+
+pub(crate) const MPL_LOOP_OBJ_OFFSET: u32 = 0x8;
+
+pub(crate) const MPL_LOOP_OBJ_FN: u32 = 0xc;
+
+/// `cSongInstance` fields.
+pub(crate) const MPL_SONG_BANK_INDEX: u32 = 0x34;
+
+pub(crate) const MPL_SONG_STATE: u32 = 0x38;
+
+pub(crate) const MPL_SONG_VOLUME: u32 = 0x40;
+
+pub(crate) const MPL_SONG_LOOPING: u32 = 0x4c;
+
+/// The stream system's bank manager (its first word), the BankMonitor timer
+/// owner inside it, and the bank table pointer.
+#[cfg(test)]
+pub(crate) const MPL_BANK_MANAGER: u32 = 0x0;
+
+pub(crate) const MPL_BANK_MONITOR: u32 = 0x1d8;
+
+pub(crate) const MPL_BANK_TABLE: u32 = 0xacc;
+
+/// `cBankInstance` (0x60 bytes each): its status word and its handle.
+#[cfg(test)]
+pub(crate) const MPL_BANK_SIZE: u32 = 0x60;
+
+#[cfg(test)]
+pub(crate) const MPL_BANK_STATUS: u32 = 0x0;
+
+pub(crate) const MPL_BANK_HANDLE: u32 = 0x4;
+
+/// The 8-byte monitor payloads in the game image (`D_004A38xx`, read with
+/// `ldl`/`ldr` at base+7 and base).
+pub(crate) const MPL_PAYLOAD_LOOP_START: u32 = 0x004a_3838;
+
+pub(crate) const MPL_PAYLOAD_LOOP_STOP: u32 = 0x004a_3840;
+
+pub(crate) const MPL_PAYLOAD_FADE: u32 = 0x004a_3850;
+
+/// Loads the 8-byte payload at `base` into `rt` (`ldl` at base+7, `ldr` at base).
+pub(crate) fn mpl_payload(c: &mut Cpu, rt: usize, base: u32) {
+    c.ldl(rt, base.wrapping_add(7));
+    c.ldr(rt, base);
+}
+
+/// `void MusicPlayer_FadeSongVolume(cMusicSys* self, signed char target, float duration)`
+/// (0x2b3d80): when the current song's volume (`unk_40`) is not `target`, starts a
+/// fade: the target goes to `unk_414`, the volume to `unk_410` (as a float), and the
+/// per-tick step `(target - volume) / 25` over `duration` seconds to `unk_40C`. A
+/// 40-tick monitor timer then steps the volume.
+pub fn music_player_fade_song_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[T4][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        c.g[V0][0] = Addr((c.g[T4][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        let has_song = c.g[V0][0] != 0;
+        c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        if has_song {
+            c.cycles += 3;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(MPL_SONG_VOLUME)).lb(c);
+            let same = c.g[A1][0] == c.g[A0][0];
+            c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+            if !same {
+                mpl_fade_start(c)?;
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The fade's start: the step division, the stores, and the timer call.
+pub(crate) fn mpl_fade_start(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[V0][0] = 0x19;
+    c.div(0, 3, 2);
+    c.mtc1(4, 0);
+    c.cvt_s_w(0, 0);
+    c.cycles += 20;
+    c.g[A0][0] = 0x4a_0000;
+    let target = c.g[A1][0];
+    Addr((c.g[T4][0] as u32).wrapping_add(MPL_FADE_TARGET)).sw(c, target);
+    c.g[A3][0] = 0;
+    c.swc1(0, (c.g[T4][0] as u32).wrapping_add(MPL_FADE_START));
+    c.g[A1][0] = 0x28;
+    c.g[V0][0] = Addr(c.g[T4][0] as u32).lw(c);
+    c.g[T0][0] = 0;
+    mpl_payload(c, 6, MPL_PAYLOAD_FADE);
+    c.g[T1][0] = 0;
+    c.g[T2][0] = 0;
+    c.g[T3][0] = 0;
+    c.g[V1][0] = c.lo[0];
+    c.mtc1(3, 0);
+    c.cvt_s_w(0, 0);
+    c.div_s(0, 0, 12);
+    c.swc1(0, (c.g[T4][0] as u32).wrapping_add(MPL_FADE_STEP));
+    c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(MPL_BANK_MONITOR));
+    MPL_ADD_TIMER.call(c, 0x002b_3e10)
+}
+
+/// `void MusicPlayer_SkipSongs(cMusicSys* self, int n)` (0x2b4180): clears the
+/// current song number, then selects the next song `n + 1` times (`n` times
+/// after the first selection, each in its own tick).
+pub fn music_player_skip_songs(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = u64::MAX;
+        frame.save(c, S0, 0x20);
+        c.g[A2][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let unset = c.g[V0][0];
+        Addr((c.g[S1][0] as u32).wrapping_add(MPL_CURRENT_SONG_NUM)).sw(c, unset);
+        c.g[A1][0] = 0;
+        MPL_SELECT_NEXT_SONG.call(c, 0x002b_41ac)?;
+        if (c.g[S0][0] as i64) <= 0 {
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S1][0];
+            loop {
+                c.cycles += 6;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+                MPL_SELECT_NEXT_SONG.call(c, 0x002b_41c8)?;
+                let more = c.g[S0][0] != 0;
+                c.g[A0][0] = c.g[S1][0];
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002b_41b8);
+                    }
+                } else {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x20);
+                    break;
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_StartLoops(cMusicSys* self)` (0x2b4470): when a song plays
+/// and its loop flag (`unk_4C`) is clear, sets it and adds the loop-start monitor
+/// timer.
+pub fn music_player_start_loops(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        let no_song = c.g[A1][0] == 0;
+        frame.restore_ra(c, 0);
+        if !no_song {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(MPL_SONG_LOOPING)).lw(c);
+            let looping = c.g[V0][0] != 0;
+            c.g[V0][0] = 1;
+            if !looping {
+                c.cycles += 15;
+                c.g[V1][0] = 0x4a_0000;
+                let flag = c.g[V0][0];
+                Addr((c.g[A1][0] as u32).wrapping_add(MPL_SONG_LOOPING)).sw(c, flag);
+                c.g[A3][0] = 0;
+                mpl_payload(c, 6, MPL_PAYLOAD_LOOP_START);
+                c.g[A1][0] = 0;
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+                c.g[T0][0] = 0;
+                c.g[T1][0] = 0;
+                c.g[T2][0] = 0;
+                c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[T3][0] = 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(MPL_BANK_MONITOR));
+                MPL_ADD_TIMER.call(c, 0x002b_44c8)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_StopLoops(cMusicSys* self)` (0x2b44d8): when a song plays,
+/// kills the two loop monitor timers and clears its loop flag.
+pub fn music_player_stop_loops(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        let has_song = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x4a_0000;
+        if has_song {
+            c.cycles += 15;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+            mpl_payload(c, 5, MPL_PAYLOAD_LOOP_START);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(MPL_BANK_MONITOR));
+            MPL_KILL_TIMERS.call(c, 0x002b_450c)?;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[V0][0] = 0x4a_0000;
+            mpl_payload(c, 5, MPL_PAYLOAD_LOOP_STOP);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(MPL_BANK_MONITOR));
+            MPL_KILL_TIMERS.call(c, 0x002b_4528)?;
+            c.g[A0][0] = c.g[S0][0];
+            MPL_CLEAR_LOOPS_ACTIVE.call(c, 0x002b_4530)?;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_TimerForwardSlot1(cMusicSys* self)` (0x2b4540): calls the
+/// loop timer object's function (`v01`) with `self` plus the object's halfword
+/// offset as `this`.
+pub fn music_player_timer_forward_slot1(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(MPL_LOOP_OBJ)).lw(c);
+        c.g[A2][0] = Addr((c.g[V1][0] as u32).wrapping_add(MPL_LOOP_OBJ_OFFSET)).lh(c);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(MPL_LOOP_OBJ_FN)).lw(c);
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        call_ptr(c, target, 0x002b_455c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_ScheduleLoop(cMusicSys* self, cSongInstance* ent)`
+/// (0x2b4568): for a playing song, reads the beat length, the time to the next
+/// beat, the beat index and a random phrase offset, then adds the loop monitor
+/// timer for the next beat.
+pub fn music_player_schedule_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x48);
+        frame.save_fpr(c, 20, 0x40);
+        c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        let has_song = c.g[V0][0] != 0;
+        c.g[S1][0] = c.g[A1][0];
+        if has_song {
+            c.cycles += 26;
+            c.g[A0][0] = c.g[S1][0];
+            MPL_SONG_BEAT_MS.call(c, 0x002b_459c)?;
+            c.mov_s(21, 0);
+            c.g[A0][0] = c.g[S1][0];
+            MPL_SONG_MS_TO_NEXT.call(c, 0x002b_45a8)?;
+            c.mov_s(20, 0);
+            c.g[A0][0] = c.g[S1][0];
+            MPL_SONG_BEAT_INDEX.call(c, 0x002b_45b4)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            MPL_SONG_PICK_PHRASE.call(c, 0x002b_45c0)?;
+            c.g[A3][0] = Addr(c.g[S2][0] as u32).lw(c);
+            c.g[V1][0] = 0x4a_0000;
+            c.cvt_w_s(0, 20);
+            c.mfc1(5, 0);
+            mpl_payload(c, 6, MPL_PAYLOAD_LOOP_STOP);
+            c.g[A0][0] = Addr(c.g[A3][0] as u32).lw(c);
+            c.cvt_w_s(0, 21);
+            c.mfc1(10, 0);
+            c.g[A3][0] = Addr((c.g[S2][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+            c.g[T0][0] = c.g[V0][0];
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(MPL_BANK_MONITOR));
+            c.g[T1][0] = c.g[S0][0];
+            c.g[T3][0] = 0;
+            MPL_ADD_TIMER.call(c, 0x002b_45fc)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MusicPlayer_AttachLoopBank(cMusicSys* self)` (0x2b4620): marks the
+/// song's loop flag and, while the song is loading (state 1), waits for its
+/// bank (status 1), then starts the path track with the bank's handle and moves
+/// the song to state 2. Returns 1 when the song is ready (state 2 or just started).
+pub fn music_player_attach_loop_bank(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        let has_song = c.g[V0][0] != 0;
+        c.g[A0][0] = 1;
+        if has_song {
+            mpl_attach_song(c)?;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The song part of `MusicPlayer_AttachLoopBank`: leaves the return value in
+/// `v0`. A busy bank returns early (no further charge), as the generated body's
+/// jump to its exit does.
+pub(crate) fn mpl_attach_song(c: &mut Cpu) -> Flow {
+    c.cycles += 5;
+    let flag = c.g[A0][0];
+    Addr((c.g[V0][0] as u32).wrapping_add(MPL_SONG_LOOPING)).sw(c, flag);
+    c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(MPL_SONG_STATE)).lw(c);
+    let not_loading = c.g[V0][0] != c.g[A0][0];
+    c.g[A2][0] = 0;
+    if not_loading {
+        c.cycles += 3;
+        c.g[V0][0] ^= 2;
+        c.g[A2][0] = c.g[A0][0];
+        if c.g[V0][0] != 0 {
+            c.g[A2][0] = 0;
+        }
+    } else {
+        c.cycles += 11;
+        c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(MPL_SONG_BANK_INDEX)).lw(c);
+        c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_add(MPL_STREAMS)).lw(c);
+        c.g[V1][0] = 0x60;
+        c.mult(0, 4, 4, 3);
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(MPL_BANK_TABLE)).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[V0][0] ^= 1;
+        let busy = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[A2][0];
+        if busy {
+            return Ok(());
+        }
+        c.cycles += 10;
+        c.g[A2][0] = Addr((c.g[A0][0] as u32).wrapping_add(MPL_BANK_HANDLE)).lw(c);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = 0x1100_0000;
+        c.g[A0][0] |= 0x2;
+        call_ptr(c, 0x003d_2df8, 0x002b_4698)?;
+        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        c.g[V0][0] = 2;
+        c.g[A2][0] = 1;
+        let state = c.g[V0][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(MPL_SONG_STATE)).sw(c, state);
+    }
+    c.cycles += 1;
+    c.g[V0][0] = c.g[A2][0];
+    Ok(())
+}
+
+/// `void MusicPlayer_LoopTimerCallback(cMusicSys* self)` (0x2b4740): the loop
+/// timer's tick. It looks at the song's bank: a used bank schedules the next
+/// loop beat; an empty or loading bank is left alone (see the return values).
+/// Returns 1 except while the bank is loading (status 2), which returns 0.
+pub fn music_player_loop_timer_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0x60;
+        c.g[A2][0] = 1;
+        c.g[T0][0] = Addr((c.g[A3][0] as u32).wrapping_add(MPL_SONG)).lw(c);
+        c.g[V1][0] = Addr(c.g[A3][0] as u32).lw(c);
+        c.g[V0][0] = Addr((c.g[T0][0] as u32).wrapping_add(MPL_SONG_BANK_INDEX)).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        c.mult(0, 2, 2, 5);
+        c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(MPL_BANK_TABLE)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+        let status = c.g[V1][0];
+        // Paths that return through the shared exit tick (`+1`), except the
+        // default state (3+), which returns at once.
+        let shared_exit = if status == c.g[A2][0] {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[A3][0];
+            c.g[A1][0] = c.g[T0][0];
+            MPL_SCHEDULE_LOOP.call(c, 0x002b_47a4)?;
+            c.g[V0][0] = 1;
+            true
+        } else {
+            c.cycles += 2;
+            if (status as i64) < 2 {
+                c.g[V0][0] = 1;
+                true
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 1;
+                if status == 2 {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                    true
+                } else {
+                    c.cycles += 2;
+                    false
+                }
+            }
+        };
+        if shared_exit {
+            c.cycles += 1;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void MusicPlayer_LoopBankIdleCallback(MusicPlayer* p)` (0x2b47c0): under
+/// the sound lock, checks the loop bank of the current song. When the bank's
+/// state word in the bank table (`sndbankman+0xacc`, 0x60 bytes a bank) reads
+/// 1, asks the bank manager for the bank handle and whether that bank is in
+/// use; a bank that is not in use counts as idle. Unless the bank is idle,
+/// clears the song's loops-active word at +0x4c.
+pub fn music_player_loop_bank_idle_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S3][0] = 0;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x408).lw(c);
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[S2][0] = Addr(c.g[V0][0] as u32).off(0x34).lw(c);
+        c.g[S1][0] = Addr(c.g[V1][0] as u32).lw(c);
+        call_ptr(c, 0x003b_58a0, 0x002b_47f4)?; // SND_Lock
+        c.g[V1][0] = 0x60;
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0xacc)).lw(c);
+        c.mult(0, V1, S2, V1);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        c.g[V0][0] ^= 1;
+        c.g[A0][0] = c.g[S1][0];
+        if c.g[V0][0] == 0 {
+            // The bank's state word is 1: is the bank in use?
+            c.cycles += 6;
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, 0x002b_9f88, 0x002b_481c)?; // SndBankMan_GetBankHandle
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x003b_65d0, 0x002b_4824)?; // SND_BankIsInUse
+            c.g[V0][0] ^= 1;
+            c.g[S3][0] = (c.g[V0][0] < 0x1) as u64;
+        }
+        c.cycles += 4;
+        call_ptr(c, 0x003b_58d8, 0x002b_4834)?; // SND_Unlock
+        let idle = c.g[S3][0] != 0;
+        c.g[V0][0] = 0;
+        if !idle {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x408).lw(c);
+            c.g[V0][0] = 1;
+            Addr(c.g[V1][0] as u32).off(0x4c).sw(c, 0);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int MusicPlayer_GetSedValue(MusicPlayer* p)` (0x2b48c8): -1 when the
+/// player has no `+0x418` word; otherwise the SED value of the current song
+/// (`+0x408`), or the song pointer's own result when it is null.
+pub fn music_player_get_sed_value(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x418).lw(c);
+        let missing = c.g[V0][0] == 0;
+        c.g[V0][0] = u64::MAX;
+        if missing {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(c.g[A0][0] as u32).off(0x408).lw(c);
+            let no_song = c.g[A0][0] == 0;
+            frame.restore_ra(c, 0);
+            if !no_song {
+                c.cycles += 4;
+                call_ptr(c, 0x002b_48b8, 0x002b_48f0)?; // SongInstance_GetSedValue
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -28441,6 +31981,2163 @@ pub(crate) mod tests {
             oc817_music_player_empty_playlist_hook,
             20,
             &oc817_leaf_setup,
+        );
+    }
+
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::gate_on;
+
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::oc1051_install;
+
+    pub(crate) use crate::game::sound::streamsys::tests::oc1045_arm;
+
+    pub(crate) use crate::game::sound::streamsys::tests::oc1045_hook_all;
+
+    /// Gate word of this module's callee fakes (their own, unique to oc1043):
+    /// a fake answers only when its machine holds `OC1043_MAGIC` here.
+    pub(crate) const OC1043_CTRL: u32 = DATA + 0x27_1040;
+
+    pub(crate) const OC1043_MAGIC: u32 = 0x1043_7e57;
+
+    /// Mailbox words the setups fill and the fakes read.
+    pub(crate) const OC1043_BOX: u32 = DATA + 0x27_1100;
+
+    pub(crate) fn oc1043_box_w(c: &mut Cpu, k: u32, v: u32) {
+        c.bus.write32(OC1043_BOX + 4 * k, v);
+    }
+
+    pub(crate) fn oc1043_box_r(c: &mut Cpu, k: u32) -> u32 {
+        c.bus.read32(OC1043_BOX + 4 * k)
+    }
+
+    /// A gated callee fake: with the gate off it runs whatever the slot held
+    /// before; with the gate on it logs the call like `fakes::fake` (every
+    /// register the caller set up), then `$post` sets results from the
+    /// arguments it saw (`[a0, a1, a2, a3, t0, t1]`).
+    macro_rules! oc1043_fake {
+        ($name:ident, $prev:ident, $gen:path, $post:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC1043_CTRL) != OC1043_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let target = c.pc;
+                let ret = c.g[RA][0] as u32;
+                let args = [
+                    c.g[A0][0] as u32,
+                    c.g[A1][0] as u32,
+                    c.g[A2][0] as u32,
+                    c.g[A3][0] as u32,
+                    c.g[T0][0] as u32,
+                    c.g[T1][0] as u32,
+                ];
+                fakes::fake(c, target, ret);
+                if c.pc == ret {
+                    let post: fn(&mut Cpu, [u32; 6]) = $post;
+                    post(c, args);
+                }
+            }
+        };
+    }
+    pub(crate) use oc1043_fake;
+
+    // ----------------------------------------------------------------------
+    // PATH_PlatGetTrackStatus.
+
+    pub(crate) const OC1043_TRACK_TABLE: u32 = 0x004d_3e98;
+
+    // 0x3b6670: stream position: header rate (u16) and sample count.
+    oc1043_fake!(
+        oc1043_fake_pos,
+        OC1043_PREV_POS,
+        ee::s13::f_003b6670__generated,
+        |c, a| {
+            let rate = oc1043_box_r(c, 1);
+            let samples = oc1043_box_r(c, 2);
+            let res = oc1043_box_r(c, 0);
+            c.bus.write16(a[2], rate as u16);
+            c.bus.write32(a[4], samples);
+            c.g[V0][0] = sx(res);
+        }
+    );
+
+    // 0x3b8ad8: time remaining of a sub-stream.
+    oc1043_fake!(
+        oc1043_fake_time,
+        OC1043_PREV_TIME,
+        ee::s13::f_003b8ad8__generated,
+        |c, _a| {
+            let v = oc1043_box_r(c, 4);
+            c.g[V0][0] = sx(v);
+        }
+    );
+
+    // 0x3b86c0: sub-stream volume.
+    oc1043_fake!(
+        oc1043_fake_vol,
+        OC1043_PREV_VOL,
+        ee::s13::f_003b86c0__generated,
+        |c, _a| {
+            let v = oc1043_box_r(c, 5);
+            c.g[V0][0] = sx(v);
+        }
+    );
+
+    // 0x3b7b48: stream info: the request count, status result.
+    oc1043_fake!(
+        oc1043_fake_info,
+        OC1043_PREV_INFO,
+        ee::s13::f_003b7b48__generated,
+        |c, a| {
+            let count = oc1043_box_r(c, 6);
+            let res = oc1043_box_r(c, 7);
+            c.bus.write32(a[1], count);
+            c.g[V0][0] = sx(res);
+        }
+    );
+
+    // 0x3b7c40: request status (state, a, b, c), alternating between two
+    // prepared answers.
+    oc1043_fake!(
+        oc1043_fake_req,
+        OC1043_PREV_REQ,
+        ee::s13::f_003b7c40__generated,
+        |c, a| {
+            let n = oc1043_box_r(c, 0x20);
+            oc1043_box_w(c, 0x20, n + 1);
+            for k in 0..4 {
+                let v = oc1043_box_r(c, 8 + 4 * (n % 2) + k);
+                c.bus.write32(a[1] + 4 * k, v);
+            }
+        }
+    );
+
+    // 0x3b7f18: stream volume.
+    oc1043_fake!(
+        oc1043_fake_stvol,
+        OC1043_PREV_STVOL,
+        ee::s13::f_003b7f18__generated,
+        |c, _a| {
+            let v = oc1043_box_r(c, 0x10);
+            c.g[V0][0] = sx(v);
+        }
+    );
+
+    pub(crate) fn oc1043_install_track_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B6670),
+            oc1043_fake_pos,
+            &OC1043_PREV_POS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B8AD8),
+            oc1043_fake_time,
+            &OC1043_PREV_TIME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B86C0),
+            oc1043_fake_vol,
+            &OC1043_PREV_VOL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B7B48),
+            oc1043_fake_info,
+            &OC1043_PREV_INFO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B7C40),
+            oc1043_fake_req,
+            &OC1043_PREV_REQ,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B7F18),
+            oc1043_fake_stvol,
+            &OC1043_PREV_STVOL,
+        );
+    }
+
+    /// A monitor slot of every shape: no slot, no handle, an in-memory stream
+    /// (negative sub, gone sub, live sub with positive or negative sample
+    /// counts, failing position or time) and streaming ones (no subs, subs
+    /// that are gone, queued, playing, parsing or dead), with out pointers
+    /// that are sometimes null.
+    #[test]
+    fn path_plat_get_track_status_matches() {
+        oc1043_install_track_fakes();
+        covered(
+            ee::s08::f_002aec58__generated,
+            path_plat_get_track_status,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_ec58, 3);
+                c.bus.write32(OC1043_CTRL, OC1043_MAGIC);
+                let idx = seed % 24;
+                for i in 0..24 {
+                    c.bus.write32(OC1043_TRACK_TABLE + 4 * i, 0);
+                }
+                let m = DATA + 0x28_0000;
+                let subs = DATA + 0x28_1000;
+                let kind = seed % 12;
+                let streaming = kind >= 8;
+                c.g[A0][0] = idx as u64;
+                c.g[A1][0] = if streaming && seed % 5 == 0 {
+                    0
+                } else {
+                    (DATA + 0x28_2000) as u64
+                };
+                c.g[A2][0] = if streaming && seed % 7 == 0 {
+                    0
+                } else {
+                    (DATA + 0x28_2010) as u64
+                };
+                if kind != 0 {
+                    c.bus.write32(OC1043_TRACK_TABLE + 4 * idx, m);
+                }
+                // handle, sub index
+                c.bus.write32(
+                    m,
+                    if kind == 1 {
+                        u32::MAX
+                    } else {
+                        1 + r.next_u32() % 100
+                    },
+                );
+                c.bus.write32(
+                    m + 0x4,
+                    if kind == 2 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 3
+                    },
+                );
+                c.bus.write32(m + 0x50, r.next_u32() % 1000);
+                c.bus.write32(m + 0x54, r.next_u32() % 1000);
+                c.bus.write32(m + 0x6c, subs);
+                c.bus.write8(m + 0x64, ((2..=7).contains(&kind)) as u8);
+                let count = match kind {
+                    8 => 0,
+                    9 | 10 => 2,
+                    11 => 1 + r.next_u32() % 3,
+                    _ => 0,
+                };
+                c.bus.write8(m + 0x66, count as u8);
+                for i in 0..3u32 {
+                    let s = subs + 12 * i;
+                    c.bus.write32(s, 1 + r.next_u32() % 1000);
+                    let id = if (kind == 3 && i == 0) || (kind == 10 && i == 0) {
+                        u32::MAX
+                    } else {
+                        5 + i
+                    };
+                    c.bus.write32(s + 4, id);
+                    c.bus.write32(s + 8, r.next_u32() % 100);
+                }
+                // fakes' answers
+                oc1043_box_w(
+                    c,
+                    0,
+                    if kind == 6 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 3
+                    },
+                );
+                oc1043_box_w(c, 1, r.next_u32() % 48000 + (seed % 9 != 0) as u32);
+                oc1043_box_w(
+                    c,
+                    2,
+                    if kind == 5 {
+                        0x8000_0000 | r.next_u32()
+                    } else {
+                        r.next_u32() % 100_000
+                    },
+                );
+                oc1043_box_w(
+                    c,
+                    4,
+                    if kind == 7 {
+                        u32::MAX - 4
+                    } else {
+                        r.next_u32() % 500
+                    },
+                );
+                oc1043_box_w(c, 5, r.next_u32());
+                oc1043_box_w(c, 6, r.next_u32() % 4);
+                oc1043_box_w(
+                    c,
+                    7,
+                    if r.next_u32() % 4 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 3
+                    },
+                );
+                oc1043_box_w(c, 0x10, r.next_u32());
+                let states = [0u32, 1, 2, 3, u32::MAX, 5];
+                for k in 0..2 {
+                    oc1043_box_w(c, 8 + 4 * k, states[(r.next_u32() % 6) as usize]);
+                    for j in 1..4 {
+                        let v = if r.next_u32() % 4 == 0 {
+                            0
+                        } else {
+                            r.next_u32() % 100
+                        };
+                        oc1043_box_w(c, 8 + 4 * k + j, v);
+                    }
+                }
+            },
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // MusicPlayer_CreateStream.
+
+    oc1043_fake!(
+        oc1043_fake_create_instance,
+        OC1043_PREV_CREATE_INSTANCE,
+        ee::s08::f_002aa870__generated,
+        |_c, _a| {}
+    );
+
+    oc1043_fake!(
+        oc1043_fake_get_handle,
+        OC1043_PREV_GET_HANDLE,
+        ee::s08::f_002ab128__generated,
+        |_c, _a| {}
+    );
+
+    /// A new music-bank instance on a bank manager with `inst` instances so
+    /// far; the play options are copied unaligned from `opts`.
+    #[test]
+    fn music_player_create_stream_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002AA870),
+            oc1043_fake_create_instance,
+            &OC1043_PREV_CREATE_INSTANCE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002AB128),
+            oc1043_fake_get_handle,
+            &OC1043_PREV_GET_HANDLE,
+        );
+        covered(
+            ee::s08::f_002b1780__generated,
+            music_player_create_stream,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_1780, 2);
+                c.bus.write32(OC1043_CTRL, OC1043_MAGIC);
+                let (pp, p1, bm) = (DATA + 0x2a_0000, DATA + 0x2a_0100, DATA + 0x2a_1000);
+                c.bus.write32(GAME_GP + 0x6fc, pp);
+                c.bus.write32(pp, p1);
+                c.bus.write32(p1, bm);
+                c.bus.write32(bm + 0x1f4, r.next_u32() % 3);
+                for k in 0..6 {
+                    c.bus.write32(bm + 0x1dc + 4 * k, r.next_u32());
+                }
+                let arr = DATA + 0x2a_4000;
+                for (k, off) in [
+                    0x20u32, 0x34, 0x38, 0x3c, 0x60, 0x64, 0x68, 0x6c, 0x70, 0x74, 0x78, 0x7c,
+                    0x80, 0x84,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let skew = if off == 0x20 { seed % 8 } else { 0 };
+                    c.bus
+                        .write32(bm + 0x1d8 + off, arr + 0x400 * k as u32 + skew);
+                    fill(c, &mut r, arr + 0x400 * k as u32, 0x20);
+                }
+                let opts = DATA + 0x2a_8000;
+                fill(c, &mut r, opts, 8);
+                c.g[A0][0] = (opts + (seed % 8)) as u64;
+            },
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // MusicPlayer_dtor.
+
+    oc1043_fake!(
+        oc1043_fake_mem_free,
+        OC1043_PREV_MEM_FREE,
+        ee::s10::f_00317e98__generated,
+        |_c, _a| {}
+    );
+
+    oc1043_fake!(
+        oc1043_fake_operator_delete,
+        OC1043_PREV_OPERATOR_DELETE,
+        ee::s10::f_00317e50__generated,
+        |_c, _a| {}
+    );
+
+    oc1043_fake!(
+        oc1043_fake_song_instance_dtor,
+        OC1043_PREV_SONG_INSTANCE_DTOR,
+        ee::s08::f_002b1f78__generated,
+        |_c, _a| {}
+    );
+
+    oc1043_fake!(
+        oc1043_fake_stream_sys_dtor,
+        OC1043_PREV_STREAM_SYS_DTOR,
+        ee::s08::f_002aa648__generated,
+        |_c, _a| {}
+    );
+
+    oc1043_fake!(
+        oc1043_fake_bank_manager_dtor,
+        OC1043_PREV_BANK_MANAGER_DTOR,
+        ee::s07::f_0028bb10__generated,
+        |_c, _a| {}
+    );
+
+    oc1043_fake!(
+        oc1043_fake_sound_sys_dtor,
+        OC1043_PREV_SOUND_SYS_DTOR,
+        ee::s08::f_002adee8__generated,
+        |_c, _a| {}
+    );
+
+    /// Every `flags` value (vtable rebasing, sub-object dtors, delete) with
+    /// 0-3 song configurations (null or with a virtual dtor), an MPF file and
+    /// a song instance that are present or not.
+    #[test]
+    fn music_player_dtor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+            oc1043_fake_mem_free,
+            &OC1043_PREV_MEM_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1043_fake_operator_delete,
+            &OC1043_PREV_OPERATOR_DELETE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B1F78),
+            oc1043_fake_song_instance_dtor,
+            &OC1043_PREV_SONG_INSTANCE_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002AA648),
+            oc1043_fake_stream_sys_dtor,
+            &OC1043_PREV_STREAM_SYS_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0028BB10),
+            oc1043_fake_bank_manager_dtor,
+            &OC1043_PREV_BANK_MANAGER_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002ADEE8),
+            oc1043_fake_sound_sys_dtor,
+            &OC1043_PREV_SOUND_SYS_DTOR,
+        );
+        covered(
+            ee::s08::f_002b3398__generated,
+            music_player_dtor,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_3398, 8);
+                c.bus.write32(OC1043_CTRL, OC1043_MAGIC);
+                let me = DATA + 0x2c_0000;
+                let (p1, p2, p3) = (DATA + 0x2c_8000, DATA + 0x2c_9000, DATA + 0x2c_a000);
+                c.bus.write32(me, p1);
+                c.bus.write32(p1, p2);
+                c.bus.write32(p2 + 0x1d8, p3);
+                c.bus.write32(me + 0x3e4, r.next_u32() % 5);
+                for i in 0..4u32 {
+                    let song = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x2d_0000 + 0x100 * i
+                    };
+                    c.bus.write32(me + 4 + 4 * i, song);
+                    if song != 0 {
+                        let vt = DATA + 0x2e_0000 + 0x20 * i;
+                        c.bus.write32(song + 0xa8, vt);
+                        c.bus.write16(vt + 8, r.next_u32() as u16);
+                        c.bus.write32(vt + 0xc, FAKE + 0x10 * (i + 1));
+                    }
+                }
+                let mpf = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    DATA + 0x2c_c000
+                };
+                c.bus.write32(me + 0x5434, mpf);
+                let inst = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    DATA + 0x2c_d000
+                };
+                c.bus.write32(me + 0x408, inst);
+                c.g[A0][0] = me as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn bank_monitor_dtor_matches() {
+        oc1045_hook_all();
+        check(
+            ssx3_ee::s08::f_002ace40__generated,
+            bank_monitor_dtor,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2ace_40 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA + 0x1000;
+                let obj = DATA + 0x2000;
+                let arr = DATA + 0x3000;
+                c.g[A0][0] = this as u64;
+                // The entry a1 is the flags: bit 0 and bit 1 pick the
+                // sound manager and the base-class steps; zero takes the
+                // copy path of the monitor's vtable.
+                c.g[A1][0] = (seed % 4) as u64;
+                c.bus.write32(this, obj);
+                c.bus
+                    .write32(this + 0x8ec, if seed % 7 == 0 { 0 } else { arr });
+                // Count 1 is the no-loop case; 2 and 3 loop (a count of 0
+                // never ends, in the original as in the port).
+                c.bus.write32(arr - 0x10, 1 + seed % 3);
+                for k in 5..=9 {
+                    oc1045_arm(c, k, &[]);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn bank_monitor_fade_out_handle_matches() {
+        oc1045_hook_all();
+        check(
+            ssx3_ee::s08::f_002ad358__generated,
+            bank_monitor_fade_out_handle,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x2ad3_58 ^ seed as u64);
+                scramble(c, &mut r);
+                c.f[12] = r.next_u32();
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                let found = if seed % 3 == 0 { 0 } else { DATA + 0x4000 };
+                oc1045_arm(c, 10, &[found]);
+                oc1045_arm(c, 11, &[]);
+            },
+        );
+    }
+
+    #[test]
+    fn bank_monitor_count_playing_matches() {
+        oc1045_hook_all();
+        check(
+            ssx3_ee::s08::f_002ad730__generated,
+            bank_monitor_count_playing,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x2ad7_30 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA + 0x1000;
+                let arr = DATA + 0x3000;
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this + 0x8ec, arr);
+                fill(c, &mut r, arr, 0x800);
+                let results: Vec<u32> = (0..16).map(|_| (r.next_u32() % 3) & 1).collect();
+                oc1045_arm(c, 1, &results);
+                let _ = seed;
+            },
+        );
+    }
+
+    #[test]
+    fn bank_monitor_count_active_matches() {
+        oc1045_hook_all();
+        check(
+            ssx3_ee::s08::f_002ad7a8__generated,
+            bank_monitor_count_active,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x2ad7_a8 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA + 0x1000;
+                let arr = DATA + 0x3000;
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this + 0x8ec, arr);
+                let results: Vec<u32> = (0..16).map(|_| (r.next_u32() % 3) & 1).collect();
+                oc1045_arm(c, 1, &results);
+                let _ = seed;
+            },
+        );
+    }
+
+    /// Gate of this module's fakes: a word in the machine's RAM, written by
+    /// the fixtures that want the fakes to answer (else the previous body runs).
+    pub(crate) const OC1046_CTRL: u32 = DATA + 0x2f_0000;
+
+    pub(crate) const OC1046_MAGIC: u32 = 0x1046_c0de;
+
+    pub(crate) fn oc1046_gate_on(c: &mut Cpu) {
+        c.bus.write32(OC1046_CTRL, OC1046_MAGIC);
+    }
+
+    /// A callee answered by a gated fake: logs the call and returns, or runs
+    /// the body the slot held before (`fakes::prev_cell` of the fake) when the
+    /// gate is off.
+    pub(crate) fn oc1046_gated(
+        c: &mut Cpu,
+        me: fn(&mut Cpu),
+        generated: fn(&mut Cpu),
+        target: u32,
+    ) {
+        if c.bus.read32(OC1046_CTRL) != OC1046_MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(me), generated);
+        }
+        fakes::fake_call(c, target);
+    }
+
+    pub(crate) fn oc1046_fake_mem_free(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_mem_free,
+            ee::s06::f_002523a8__generated,
+            0x0025_23a8,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_timer_dtor(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_timer_dtor,
+            ee::s08::f_002ad860__generated,
+            0x002a_d860,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_sndplay_dtor(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_sndplay_dtor,
+            ee::s08::f_002a97c0__generated,
+            0x002a_97c0,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_sound_sys_dtor(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_sound_sys_dtor,
+            ee::s08::f_002adee8__generated,
+            0x002a_dee8,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_refresh(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_refresh,
+            ee::s08::f_002aefa8__generated,
+            0x002a_efa8,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_remove_100hz(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_remove_100hz,
+            ee::s13::f_003b5948__generated,
+            0x003b_5948,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_enter_critical(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_enter_critical,
+            ee::s13::f_003b58a0__generated,
+            0x003b_58a0,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_leave_critical(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_leave_critical,
+            ee::s13::f_003b58d8__generated,
+            0x003b_58d8,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_bank_send(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_bank_send,
+            ee::s13::f_003b88c8__generated,
+            0x003b_88c8,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_track_send(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_track_send,
+            ee::s13::f_003b8050__generated,
+            0x003b_8050,
+        );
+    }
+
+    pub(crate) fn oc1046_fake_delete(c: &mut Cpu) {
+        oc1046_gated(
+            c,
+            oc1046_fake_delete,
+            ee::s10::f_00317e50__generated,
+            0x0031_7e50,
+        );
+    }
+
+    /// Install the gated fakes (once per process).
+    pub(crate) fn oc1046_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002523A8),
+            oc1046_fake_mem_free,
+            fakes::prev_cell(oc1046_fake_mem_free),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002AD860),
+            oc1046_fake_timer_dtor,
+            fakes::prev_cell(oc1046_fake_timer_dtor),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002A97C0),
+            oc1046_fake_sndplay_dtor,
+            fakes::prev_cell(oc1046_fake_sndplay_dtor),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002ADEE8),
+            oc1046_fake_sound_sys_dtor,
+            fakes::prev_cell(oc1046_fake_sound_sys_dtor),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002AEFA8),
+            oc1046_fake_refresh,
+            fakes::prev_cell(oc1046_fake_refresh),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B5948),
+            oc1046_fake_remove_100hz,
+            fakes::prev_cell(oc1046_fake_remove_100hz),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58A0),
+            oc1046_fake_enter_critical,
+            fakes::prev_cell(oc1046_fake_enter_critical),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58D8),
+            oc1046_fake_leave_critical,
+            fakes::prev_cell(oc1046_fake_leave_critical),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B88C8),
+            oc1046_fake_bank_send,
+            fakes::prev_cell(oc1046_fake_bank_send),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B8050),
+            oc1046_fake_track_send,
+            fakes::prev_cell(oc1046_fake_track_send),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1046_fake_delete,
+            fakes::prev_cell(oc1046_fake_delete),
+        );
+    }
+
+    /// The BankMonitor under test, its sound system, and the gp-relative
+    /// `gMonitor` word lives in the game image.
+    pub(crate) const MONITOR: u32 = DATA + 0x20_0000;
+
+    pub(crate) const SOUND_SYS: u32 = DATA + 0x2f_1800;
+
+    #[test]
+    fn bank_monitor_base_dtor_matches() {
+        oc1046_install();
+        check(
+            ee::s08::f_002adac8__generated,
+            bank_monitor_base_dtor,
+            240,
+            &|c, seed| {
+                machine(c, seed, 0x2a_dac8, 0);
+                oc1046_gate_on(c);
+                c.g[A0][0] = sx(MONITOR);
+                // Flags 0..3: the copy path (0), the sound system's dtor (bit
+                // 1) and the delete (bit 0) each on and off.
+                c.g[A1][0] = sx(seed % 4);
+                c.bus.write32(MONITOR, SOUND_SYS);
+            },
+        );
+    }
+
+    /// The sound manager object of `SoundManagerRef_StopAll`: its first word
+    /// is the vtable object, whose slot `+0x10` is the delta and `+0x14` the
+    /// function. The object lives outside the random vtable area.
+    pub(crate) const SOUND_MANAGER_REF: u32 = DATA + 0x2f_1000;
+
+    pub(crate) const SOUND_MANAGER_OBJ: u32 = DATA + 0x2f_1100;
+
+    #[test]
+    fn sound_manager_ref_stop_all_matches() {
+        check(
+            ee::s08::f_002adf80__generated,
+            sound_manager_ref_stop_all,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_df80, 0);
+                oc1046_gate_on(c);
+                let vt = fakes::vtable(c, &mut r, &[0x10]);
+                c.bus.write32(SOUND_MANAGER_OBJ, vt);
+                c.bus.write32(SOUND_MANAGER_REF, SOUND_MANAGER_OBJ);
+                c.g[A0][0] = sx(SOUND_MANAGER_REF);
+                c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// The sound path allocator pointer at `gp + 0x69c`: empty on even seeds
+    /// (null result), else a fake (logged) allocator.
+    #[test]
+    fn path_plat_alloc_matches() {
+        oc1046_install();
+        check(
+            ee::s08::f_002adfc8__generated,
+            path_plat_alloc,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_dfc8, 0);
+                oc1046_gate_on(c);
+                c.g[A0][0] = sx(r.next_u32() & 0xffff);
+                let alloc = if seed % 2 == 0 { 0 } else { FAKE + 0x80 };
+                c.bus.write32(GAME_GP + 0x69c, alloc);
+            },
+        );
+    }
+
+    #[test]
+    fn path_plat_free_matches() {
+        oc1046_install();
+        check(
+            ee::s08::f_002ae000__generated,
+            path_plat_free,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_e000, 0);
+                oc1046_gate_on(c);
+                c.g[A0][0] = sx(DATA + 0x2f_2000 + 0x10 * (r.next_u32() & 0xf));
+            },
+        );
+    }
+
+    /// The sound path player table: slot `k` holds a player (or null on some
+    /// seeds). Each player: bank flag `+0x64`, dirty flag `+0x65`, request
+    /// count `+0x66` (signed), request list `+0x6c`, buffered `+0x50`, dry
+    /// level `+0x14`. Requests are 12 bytes: handle `+4`, position `+8`.
+    pub(crate) const PLAYER_BASE: u32 = DATA + 0x2f_2000;
+
+    pub(crate) const REQUESTS: u32 = DATA + 0x2f_4000;
+
+    pub(crate) fn player_world(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        for k in 0..8u32 {
+            let p = PLAYER_BASE + 0x100 * k;
+            let null = k == seed % 8 && seed % 5 == 0;
+            c.bus
+                .write32(PATH_PLAYER_TABLE + 4 * k, if null { 0 } else { p });
+            c.bus.write8(p + 0x64, (seed as u8) & 1);
+            c.bus.write8(p + 0x65, if seed % 3 == 0 { 1 } else { 0 });
+            let count = if seed % 11 == 10 {
+                0x80
+            } else {
+                (seed % 7) as u8
+            };
+            c.bus.write8(p + 0x66, count);
+            let list = REQUESTS + 0x100 * k;
+            c.bus.write32(p + 0x6c, list);
+            for i in 0..8u32 {
+                let handle = 0x100 + 0x10 * k + i;
+                c.bus.write32(list + 12 * i + 4, handle);
+                c.bus.write32(list + 12 * i + 8, r.next_u32());
+            }
+            c.bus.write32(p + 0x50, r.next_u32());
+            c.bus.write32(p + 0x14, r.next_u32());
+        }
+    }
+
+    #[test]
+    fn path_plat_get_track_position_matches() {
+        oc1046_install();
+        check(
+            ee::s08::f_002aea38__generated,
+            path_plat_get_track_position,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_ea38, 0);
+                oc1046_gate_on(c);
+                player_world(c, &mut r, seed);
+                c.g[A0][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn path_plat_find_queued_by_id_matches() {
+        oc1046_install();
+        check(
+            ee::s08::f_002aeb40__generated,
+            path_plat_find_queued_by_id,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_eb40, 0);
+                oc1046_gate_on(c);
+                player_world(c, &mut r, seed);
+                let k = seed % 8;
+                c.g[A0][0] = sx(k);
+                // Key: a request of this player (found) or not (-8).
+                let key = if seed % 4 == 3 {
+                    0x0fff
+                } else {
+                    0x100 + 0x10 * k + (seed % 8)
+                };
+                c.g[A1][0] = sx(key);
+            },
+        );
+    }
+
+    #[test]
+    fn path_plat_get_track_handle_matches() {
+        check(
+            ee::s08::f_002af480__generated,
+            path_plat_get_track_handle,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_f480, 0);
+                player_world(c, &mut r, seed);
+                c.g[A0][0] = sx(seed % 8);
+            },
+        );
+    }
+
+    #[test]
+    fn path_plat_set_aux_send_matches() {
+        oc1046_install();
+        check(
+            ee::s08::f_002af4e0__generated,
+            path_plat_set_aux_send_2,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_f4e0, 0);
+                oc1046_gate_on(c);
+                player_world(c, &mut r, seed);
+                c.g[A0][0] = sx(seed % 8);
+                c.g[A1][0] = sx(r.next_u32() & 0xff);
+                c.g[A2][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// Gate word of this module's fakes in the machine's RAM.
+    pub(crate) const OC1047_CTRL: u32 = DATA + 0x21_0200;
+
+    pub(crate) const OC1047_MAGIC: u32 = 0x1047_c0de;
+
+    // Each fake logs the call (`fakes::fake_call`) when the gate word is set,
+    // and otherwise runs the body it replaced.
+    macro_rules! oc1047_fakes {
+        ($(($fake:ident, $prev:ident, $slot:expr, $gen:expr, $addr:expr)),* $(,)?) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC1047_CTRL) != OC1047_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            fn oc1047_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc1047_fakes!(
+        (
+            oc1047_fk_enter_critical,
+            OC1047_PREV_ENTER_CRITICAL,
+            ee::s13::OVERRIDE_003B58A0,
+            ee::s13::f_003b58a0,
+            0x003b_58a0
+        ),
+        (
+            oc1047_fk_leave_critical,
+            OC1047_PREV_LEAVE_CRITICAL,
+            ee::s13::OVERRIDE_003B58D8,
+            ee::s13::f_003b58d8,
+            0x003b_58d8
+        ),
+        (
+            oc1047_fk_snd_stop,
+            OC1047_PREV_SND_STOP,
+            ee::s13::OVERRIDE_003B89E0,
+            ee::s13::f_003b89e0,
+            0x003b_89e0
+        ),
+        (
+            oc1047_fk_snd_purge,
+            OC1047_PREV_SND_PURGE,
+            ee::s13::OVERRIDE_003B78F8,
+            ee::s13::f_003b78f8,
+            0x003b_78f8
+        ),
+        (
+            oc1047_fk_stream_playing,
+            OC1047_PREV_STREAM_PLAYING,
+            ee::s08::OVERRIDE_002AB028,
+            ee::s08::f_002ab028,
+            0x002a_b028
+        ),
+        (
+            oc1047_fk_bank_dtor,
+            OC1047_PREV_BANK_DTOR,
+            ee::s08::OVERRIDE_002AF900,
+            ee::s08::f_002af900,
+            0x002a_f900
+        ),
+        (
+            oc1047_fk_mem_free,
+            OC1047_PREV_MEM_FREE,
+            ee::s06::OVERRIDE_002523A8,
+            ee::s06::f_002523a8,
+            0x0025_23a8
+        ),
+        (
+            oc1047_fk_stream_destroy,
+            OC1047_PREV_STREAM_DESTROY,
+            ee::s08::OVERRIDE_002AABD0,
+            ee::s08::f_002aabd0,
+            0x002a_abd0
+        ),
+        (
+            oc1047_fk_builtin_delete,
+            OC1047_PREV_BUILTIN_DELETE,
+            ee::s10::OVERRIDE_00317E50,
+            ee::s10::f_00317e50,
+            0x0031_7e50
+        ),
+        (
+            oc1047_fk_vec_delete,
+            OC1047_PREV_VEC_DELETE,
+            ee::s10::OVERRIDE_00317E98,
+            ee::s10::f_00317e98,
+            0x0031_7e98
+        ),
+        (
+            oc1047_fk_stream_arr_dtor,
+            OC1047_PREV_STREAM_ARR_DTOR,
+            ee::s08::OVERRIDE_002AA648,
+            ee::s08::f_002aa648,
+            0x002a_a648
+        ),
+        (
+            oc1047_fk_bank_mgr_dtor,
+            OC1047_PREV_BANK_MGR_DTOR,
+            ee::s07::OVERRIDE_0028BB10,
+            ee::s07::f_0028bb10,
+            0x0028_bb10
+        ),
+        (
+            oc1047_fk_soundref_dtor,
+            OC1047_PREV_SOUNDREF_DTOR,
+            ee::s08::OVERRIDE_002ADEE8,
+            ee::s08::f_002adee8,
+            0x002a_dee8
+        ),
+        (
+            oc1047_fk_load_inf,
+            OC1047_PREV_LOAD_INF,
+            ee::s08::OVERRIDE_002B0088,
+            ee::s08::f_002b0088,
+            0x002b_0088
+        ),
+    );
+
+    /// Install the fakes and open the gate in this fixture's machine.
+    pub(crate) fn oc1047_arm(c: &mut Cpu) {
+        oc1047_install_fakes();
+        c.bus.write32(OC1047_CTRL, OC1047_MAGIC);
+    }
+
+    /// `PATH_PlatStopTrackSound` (0x2af838): the hand-written port in
+    /// `game::sound::bankmonitor`, checked against the generated body (the
+    /// port is not in `OVERRIDES` here). Flag clear or set, all four track
+    /// slots, the stop and purge paths.
+    #[test]
+    fn oc1047_path_plat_stop_track_sound_matches() {
+        check(
+            ee::s08::f_002af838__generated,
+            crate::game::sound::bankmonitor::path_plat_stop_track_sound,
+            300,
+            &|c, seed| {
+                machine(c, seed, 0x1047_01, 3);
+                oc1047_arm(c);
+                let i = seed % 4;
+                let obj = DATA + 0x1_0000 + i * 0x100;
+                c.bus.write32(0x004d_3e98 + 4 * i, obj);
+                let flag = if seed % 3 == 0 {
+                    0
+                } else {
+                    1 + (seed % 100) as u8
+                };
+                c.bus.write8(obj + 0x64, flag);
+                c.bus.write32(obj + 0x6c, DATA + 0x2_0000);
+                c.bus.write32(DATA + 0x2_0004, DATA + 0x2_1000);
+                c.g[A0][0] = sx(i);
+            },
+        );
+    }
+
+    /// `SpeechInstance_IsPlaying`: the stream array at `gp+0x6c4` answers for
+    /// the instance's stream at `+4`; the fake may unwind.
+    #[test]
+    fn oc1047_speech_instance_is_playing_matches() {
+        check(
+            ee::s08::f_002b07c0__generated,
+            speech_instance_is_playing,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1047_02, 1);
+                oc1047_arm(c);
+                c.bus.write32(GAME_GP + 0x6c4, DATA + 0x1_0000);
+                c.bus.write32(DATA + 0x1_0000, DATA + 0x1_1000);
+                let inst = DATA + 0x1_2000;
+                c.bus.write32(inst + 4, seed.wrapping_mul(0x9e37));
+                c.g[A0][0] = sx(inst);
+            },
+        );
+    }
+
+    /// `SpeechInstance_SetParam8c4` and `_SetParam8c8`: plain stores of the
+    /// argument into the instance, whatever the value.
+    #[test]
+    fn oc1047_speech_instance_set_param8c4_matches() {
+        check(
+            ee::s08::f_002b07e8__generated,
+            speech_instance_set_param8c4,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1047_03, 0);
+                c.g[A0][0] = sx(DATA + 0x1_0000);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn oc1047_speech_instance_set_param8c8_matches() {
+        check(
+            ee::s08::f_002b07f0__generated,
+            speech_instance_set_param8c8,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1047_04, 0);
+                c.g[A0][0] = sx(DATA + 0x1_0000);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// Fixture for the two `SpeechSystem` index functions: the instance table
+    /// at `self+4`, entry `index` null or not.
+    pub(crate) fn oc1047_system_fixture(c: &mut Cpu, seed: u32) -> u32 {
+        let sys = DATA + 0x1_0000;
+        let table = DATA + 0x1_1000;
+        let index = seed % 4;
+        c.bus.write32(sys + 4, table);
+        let inst = if seed % 3 == 0 {
+            0
+        } else {
+            DATA + 0x1_2000 + index * 0x100
+        };
+        c.bus.write32(table + 4 * index, inst);
+        c.g[A0][0] = sx(sys);
+        c.g[A1][0] = sx(index);
+        index
+    }
+
+    /// `SpeechSystem_LoadSpeechInf`: the instance at `index` (null or not) is
+    /// loaded with a3 = 0; the loader is faked and may unwind.
+    #[test]
+    fn oc1047_speech_system_load_speech_inf_matches() {
+        check(
+            ee::s08::f_002b0f10__generated,
+            speech_system_load_speech_inf,
+            300,
+            &|c, seed| {
+                machine(c, seed, 0x1047_05, 2);
+                oc1047_arm(c);
+                oc1047_system_fixture(c, seed);
+            },
+        );
+    }
+
+    /// `SpeechSystem_SetInstanceParam8c4`: the real `SetParam8c4` runs on the
+    /// instance at `index` (null or not) with the value in a2.
+    #[test]
+    fn oc1047_speech_system_set_instance_param8c4_matches() {
+        check(
+            ee::s08::f_002b0fe8__generated,
+            speech_system_set_instance_param8c4,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1047_06, 0);
+                oc1047_system_fixture(c, seed);
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `SpeechInstance_dtor`: bank count 0..=3 (null or not per bank), entry
+    /// count 0..=3 with null or not pointers in the three tables, the stream
+    /// at `gp+0x6c4`, flag bit 0 with the object freed; the callees are faked
+    /// and may unwind.
+    #[test]
+    fn oc1047_speech_instance_dtor_matches() {
+        check(
+            ee::s08::f_002afb38__generated,
+            speech_instance_dtor,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1047_07, 6);
+                oc1047_arm(c);
+                let this = DATA + 0x1_0000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = r.next_u32() as u64;
+                for j in 0..4u32 {
+                    for k in 0..2u32 {
+                        let off = 8 * j + 4 * k;
+                        for base in [0x8d4u32, 0xd0, 0xcc] {
+                            let p = if r.next_u32() % 3 == 0 {
+                                0
+                            } else {
+                                DATA + 0x3_0000 + base + off
+                            };
+                            c.bus.write32(this + base + off, p);
+                        }
+                    }
+                }
+                for i in 0..4u32 {
+                    let bank = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        DATA + 0x2_0000 + i * 0x100
+                    };
+                    c.bus.write32(this + 0xf4 + 4 * i, bank);
+                }
+                c.bus.write32(this + 4, DATA + 0x3_3000);
+                c.bus.write32(GAME_GP + 0x6c4, DATA + 0x3_1000);
+                c.bus.write32(DATA + 0x3_1000, DATA + 0x3_2000);
+                c.bus.write32(GAME_GP + 0x6c8, r.next_u32());
+                // Written last: these words overlap the tables above.
+                c.bus.write32(this + 0xec, r.next_u32() % 4);
+                c.bus.write32(this + 0xf0, r.next_u32() % 4);
+            },
+        );
+    }
+
+    /// `SpeechSystem_dtor`: the flag word covers all four values (bit 1 the
+    /// managers, bit 0 the object, zero the copy path); the nested instance at
+    /// `this+4` null or not; the vtable chain `this -> p1 -> p2 -> p3`; the
+    /// callees are faked and may unwind.
+    #[test]
+    fn oc1047_speech_system_dtor_matches() {
+        check(
+            ee::s08::f_002b0ae8__generated,
+            speech_system_dtor,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1047_08, 5);
+                oc1047_arm(c);
+                let this = DATA + 0x1_0000;
+                let p1 = DATA + 0x1_1000;
+                let p2 = DATA + 0x1_2000;
+                let p3 = DATA + 0x1_3000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.bus.write32(this, p1);
+                c.bus.write32(p1, p2);
+                c.bus.write32(p2 + 0x1d8, p3);
+                let inst = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    DATA + 0x1_4000
+                };
+                c.bus.write32(this + 4, inst);
+            },
+        );
+    }
+
+    /// Gate word of this module's fakes (own address and magic in the
+    /// machine's RAM: other tests' machines run the real bodies).
+    pub(crate) const OC1048_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1048_MAGIC: u32 = 0x1048_f00d;
+
+    /// The value the leaf fakes return (Audio_Rand, IsPlaying, PATH_status).
+    pub(crate) const OC1048_MAILBOX: u32 = DATA + 0x20_0008;
+
+    /// Fixture objects (clear of the fakes' result pointers, `DATA..+0x40000`).
+    pub(crate) const OC1048_SELF: u32 = DATA + 0x5_0000;
+
+    pub(crate) const OC1048_CHANS: u32 = DATA + 0x5_1000;
+
+    pub(crate) const OC1048_INST: u32 = DATA + 0x5_2000;
+
+    pub(crate) const OC1048_MUSIC: u32 = DATA + 0x5_8000;
+
+    pub(crate) const OC1048_STREAMS: u32 = DATA + 0x5_8100;
+
+    pub(crate) const OC1048_SLOTS: u32 = DATA + 0x5_8200;
+
+    pub(crate) const OC1048_SONG: u32 = DATA + 0x5_9000;
+
+    pub(crate) const OC1048_CONFIG: u32 = DATA + 0x5_9100;
+
+    /// Leaf stand-in for the speech sentence player (`0x3d8040`): returns 0.
+    pub(crate) fn oc1048_fake_player(c: &mut Cpu) {
+        if c.bus.read32(OC1048_CTRL) != OC1048_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1048_fake_player),
+                ee::s14::f_003d8040__generated,
+            );
+        }
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `SpeechInstance_IsPlaying` (`0x2b07c0`): returns the mailbox.
+    pub(crate) fn oc1048_fake_is_playing(c: &mut Cpu) {
+        if c.bus.read32(OC1048_CTRL) != OC1048_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1048_fake_is_playing),
+                ee::s08::f_002b07c0__generated,
+            );
+        }
+        c.g[V0][0] = sx(c.bus.read32(OC1048_MAILBOX));
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `Audio_Rand` (`0x2adf60`): returns the mailbox.
+    pub(crate) fn oc1048_fake_audio_rand(c: &mut Cpu) {
+        if c.bus.read32(OC1048_CTRL) != OC1048_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1048_fake_audio_rand),
+                ee::s08::f_002adf60__generated,
+            );
+        }
+        c.g[V0][0] = sx(c.bus.read32(OC1048_MAILBOX));
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for the path table's FindTrack (`0x3d15c8`): no effect.
+    pub(crate) fn oc1048_fake_find_track(c: &mut Cpu) {
+        if c.bus.read32(OC1048_CTRL) != OC1048_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1048_fake_find_track),
+                ee::s14::f_003d15c8__generated,
+            );
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `PATH_status` (`0x3d11b8`): writes the mailbox at buf[9].
+    pub(crate) fn oc1048_fake_path_status(c: &mut Cpu) {
+        if c.bus.read32(OC1048_CTRL) != OC1048_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1048_fake_path_status),
+                ee::s14::f_003d11b8__generated,
+            );
+        }
+        let buf = c.g[A1][0] as u32;
+        let word = c.bus.read32(OC1048_MAILBOX);
+        c.bus.write32(buf.wrapping_add(0x24), word);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Puts the gated fakes in their override slots (once per process).
+    pub(crate) fn oc1048_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003D8040),
+            oc1048_fake_player,
+            fakes::prev_cell(oc1048_fake_player),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B07C0),
+            oc1048_fake_is_playing,
+            fakes::prev_cell(oc1048_fake_is_playing),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002ADF60),
+            oc1048_fake_audio_rand,
+            fakes::prev_cell(oc1048_fake_audio_rand),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003D15C8),
+            oc1048_fake_find_track,
+            fakes::prev_cell(oc1048_fake_find_track),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003D11B8),
+            oc1048_fake_path_status,
+            fakes::prev_cell(oc1048_fake_path_status),
+        );
+    }
+
+    /// Hooked fakes, scrambled registers, the gate on, the mailbox random.
+    pub(crate) fn oc1048_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        oc1048_hook();
+        let mut r = machine(c, seed, salt, 0);
+        c.bus.write32(OC1048_CTRL, OC1048_MAGIC);
+        c.bus.write32(OC1048_MAILBOX, r.next_u32());
+        r
+    }
+
+    /// A `cSpeechSys` whose channel table holds four channels; channel `i` is
+    /// empty for some seeds, and each instance has random fields.
+    pub(crate) fn oc1048_speech(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus
+            .write32(OC1048_SELF + SPEECH_CHANNEL_TABLE, OC1048_CHANS);
+        c.bus
+            .write32(OC1048_SELF + SPEECH_SYS_CALLBACK, r.next_u32());
+        c.bus
+            .write32(OC1048_SELF + SPEECH_SYS_CALLBACK_INSTANCE, r.next_u32());
+        for i in 0..4u32 {
+            let inst = if (seed + i) % 5 == 0 {
+                0
+            } else {
+                OC1048_INST + 0x1000 * i
+            };
+            c.bus.write32(OC1048_CHANS + 4 * i, inst);
+            if inst != 0 {
+                for off in [
+                    0x8c8,
+                    SPEECH_INST_POSITION,
+                    SPEECH_INST_USER_INFO,
+                    SPEECH_INST_RADIUS,
+                ] {
+                    c.bus.write32(inst + off, r.next_u32());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn speech_system_set_instance_param_8c8_matches() {
+        check(
+            ee::s08::f_002b1020__generated,
+            speech_system_set_instance_param_8c8,
+            300,
+            &|c, seed| {
+                let mut r = oc1048_machine(c, seed, 0x1020);
+                oc1048_speech(c, &mut r, seed);
+                c.g[A0][0] = sx(OC1048_SELF);
+                c.g[A1][0] = sx(seed % 4);
+                c.g[A2][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn speech_system_request_event_matches() {
+        check(
+            ee::s08::f_002b1058__generated,
+            speech_system_request_event,
+            300,
+            &|c, seed| {
+                let mut r = oc1048_machine(c, seed, 0x1058);
+                oc1048_speech(c, &mut r, seed);
+                c.g[A0][0] = sx(OC1048_SELF);
+                c.g[A1][0] = sx(seed % 4);
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[A3][0] = if seed % 3 == 0 { 0 } else { sx(r.next_u32()) };
+                c.g[T0][0] = sx(r.next_u32());
+                c.f[12] = if seed % 2 == 0 {
+                    0x3fc0_0000
+                } else {
+                    r.edge_f32()
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn speech_system_flush_instance_matches() {
+        check(
+            ee::s08::f_002b1128__generated,
+            speech_system_flush_instance,
+            300,
+            &|c, seed| {
+                let mut r = oc1048_machine(c, seed, 0x1128);
+                oc1048_speech(c, &mut r, seed);
+                c.g[A0][0] = sx(OC1048_SELF);
+                c.g[A1][0] = sx(seed % 4);
+            },
+        );
+    }
+
+    #[test]
+    fn speech_system_is_instance_playing_matches() {
+        check(
+            ee::s08::f_002b11e8__generated,
+            speech_system_is_instance_playing,
+            300,
+            &|c, seed| {
+                let mut r = oc1048_machine(c, seed, 0x11e8);
+                oc1048_speech(c, &mut r, seed);
+                c.g[A0][0] = sx(OC1048_SELF);
+                c.g[A1][0] = sx(seed % 4);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_stop_stream_matches() {
+        check(
+            ee::s08::f_002b1a70__generated,
+            music_player_stop_stream,
+            200,
+            &|c, seed| {
+                oc1048_machine(c, seed, 0x1a70);
+                // gMusicSys -> stream array -> slot table with stream 2 empty.
+                c.bus.write32(GAME_GP + GP_MUSIC_SYS, OC1048_MUSIC);
+                c.bus.write32(OC1048_MUSIC, OC1048_STREAMS);
+                c.bus.write32(OC1048_STREAMS + 8, OC1048_SLOTS);
+                c.bus.write32(OC1048_SLOTS + 8, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_path_cmd_b_matches() {
+        check(
+            ee::s08::f_002b2140__generated,
+            song_instance_path_cmd_b,
+            200,
+            &|c, seed| {
+                oc1048_machine(c, seed, 0x2140);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_pick_random_phrase_offset_matches() {
+        check(
+            ee::s08::f_002b2500__generated,
+            song_instance_pick_random_phrase_offset,
+            300,
+            &|c, seed| {
+                let mut r = oc1048_machine(c, seed, 0x2500);
+                // self -> config (phrases per bank at +0x6c, align at +0x74).
+                c.bus.write32(OC1048_SONG, OC1048_CONFIG);
+                c.bus.write32(OC1048_CONFIG + 0x6c, 2 + seed % 7);
+                c.bus.write32(OC1048_CONFIG + 0x74, r.next_u32());
+                c.bus.write32(GAME_GP + GP_SOUND_RAND, r.next_u32());
+                c.g[A0][0] = sx(OC1048_SONG);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_get_path_status_field_matches() {
+        check(
+            ee::s08::f_002b2550__generated,
+            song_instance_get_path_status_field,
+            200,
+            &|c, seed| {
+                oc1048_machine(c, seed, 0x2550);
+            },
+        );
+    }
+
+    /// A song instance at `DATA + 0x200` whose first word points at its
+    /// playback block (`DATA + 0x300`): a beat rate (`+0x90`, a non-zero
+    /// float) and the two beat-count fields (`+0x64`, `+0x68`).
+    pub(crate) fn oc1049_song_setup(c: &mut Cpu, seed: u32) {
+        let song = DATA + 0x200;
+        let block = DATA + 0x300;
+        c.g[A0][0] = sx(song);
+        c.bus.write32(song, block);
+        c.bus.write32(block + 0x64, 0x1000 + 0x37 * seed);
+        c.bus.write32(block + 0x68, 1 + seed % 5);
+        c.bus
+            .write32(block + 0x90, (0.5 + (seed % 7) as f32).to_bits());
+    }
+
+    /// A music player at `DATA + 0x200`: a current song (`+0x418`) that is
+    /// sometimes absent, and a song object (`+0x408`) that is sometimes null.
+    pub(crate) fn oc1049_player_setup(c: &mut Cpu, seed: u32) {
+        let mp = DATA + 0x200;
+        let song = DATA + 0x300;
+        c.g[A0][0] = sx(mp);
+        c.bus.write32(mp + 0x418, if seed % 3 != 0 { 1 } else { 0 });
+        c.bus
+            .write32(mp + 0x408, if seed % 2 == 0 { song } else { 0 });
+    }
+
+    #[test]
+    fn song_instance_get_stream_status_matches() {
+        check(
+            ee::s08::f_002b2578__generated,
+            song_instance_get_stream_status,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_2578, 0);
+                oc1049_song_setup(c, seed);
+                c.g[A1][0] = sx(DATA + 0x400);
+                fill(c, &mut r, DATA + 0x400, 8);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_get_time_remaining_matches() {
+        check(
+            ee::s08::f_002b2640__generated,
+            song_instance_get_time_remaining,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_2640, 0);
+                oc1049_song_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_get_phrase_ms_matches() {
+        check(
+            ee::s08::f_002b26b8__generated,
+            song_instance_get_phrase_ms,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_26b8, 0);
+                oc1049_song_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_get_time_remaining_wrapper_matches() {
+        check(
+            ee::s08::f_002b26f8__generated,
+            song_instance_get_time_remaining_wrapper,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_26f8, 0);
+                oc1049_song_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_get_beat_index_matches() {
+        check(
+            ee::s08::f_002b2778__generated,
+            song_instance_get_beat_index,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_2778, 0);
+                oc1049_song_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn song_instance_is_loop_bank_busy_matches() {
+        check(
+            ee::s08::f_002b27c0__generated,
+            song_instance_is_loop_bank_busy,
+            120,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_27c0, 0);
+                let song = DATA + 0x200;
+                let mgr = DATA + 0x400;
+                let table = DATA + 0x800;
+                c.g[A0][0] = sx(song);
+                c.g[A1][0] = sx(mgr);
+                // Loops active (returns 1) on a quarter of the seeds.
+                c.bus
+                    .write32(song + 0x4c, if seed % 4 == 0 { 1 } else { 0 });
+                let bank = seed % 3;
+                c.bus.write32(song + 0x34, bank);
+                c.bus.write32(mgr + 0xacc, table);
+                // The bank entry: marked (1) on half of the seeds.
+                c.bus
+                    .write32(table + 0x60 * bank, if seed % 2 == 0 { 1 } else { 0 });
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_path_cmd_b_matches() {
+        check(
+            ee::s08::f_002b3c60__generated,
+            music_player_path_cmd_b,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_3c60, 0);
+                oc1049_player_setup(c, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_apply_song_volume_matches() {
+        check(
+            ee::s08::f_002b3cd8__generated,
+            music_player_apply_song_volume,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x2b_3cd8, 0);
+                oc1049_player_setup(c, seed);
+                c.g[A1][0] = sx(seed % 128);
+            },
+        );
+    }
+
+    /// Gate word of this module's fakes (own address and magic in the
+    /// machine's RAM: other tests' machines run the real bodies).
+    pub(crate) const CTRL: u32 = DATA + 0x21_0000;
+
+    pub(crate) const MAGIC: u32 = 0x1050_f00d;
+
+    /// Call log: the next free record, and the records (target, a0..t3).
+    pub(crate) const LOG_NEXT: u32 = DATA + 0x21_0004;
+
+    pub(crate) const LOG: u32 = DATA + 0x21_0100;
+
+    /// Mailboxes of the leaf fakes: beat ms (f0), ms to next (f0), beat index,
+    /// phrase offset.
+    pub(crate) const MB_BEAT_MS: u32 = DATA + 0x21_0800;
+
+    pub(crate) const MB_MS_TO_NEXT: u32 = DATA + 0x21_0804;
+
+    pub(crate) const MB_BEAT_INDEX: u32 = DATA + 0x21_0808;
+
+    pub(crate) const MB_PHRASE: u32 = DATA + 0x21_080c;
+
+    /// Fixture objects, each in its own region.
+    pub(crate) const SELF: u32 = DATA + 0x22_0000;
+
+    pub(crate) const STREAMS: u32 = DATA + 0x23_0000;
+
+    pub(crate) const BANK_MGR: u32 = DATA + 0x23_1000;
+
+    pub(crate) const BANKS: u32 = DATA + 0x23_2000;
+
+    pub(crate) const SONG_2: u32 = DATA + 0x23_3000;
+
+    pub(crate) const OBJ_3: u32 = DATA + 0x23_4000;
+
+    /// `MusicPlayer_ClearLoopsActive` (real, cheap): the loop object's function.
+    pub(crate) const CLEAR_LOOPS_ACTIVE: u32 = 0x002b_4708;
+
+    /// Appends a call record (target and the argument registers) to the log.
+    pub(crate) fn mpl_log(c: &mut Cpu, target: u32) {
+        let mut p = c.bus.read32(LOG_NEXT);
+        if p == 0 {
+            p = LOG;
+        }
+        c.bus.write32(p, target);
+        for (i, r) in [A0, A1, A2, A3, T0, T1, T2, T3].into_iter().enumerate() {
+            c.bus.write32(p + 4 + 4 * i as u32, c.g[r][0] as u32);
+        }
+        c.bus.write32(LOG_NEXT, p + 0x40);
+    }
+
+    /// Leaf stand-in for `BankMonitor_AddTimer` (`0x2adca0`): logs the call.
+    pub(crate) fn mpl_fake_add_timer(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_add_timer),
+                ee::s08::f_002adca0__generated,
+            );
+        }
+        mpl_log(c, 0x002a_dca0);
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `BankMonitor_KillTimersByCallback` (`0x2adde0`).
+    pub(crate) fn mpl_fake_kill_timers(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_kill_timers),
+                ee::s08::f_002adde0__generated,
+            );
+        }
+        mpl_log(c, 0x002a_dde0);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `MusicPlayer_SelectNextSong` (`0x2b42b8`).
+    pub(crate) fn mpl_fake_select_next(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_select_next),
+                ee::s08::f_002b42b8__generated,
+            );
+        }
+        mpl_log(c, 0x002b_42b8);
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `SongInstance_GetBeatMs` (`0x2b2690`): f0 from its mailbox.
+    pub(crate) fn mpl_fake_beat_ms(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_beat_ms),
+                ee::s08::f_002b2690__generated,
+            );
+        }
+        mpl_log(c, 0x002b_2690);
+        c.f[0] = c.bus.read32(MB_BEAT_MS);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `SongInstance_GetMsToNextBeat` (`0x2b2718`).
+    pub(crate) fn mpl_fake_ms_to_next(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_ms_to_next),
+                ee::s08::f_002b2718__generated,
+            );
+        }
+        mpl_log(c, 0x002b_2718);
+        c.f[0] = c.bus.read32(MB_MS_TO_NEXT);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `SongInstance_GetBeatIndex` (`0x2b2778`): v0 from its mailbox.
+    pub(crate) fn mpl_fake_beat_index(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_beat_index),
+                ee::s08::f_002b2778__generated,
+            );
+        }
+        mpl_log(c, 0x002b_2778);
+        c.g[V0][0] = sx(c.bus.read32(MB_BEAT_INDEX));
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for `SongInstance_PickRandomPhraseOffset` (`0x2b2500`).
+    pub(crate) fn mpl_fake_pick_phrase(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_pick_phrase),
+                ee::s08::f_002b2500__generated,
+            );
+        }
+        mpl_log(c, 0x002b_2500);
+        c.g[V0][0] = sx(c.bus.read32(MB_PHRASE));
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Leaf stand-in for the sentence path's `PATH_TrackPrepare` (`0x3d2df8`).
+    pub(crate) fn mpl_fake_track_prepare(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(mpl_fake_track_prepare),
+                ee::s14::f_003d2df8__generated,
+            );
+        }
+        mpl_log(c, 0x003d_2df8);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Puts the gated fakes in their override slots (once per process).
+    pub(crate) fn mpl_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002ADCA0),
+            mpl_fake_add_timer,
+            fakes::prev_cell(mpl_fake_add_timer),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002ADDE0),
+            mpl_fake_kill_timers,
+            fakes::prev_cell(mpl_fake_kill_timers),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B42B8),
+            mpl_fake_select_next,
+            fakes::prev_cell(mpl_fake_select_next),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B2690),
+            mpl_fake_beat_ms,
+            fakes::prev_cell(mpl_fake_beat_ms),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B2718),
+            mpl_fake_ms_to_next,
+            fakes::prev_cell(mpl_fake_ms_to_next),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B2778),
+            mpl_fake_beat_index,
+            fakes::prev_cell(mpl_fake_beat_index),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B2500),
+            mpl_fake_pick_phrase,
+            fakes::prev_cell(mpl_fake_pick_phrase),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003D2DF8),
+            mpl_fake_track_prepare,
+            fakes::prev_cell(mpl_fake_track_prepare),
+        );
+    }
+
+    /// Hooked fakes, scrambled registers, the gate on, the mailboxes random.
+    pub(crate) fn mpl_machine(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        mpl_hook();
+        let mut r = fakes::machine(c, seed, salt, 0);
+        c.bus.write32(CTRL, MAGIC);
+        c.bus
+            .write32(MB_BEAT_MS, ((r.next_u32() % 4000) as f32).to_bits());
+        c.bus
+            .write32(MB_MS_TO_NEXT, ((r.next_u32() % 4000) as f32).to_bits());
+        c.bus.write32(MB_BEAT_INDEX, r.next_u32() % 3);
+        c.bus.write32(MB_PHRASE, r.next_u32() % 16);
+        r
+    }
+
+    /// A `cMusicSys` with its stream system, bank table (statuses rotate with
+    /// the seed) and one song whose state, bank index and loop flag vary.
+    /// Seeds with `seed % 5 == 0` have no song.
+    pub(crate) fn mpl_world(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(SELF + MPL_STREAMS, STREAMS);
+        c.bus.write32(STREAMS + MPL_BANK_MANAGER, BANK_MGR);
+        c.bus.write32(BANK_MGR + MPL_BANK_TABLE, BANKS);
+        for i in 0..4u32 {
+            let status = [1, 0, 2, 3, u32::MAX][((seed + i) % 5) as usize];
+            c.bus
+                .write32(BANKS + MPL_BANK_SIZE * i + MPL_BANK_STATUS, status);
+            c.bus
+                .write32(BANKS + MPL_BANK_SIZE * i + MPL_BANK_HANDLE, r.next_u32());
+        }
+        c.bus
+            .write32(SELF + MPL_SONG, if seed % 5 == 0 { 0 } else { SONG_2 });
+        c.bus.write32(SONG_2 + MPL_SONG_BANK_INDEX, (seed / 3) % 4);
+        c.bus
+            .write32(SONG_2 + MPL_SONG_STATE, [1, 2, 0, 3][(seed % 4) as usize]);
+        c.bus.write8(SONG_2 + MPL_SONG_VOLUME, r.next_u32() as u8);
+        c.bus.write32(SONG_2 + MPL_SONG_LOOPING, seed % 2);
+        c.bus.write32(SELF + MPL_CURRENT_SONG_NUM, r.next_u32());
+        c.bus.write32(SELF + MPL_LOOP_OBJ, OBJ_3);
+    }
+
+    #[test]
+    fn music_player_fade_song_volume_matches() {
+        check(
+            ee::s08::f_002b3d80__generated,
+            music_player_fade_song_volume,
+            300,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x3d80);
+                mpl_world(c, &mut r, seed);
+                let cur = r.next_u32() as u8;
+                c.bus.write8(SONG_2 + MPL_SONG_VOLUME, cur);
+                let target = if seed % 3 == 0 {
+                    cur as u32
+                } else {
+                    r.next_u32()
+                };
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(target);
+                c.f[12] = if seed % 2 == 0 {
+                    0x3fc0_0000
+                } else {
+                    r.edge_f32()
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_skip_songs_matches() {
+        check(
+            ee::s08::f_002b4180__generated,
+            music_player_skip_songs,
+            250,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x4180);
+                mpl_world(c, &mut r, seed);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx((seed % 5).wrapping_sub(1));
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_start_loops_matches() {
+        check(
+            ee::s08::f_002b4470__generated,
+            music_player_start_loops,
+            300,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x4470);
+                mpl_world(c, &mut r, seed);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_stop_loops_matches() {
+        check(
+            ee::s08::f_002b44d8__generated,
+            music_player_stop_loops,
+            300,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x44d8);
+                mpl_world(c, &mut r, seed);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_timer_forward_slot1_matches() {
+        check(
+            ee::s08::f_002b4540__generated,
+            music_player_timer_forward_slot1,
+            200,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x4540);
+                mpl_world(c, &mut r, seed);
+                // The loop object: a this-offset of 0, 0x10 or 0x20 and the
+                // real ClearLoopsActive as its function.
+                c.bus
+                    .write16(OBJ_3 + MPL_LOOP_OBJ_OFFSET, ((seed % 3) * 0x10) as u16);
+                c.bus.write32(OBJ_3 + MPL_LOOP_OBJ_FN, CLEAR_LOOPS_ACTIVE);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_schedule_loop_matches() {
+        check(
+            ee::s08::f_002b4568__generated,
+            music_player_schedule_loop,
+            300,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x4568);
+                mpl_world(c, &mut r, seed);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(SONG_2);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_attach_loop_bank_matches() {
+        check(
+            ee::s08::f_002b4620__generated,
+            music_player_attach_loop_bank,
+            300,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x4620);
+                mpl_world(c, &mut r, seed);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_loop_timer_callback_matches() {
+        check(
+            ee::s08::f_002b4740__generated,
+            music_player_loop_timer_callback,
+            300,
+            &|c, seed| {
+                let mut r = mpl_machine(c, seed, 0x4740);
+                mpl_world(c, &mut r, seed);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_loop_bank_idle_callback_matches() {
+        oc1051_install();
+        check(
+            ssx3_ee::s08::f_002b47c0__generated,
+            music_player_loop_bank_idle_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1051_47c0, 6);
+                gate_on(c);
+                let this = DATA + 0x1000;
+                let mgr = DATA + 0x3000;
+                let song = DATA + 0x4000;
+                // this->p (p->mgr), mgr->mgr: s1 = **this.
+                c.bus.write32(this, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000, mgr);
+                c.bus.write32(this + 0x408, song);
+                // song->+0x34 is the bank index 3: bank table entry at 0x120.
+                c.bus.write32(song + 0x34, 3);
+                c.bus.write32(mgr + 0xacc, DATA + 0x9000 - 0x120);
+                let state = if seed % 3 == 0 { 2 } else { 1 };
+                c.bus.write32(DATA + 0x9000, state);
+                c.bus.write32(song + 0x4c, r.next_u32());
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    #[test]
+    fn music_player_get_sed_value_matches() {
+        check(
+            ssx3_ee::s08::f_002b48c8__generated,
+            music_player_get_sed_value,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b48_c8, 2);
+                let object = DATA + 0x1000;
+                let mode = seed % 3;
+                c.bus
+                    .write32(object + 0x418, if mode == 0 { 0 } else { r.next_u32() | 1 });
+                c.bus
+                    .write32(object + 0x408, if mode == 1 { 0 } else { DATA + 0x4000 });
+                c.bus.write32(DATA + 0x4000, DATA + 0x5000);
+                c.bus.write32(DATA + 0x5098, r.next_u32());
+                c.g[A0][0] = sx(object);
+            },
         );
     }
 }

@@ -256,6 +256,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_painter_create_view_queries,
         "WorldPainter_CreateViewQueries",
     ),
+    (0x002e_c450, lens_fx_dtor, "LensFX_dtor"),
+    (
+        0x002e_e390,
+        world_painter_get_irradiance3,
+        "WorldPainter_GetIrradiance3",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3224,6 +3230,55 @@ pub fn lens_fx_ctor(c: &mut Cpu) {
     })
 }
 
+/// Direct callees (the generated alias goes through each callee's override slot).
+pub(crate) const LENS_FX_BASE_DTOR: Callee = Callee {
+    addr: 0x002e3060,
+    f: ee::s09::f_002e3060,
+};
+
+pub(crate) const IRRADIANCE_REF_GET_ENTRY: Callee = Callee {
+    addr: 0x002ee010,
+    f: ee::s09::f_002ee010,
+};
+
+pub(crate) const WORLD_PAINTER_GET_IRRADIANCE_NAME3: Callee = Callee {
+    addr: 0x002ef1f0,
+    f: ee::s09::f_002ef1f0,
+};
+
+/// `LensFX_dtor` (0x2ec450): the vtable word of the object at +0x649c, then the
+/// base destructor.
+pub fn lens_fx_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(0x00480000u32.wrapping_add(0x7f00));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x649c), c.g[V0][0]);
+        LENS_FX_BASE_DTOR.call(c, 0x002ec46c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WorldPainter_GetIrradiance3` (0x2ee390): the irradiance entry named by
+/// `WorldPainter_GetIrradianceName3`, looked up in its reference table.
+pub fn world_painter_get_irradiance3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        WORLD_PAINTER_GET_IRRADIANCE_NAME3.call(c, 0x002ee3a0)?;
+        c.g[A0][0] = c.g[V0][0];
+        IRRADIANCE_REF_GET_ENTRY.call(c, 0x002ee3a8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4599,6 +4654,39 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = machine(c, seed, 0x7950_0004, 0);
                 c.g[A0][0] = sx(DATA + 0x1000 + 0x10 * (seed % 8));
+            },
+        );
+    }
+
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc1068_install_fakes;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::GATE;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::GATE_MAGIC;
+
+    #[test]
+    fn lens_fx_dtor_matches() {
+        oc1068_install_fakes();
+        check(
+            ee::s09::f_002ec450__generated,
+            lens_fx_dtor,
+            200,
+            &|c, seed| {
+                machine(c, seed, 1068, 2);
+                c.bus.write32(GATE, GATE_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1000);
+            },
+        );
+    }
+
+    #[test]
+    fn world_painter_get_irradiance3_matches() {
+        oc1068_install_fakes();
+        check(
+            ee::s09::f_002ee390__generated,
+            world_painter_get_irradiance3,
+            200,
+            &|c, seed| {
+                machine(c, seed, 1068, 2);
+                c.bus.write32(GATE, GATE_MAGIC);
             },
         );
     }

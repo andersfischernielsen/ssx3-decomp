@@ -8,6 +8,7 @@ use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4 as gp_2;
@@ -88,6 +89,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         snd_bank_man_notify_queue_heads,
         "SndBankMan_NotifyQueueHeads",
     ),
+    (0x0028_a230, snd_load_queue_flush, "SndLoadQueue_Flush"),
 ];
 
 /// The audio app / view objects: `world + 0x84` is the audio system, its
@@ -3066,6 +3068,64 @@ pub fn snd_bank_man_notify_queue_heads(c: &mut Cpu) {
     })
 }
 
+/// `void SndLoadQueue_Flush(SndLoadQueue* self)` (0x28a230): finishes the
+/// current load until the busy word (+4) clears (waiting with a sleep
+/// syscall between rounds), then frees the buffer at +0x1cc.
+/// A resumable function: entered at any other pc it runs the generated body.
+pub fn snd_load_queue_flush(c: &mut Cpu) {
+    if c.pc != 0x0028_a230 {
+        return ee::s07::f_0028a230__generated(c);
+    }
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0x1;
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let mut first = true;
+        loop {
+            if !first {
+                // 0x28a248: wait a moment, then finish again.
+                c.cycles += 4;
+                c.g[A0][0] = 0x2;
+                call_ptr(c, 0x003e_4fb0, 0x0028_a250)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0x1;
+            }
+            first = false;
+            c.cycles += 5;
+            Callee {
+                addr: 0x0028_9df0,
+                f: ee::s07::f_00289df0,
+            }
+            .call(c, 0x0028_a260)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            if c.g[V0][0] == 0u64 {
+                break;
+            }
+            if back_edge_unwinds(c, 0x0028_a248) {
+                return Ok(());
+            }
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1cc));
+        if c.g[A0][0] == 0u64 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 5;
+            call_ptr(c, 0x0031_7e98, 0x0028_a280)?;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1d0), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x1cc), 0u64);
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4150,5 +4210,57 @@ pub(crate) mod tests {
                 c.bus.write32(table + 4 * idx, 0x1234 + seed);
             },
         );
+    }
+
+    pub(crate) use crate::game::fe::ovstateprofile::tests::oc1024_machine;
+    pub(crate) use crate::game::fe::ovstateprofile::tests::oc1024_paths;
+
+    pub(crate) fn oc1024_flush_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1024_machine(c, seed, 0x28_a230, 8);
+        let this = DATA + 0x5_0000;
+        c.bus.write32(this + 4, seed % 4);
+        c.bus.write32(
+            this + 0x1cc,
+            if (seed / 4) % 2 == 1 {
+                DATA + 0x5_8000
+            } else {
+                0
+            },
+        );
+        c.bus.write32(this + 0x1d0, r.next_u32());
+        c.g[A0][0] = sx(this);
+        c.pc = 0x0028_a230;
+        if seed % 10 == 9 {
+            // A resume entry inside the function (after an unwind): the
+            // frame is already open, the loop is over.
+            let sp = crate::difftest::SP - 0x20;
+            c.g[SP][0] = sx(sp);
+            c.bus.write64(sp, crate::difftest::RA as u64);
+            c.bus
+                .write64(sp + 0x10, (r.next_u32() as u64) << 32 | r.next_u32() as u64);
+            c.bus
+                .write64(sp + 0x18, (r.next_u32() as u64) << 32 | r.next_u32() as u64);
+            c.g[S0][0] = sx(this);
+            c.pc = if (seed / 10) % 2 == 0 {
+                0x0028_a26c
+            } else {
+                0x0028_a278
+            };
+        }
+    }
+
+    /// `SndLoadQueue_Flush`: the busy word counting down over 0..3 rounds
+    /// (the wait call between them), with and without a buffer to free, callee
+    /// unwinds, and resumes at the tail blocks.
+    #[test]
+    fn snd_load_queue_flush_matches() {
+        check(
+            ee::s07::f_0028a230__generated,
+            snd_load_queue_flush,
+            160,
+            &oc1024_flush_setup,
+        );
+        let paths = oc1024_paths(ee::s07::f_0028a230__generated, 160, &oc1024_flush_setup);
+        assert!(paths >= 6, "only {paths} paths");
     }
 }

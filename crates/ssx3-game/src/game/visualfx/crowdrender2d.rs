@@ -33,6 +33,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002d_b980, ccrowd_anim2d_create, "cCrowdAnim2D_Create"),
     (0x002d_b6d8, crowd_render_2d_ctor, "cCrowdRender2D_ctor"),
+    (0x002d_b700, ccrowd_render2d_dtor, "cCrowdRender2D_dtor"),
+    (
+        0x002d_b890,
+        ccrowd_render2d_release_textures,
+        "cCrowdRender2D_ReleaseTextures",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -625,6 +631,135 @@ pub fn crowd_render_2d_ctor(c: &mut Cpu) {
     });
 }
 
+/// `cCrowdRender2D::~cCrowdRender2D` (`cCrowdRender2D_dtor`, 0x2db700): releases
+/// the textures (`cCrowdRender2D_ReleaseTextures`, 0x2db890), then, when the
+/// delete flag (bit 0 of the second argument) is set, frees the object with
+/// `__builtin_delete` (0x317e50).
+pub fn ccrowd_render2d_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        call_ptr(c, 0x002d_b890, 0x002d_b71c)?;
+        c.g[S0][0] &= 0x1;
+        let delete = c.g[S0][0] != 0;
+        frame.restore(c, S0, 0x20);
+        if delete {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x002d_b730)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cCrowdRender2D::ReleaseTextures` (0x2db890): for the one record at
+/// `0x445d3c` (the loop only runs once: `A0` starts at 0), reads its count at
+/// `+0` and, for each of the `count` pointers in the list at `+0x94`, calls the
+/// function pointer at `*(*(gp+0x2a90) + 0x10d8) + 0x194` with that pointer
+/// (and the `lh +0x190` offset of the table added to the table pointer). Then
+/// it calls `0x2523a8` with the object (`s7`) and returns.
+pub fn ccrowd_render2d_release_textures(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x44_0000;
+        frame.save(c, S5, 0x40);
+        frame.save(c, S4, 0x50);
+        c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5d3c));
+        frame.save(c, S7, 0x20);
+        c.g[S4][0] = c.g[S5][0];
+        frame.save(c, S6, 0x30);
+        c.g[S7][0] = c.g[A0][0];
+        frame.save(c, FP, 0x10);
+        c.g[A0][0] = 0;
+        frame.save(c, S0, 0x90);
+        c.g[S6][0] = sx((c.g[S4][0] as u32).wrapping_add(0x94));
+        frame.save(c, S1, 0x80);
+        c.g[FP][0] = 0xd8;
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0xd8;
+        'outer: loop {
+            'record: {
+                c.cycles += 6;
+                c.g[S1][0] = 0;
+                c.mult(0, 2, 4, 2);
+                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                let empty = (c.g[V0][0] as i64) <= 0;
+                c.g[S3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                if empty {
+                    break 'record;
+                }
+                c.cycles += 4;
+                c.mult(0, 2, 4, 30);
+                c.g[S2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+                c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
+                c.g[A2][0] = Addr(c.g[GP][0] as u32).off(0x2a90).lw(c);
+                loop {
+                    c.cycles += 12;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+                    c.g[V0][0] = Addr(c.g[A2][0] as u32).off(0x10d8).lw(c);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x190).lh(c);
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x194).lw(c);
+                    let target = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x002d_b928)?;
+                    c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A2][0] = Addr(c.g[GP][0] as u32).off(0x2a90).lw(c);
+                    if !more {
+                        break 'record;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002d_b908);
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S3][0];
+            let again = (c.g[A0][0] as i64) <= 0;
+            c.g[V0][0] = 0xd8;
+            if again {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_b8e0);
+                }
+                continue 'outer;
+            }
+            break 'outer;
+        }
+        c.cycles += 14;
+        c.g[A0][0] = Addr(c.g[S7][0] as u32).lw(c);
+        call_ptr(c, 0x0025_23a8, 0x002d_b94c)?;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -871,6 +1006,51 @@ pub(crate) mod tests {
             &|c, seed| {
                 oc809_machine(c, seed, 0x2db6d8, 1, 0x002d_b6d8);
                 c.g[A0][0] = (DATA + 0x1000 + 16 * seed) as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::visualfx::avalanche::tests::oc1067_gate;
+
+    /// 0..3 records of the pointer list, with the table's offset and calls
+    /// that unwind now and then.
+    #[test]
+    fn ccrowd_render2d_release_textures_matches() {
+        check(
+            ee::s09::f_002db890__generated,
+            ccrowd_render2d_release_textures,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x002d_b890, 4);
+                oc1067_gate(c);
+                let obj = DATA + 0x2000;
+                let table = DATA + 0x3000;
+                c.bus.write32(GAME_GP.wrapping_add(0x2a90), obj);
+                c.bus.write32(obj + 0x10d8, table);
+                c.bus.write16(table + 0x190, ((seed % 3) * 0x10) as u16);
+                c.bus.write32(table + 0x194, 0x0012_3000);
+                let count = seed % 4;
+                c.bus.write32(0x0044_5d3c, count);
+                for i in 0..count {
+                    c.bus
+                        .write32(0x0044_5d3c + 0x94 + 4 * i, DATA + 0x5000 + 0x10 * i);
+                }
+                c.g[A0][0] = sx(DATA + 0x6000);
+            },
+        );
+    }
+
+    /// Both flag values (delete or not), with and without unwinding calls.
+    #[test]
+    fn ccrowd_render2d_dtor_matches() {
+        check(
+            ee::s09::f_002db700__generated,
+            ccrowd_render2d_dtor,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x002d_b700, 2);
+                oc1067_gate(c);
+                c.g[A1][0] = sx(seed);
             },
         );
     }
