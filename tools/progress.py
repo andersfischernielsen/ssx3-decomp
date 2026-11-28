@@ -124,7 +124,7 @@ def registered():
     import glob
 
     done = set()
-    pat = re.compile(r"pub(?:\(crate\))? (?:const|static) OVERRIDES[^=]*=\s*&?\[")
+    pat = re.compile(r"(?:pub(?:\(crate\))? )?(?:const|static) (?:OVERRIDES|CORE)[^=]*=\s*&?\[")
     for path in glob.glob(os.path.join(ROOT, "crates/ssx3-game/src/**/*.rs"), recursive=True):
         text = open(path).read()
         for m in pat.finditer(text):

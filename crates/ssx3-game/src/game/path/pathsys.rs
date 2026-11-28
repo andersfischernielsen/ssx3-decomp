@@ -59,6 +59,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0026_bae8, path_data_static_init, "PathData_StaticInit"),
     (0x0026_c438, path_data_global_ctors, "PathData_GlobalCtors"),
+    (0x0026_c410, path_init_fields_0026c410, "Path_InitFields"),
+    (0x0026_c418, path_read_field_0026c418, "Path_ReadField"),
 ];
 
 /// `bool PathData_HasMarker(PathData* self, int a /*a1*/, int b /*a2*/)`
@@ -1573,6 +1575,18 @@ pub fn path_data_global_ctors(c: &mut Cpu) {
     })
 }
 
+/// `Path_InitFields` (0x0026_c410): straight-line leaf. Mechanical port of the generated body.
+pub fn path_init_fields_0026c410(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Path_ReadField` (0x0026_c418): straight-line leaf. Mechanical port of the generated body.
+pub fn path_read_field_0026c418(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2074,6 +2088,34 @@ pub(crate) mod tests {
                 let mut r = Rng(0x0026_c438 ^ seed as u64);
                 scramble(c, &mut r);
                 c.pc = 0x0026_c438;
+            },
+        );
+    }
+
+    /// `Path_InitFields` (0x0026_c410) against the generated body.
+    #[test]
+    fn path_init_fields_0026c410_matches() {
+        check(
+            ee::s07::f_0026c410__generated,
+            path_init_fields_0026c410,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x26c410, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Path_ReadField` (0x0026_c418) against the generated body.
+    #[test]
+    fn path_read_field_0026c418_matches() {
+        check(
+            ee::s07::f_0026c418__generated,
+            path_read_field_0026c418,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x26c418, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

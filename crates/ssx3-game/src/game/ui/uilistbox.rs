@@ -1038,9 +1038,8 @@ pub fn ui_list_box_add_item_ascii(c: &mut Cpu) {
 /// (+4), `data` (+8). Bumps the count at `+0x318`; `v0` gets the old count
 /// (the new entry's index, a byte).
 pub fn ui_list_box_add_item_wide(c: &mut Cpu) {
-    if c.pc != 0x0039a4b0 {
-        return ee::s13::f_0039a4b0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 46;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
@@ -1104,10 +1103,203 @@ pub fn ui_list_box_add_item_wide(c: &mut Cpu) {
 /// the list at `+0x74`. `v0` gets the index found (0 when none qualifies).
 pub fn ui_menu_find_next_selectable(c: &mut Cpu) {
     if c.pc != 0x0039ab50 {
-        return ee::s13::f_0039ab50__generated(c);
+        return ui_menu_find_next_selectable_resume(c);
     }
     guest(c, |c| {
         let mut pc: u32 = 0x0039ab50;
+        loop {
+            match pc {
+                0x0039ab50 => {
+                    c.cycles += 14;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S3][0] = 0xff;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x95));
+                    c.g[S2][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x96));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.g[S0][0] = c.g[V0][0] & 0xff;
+                    c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x96));
+                    pc = 0x0039ab88;
+                    continue;
+                }
+                0x0039ab88 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
+                        pc = 0x0039ac00;
+                        continue;
+                    }
+                    pc = 0x0039ab94;
+                    continue;
+                }
+                0x0039ab94 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x90));
+                    c.g[V0][0] = c.g[V0][0] & 0x4;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A1][0] = c.g[S1][0];
+                    if t {
+                        pc = 0x0039abd8;
+                        continue;
+                    }
+                    pc = 0x0039aba4;
+                    continue;
+                }
+                0x0039aba4 => {
+                    c.cycles += 11;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x5c));
+                    c.g[A2][0] = 0x1;
+                    c.g[A3][0] = c.g[S0][0];
+                    c.g[T0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xd0));
+                    c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xa0));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
+                    let t = c.g[V0][0] as u32;
+                    c.g[RA][0] = sx(0x0039abc8);
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, t, 0x0039abc8)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        pc = 0x0039abf8;
+                        continue;
+                    }
+                    pc = 0x0039abd0;
+                    continue;
+                }
+                0x0039abd0 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0039ac2c;
+                        continue;
+                    }
+                    pc = 0x0039abd8;
+                    continue;
+                }
+                0x0039abd8 => {
+                    c.cycles += 8;
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x74));
+                    c.g[RA][0] = sx(0x0039abe4);
+                    c.g[A1][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x00397870,
+                        f: ee::s13::UIList_GetAt,
+                    }
+                    .call(c, 0x0039abe4)?;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
+                    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 5) as u32);
+                    c.g[V1][0] = c.g[V1][0] & 0x1;
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x0039abd0) {
+                            return Ok(());
+                        }
+                        pc = 0x0039abd0;
+                        continue;
+                    }
+                    pc = 0x0039abf8;
+                    continue;
+                }
+                0x0039abf8 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S0][0] = c.g[V0][0] & 0xff;
+                    if t {
+                        pc = 0x0039ac18;
+                        continue;
+                    }
+                    pc = 0x0039ac00;
+                    continue;
+                }
+                0x0039ac00 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 7) as u32);
+                    c.g[V0][0] = c.g[V0][0] & 0x1;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = 0u64;
+                    if t {
+                        pc = 0x0039ac18;
+                        continue;
+                    }
+                    pc = 0x0039ac10;
+                    continue;
+                }
+                0x0039ac10 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x95));
+                    if t {
+                        pc = 0x0039ac2c;
+                        continue;
+                    }
+                    pc = 0x0039ac18;
+                    continue;
+                }
+                0x0039ac18 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                    c.g[S2][0] = c.g[V0][0] & 0xff;
+
+                    if c.g[S2][0] != c.g[S3][0] {
+                        c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x96));
+                        if back_edge_unwinds(c, 0x0039ab88) {
+                            return Ok(());
+                        }
+                        pc = 0x0039ab88;
+                        continue;
+                    }
+                    pc = 0x0039ac28;
+                    continue;
+                }
+                0x0039ac28 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = 0x0039ac2c;
+                    continue;
+                }
+                0x0039ac2c => {
+                    c.cycles += 7;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0039ab50, 0x0039ac48);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// Native resume of `ui_menu_find_next_selectable` (converted from the `generated` body): any entry
+/// other than 0x0039ab50, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn ui_menu_find_next_selectable_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
         loop {
             match pc {
                 0x0039ab50 => {

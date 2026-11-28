@@ -60,6 +60,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         fe_async_manager_cancel_all,
         "FEAsyncManager_CancelAll",
     ),
+    (
+        0x001a_3300,
+        c_fe_state_mp_circuit_on_widget_created_001a3300,
+        "cFEStateMPCircuit_OnWidgetCreated",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -560,6 +565,12 @@ pub fn fe_async_manager_cancel_all(c: &mut Cpu) {
     });
 }
 
+/// `cFEStateMPCircuit_OnWidgetCreated` (0x001a_3300): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_mp_circuit_on_widget_created_001a3300(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -958,6 +969,20 @@ pub(crate) mod tests {
             &|c, seed| {
                 let _ = oc861_base(c, seed, 0x1a_3698, 5);
                 c.g[A0][0] = sx(OC861_STATE);
+            },
+        );
+    }
+
+    /// `cFEStateMPCircuit_OnWidgetCreated` (0x001a_3300) against the generated body.
+    #[test]
+    fn c_fe_state_mp_circuit_on_widget_created_001a3300_matches() {
+        check(
+            ee::s03::f_001a3300__generated,
+            c_fe_state_mp_circuit_on_widget_created_001a3300,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1a3300, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

@@ -18,6 +18,7 @@ pub(crate) use crate::game::ai::control::handplantcontrol::fr as fr_2;
 pub(crate) use crate::game::ai::control::handplantcontrol::setf as setf_2;
 pub(crate) use crate::game::be::beprepoststate::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_3;
+pub(crate) use crate::game::dirtysock::dnasauth::oc1545_field;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
 pub(crate) use crate::game::fe::feasyncfile::p_6 as p_3;
@@ -362,6 +363,48 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0026_9da0, net_event_fd_dtor, "NetEventFD_dtor"),
     (0x0026_9e20, net_event_fe_dtor, "NetEventFE_dtor"),
+    (0x0026_88e0, c_private_message_dtor, "cPrivateMessage_dtor"),
+    (
+        0x0026_9008,
+        csetupman_client_recv_msg1,
+        "cSetupMan_ClientRecvMsg1",
+    ),
+    (
+        0x0026_90c8,
+        csetupman_client_recv_msg3,
+        "cSetupMan_ClientRecvMsg3",
+    ),
+    (
+        0x0026_9478,
+        csetupman_host_recv_msg7,
+        "cSetupMan_HostRecvMsg7",
+    ),
+    (
+        0x0026_96f8,
+        csetupman_host_recv_msg13,
+        "cSetupMan_HostRecvMsg13",
+    ),
+    (
+        0x0026_97d0,
+        csetupman_client_recv_msg6,
+        "cSetupMan_ClientRecvMsg6",
+    ),
+    (
+        0x0026_9ec0,
+        path_init_ai_fields_00269ec0,
+        "Path_InitAIFields",
+    ),
+    (
+        0x0026_a068,
+        path_init_track_fields_0026a068,
+        "Path_InitTrackFields",
+    ),
+    (0x0026_ada0, path_data_empty_hook, "PathData_EmptyHook"),
+    (
+        0x0026_af98,
+        path_data_find_near_ai_paths_thunk,
+        "PathData_FindNearAIPaths_Thunk",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3726,9 +3769,8 @@ pub fn path_get_first_event_type1_start(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn path_data_load_file_2(c: &mut Cpu) {
-    if c.pc != 0x0026ada8 {
-        return ee::s07::f_0026ada8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 16;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
@@ -3762,9 +3804,8 @@ pub fn path_data_load_file_2(c: &mut Cpu) {
 /// Hand port of the generated body (PathData_ReloadPaths, 0x0026ae70), every register, cycle and
 /// call kept; any other `pc` (a resume after an unwound callee) runs the generated body.
 pub fn path_data_reload_paths_2(c: &mut Cpu) {
-    if c.pc != 0x0026ae70 {
-        return ee::s07::f_0026ae70__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_26aeb0: {
             'b_26aea0: {
@@ -3874,6 +3915,355 @@ pub fn net_event_fe_dtor(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `PathData_FindNearAIPaths_Thunk` (0x26af98): calls
+/// `PathData_FindNearAIPaths` with `t0 = 1` (the "enabled only" flag), the
+/// arguments passed through unchanged.
+pub fn path_data_find_near_ai_paths_thunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[T0][0] = 0x1;
+        Callee {
+            addr: 0x0026_afb8,
+            f: ee::s07::f_0026afb8,
+        }
+        .call(c, 0x0026_afa8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `Path_InitAIFields` (0x0026_9ec0): straight-line leaf: 2 store(s). Mechanical port of the generated body.
+pub fn path_init_ai_fields_00269ec0(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[V0][0] = 0x2e;
+    c.g[V1][0] = 0x1;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x38), c.g[V0][0]);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x3c), c.g[V1][0]);
+    ret(c);
+}
+
+/// `Path_InitTrackFields` (0x0026_a068): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn path_init_track_fields_0026a068(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x38), 0u64);
+    ret(c);
+}
+
+/// `PathData_EmptyHook` (0x0026_ada0): straight-line leaf. Mechanical port of the generated body.
+pub fn path_data_empty_hook(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void cPrivateMessage::~cPrivateMessage(this, flags)` (0x2688e0): sets the
+/// vtable word, destroys the three strings at +8, +4 and +0 and frees `this`
+/// when bit 0 of `flags` is set.
+pub fn c_private_message_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x47_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2740));
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        let vtable = c.g[V0][0];
+        Addr(oc1545_field(c, S1, 0xc)).sw(c, vtable);
+        c.g[A0][0] = sx(oc1545_field(c, S1, 0x8));
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0026_8910)?;
+        c.g[A0][0] = sx(oc1545_field(c, S1, 0x4));
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0026_891c)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, 0x0031_8260, 0x0026_8928)?;
+        c.g[S0][0] &= 0x1;
+        let free = c.g[S0][0] != 0;
+        // The `lq s0` sits in the branch delay slot: s0 is already restored
+        // when `operator_delete` is called.
+        frame.restore(c, S0, 0x20);
+        if free {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x0026_893c)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cSetupMan_ClientRecvMsg1` (0x269008): builds the first client message of type
+/// 0xf3. Stores `a2` into the object at `a0`, sets up the local character
+/// (`cSetupMan_SetLocalCharacter`), allocates the 8-byte message and the 0xc-byte
+/// list node, and links the node into the list at `*(gp-0xc8)`.
+pub fn csetupman_client_recv_msg1(c: &mut Cpu) {
+    guest(c, |c| {
+        recv_message_body(c, 0xf3, [0x0026_9028, 0x0026_9044, 0x0026_9078])
+    });
+}
+
+/// `cSetupMan_ClientRecvMsg3` (0x2690c8): as `ClientRecvMsg1`, message type 0xf4.
+pub fn csetupman_client_recv_msg3(c: &mut Cpu) {
+    guest(c, |c| {
+        recv_message_body(c, 0xf4, [0x0026_90e8, 0x0026_9104, 0x0026_9138])
+    });
+}
+
+/// Body shared by `ClientRecvMsg1` and `ClientRecvMsg3`: the same registers and
+/// frame, only the message type (`s0`) and the return addresses differ. `rets` are
+/// the returns after `SetLocalCharacter`, the 8-byte allocation and the 0xc-byte
+/// allocation.
+pub(crate) fn recv_message_body(c: &mut Cpu, msg_type: u64, rets: [u32; 3]) -> Flow {
+    c.cycles += 32;
+    let frame = Frame::open(c, 0x60);
+    frame.save(c, S0, 0x50);
+    frame.save(c, S1, 0x40);
+    c.g[S0][0] = msg_type;
+    frame.save(c, S2, 0x30);
+    frame.save_ra(c, 0x20);
+    let obj = c.g[A0][0] as u32;
+    let value = c.g[A2][0];
+    c.sw(obj, value);
+    Callee {
+        addr: 0x0026_4cf0,
+        f: ee::s07::f_00264cf0,
+    }
+    .call(c, rets[0])?;
+    c.g[A1][0] = 0x0048_0000;
+    c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+    c.g[A0][0] = 0x8;
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    call_ptr(c, 0x0031_7d70, rets[1])?;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A1][0] = 0x0048_0000;
+    c.g[V0][0] = 0x0048_0000;
+    let (dst, val) = (c.g[S2][0] as u32, c.g[S0][0]);
+    c.sw(dst, val);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+    let (dst, val) = ((c.g[S2][0] as u32).wrapping_add(4), c.g[V0][0]);
+    c.sw(dst, val);
+    c.g[A0][0] = 0xc;
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xf0));
+    let (dst, val) = (frame.at(c, 0x10), c.g[V0][0]);
+    c.sw(dst, val);
+    call_ptr(c, 0x0031_7d70, rets[2])?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+    if c.g[V0][0] != 0 {
+        let (dst, val) = ((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+        c.sw(dst, val);
+    }
+    // Epilogue.
+    c.cycles += 15;
+    let at = frame.at(c, 0x10);
+    c.g[V0][0] = c.lw(at);
+    frame.restore(c, S0, 0x50);
+    let (dst, val) = (c.g[A1][0] as u32, c.g[V0][0]);
+    c.sw(dst, val);
+    frame.restore(c, S1, 0x40);
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+    frame.restore(c, S2, 0x30);
+    let (dst, val) = ((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+    c.sw(dst, val);
+    frame.restore_ra(c, 0x20);
+    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+    let (dst, val) = (c.g[A0][0] as u32, c.g[A1][0]);
+    c.sw(dst, val);
+    let at = frame.at(c, 0x10);
+    c.g[V0][0] = c.lw(at);
+    let (dst, val) = ((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+    c.sw(dst, val);
+    let (dst, val) = (sp(c), c.g[A1][0]);
+    c.sw(dst, val);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cSetupMan_HostRecvMsg7` (0x269478): the row message of type 0xfb. Allocates the
+/// 0x10-byte message for row `a1`, fills it (the string at `0x481150`, the row),
+/// allocates the 0xc-byte node and links it into the list at `*(gp-0xc8)`.
+pub fn csetupman_host_recv_msg7(c: &mut Cpu) {
+    guest(c, |c| row_message_body(c, [0x0026_94a4, 0x0026_94ec]));
+}
+
+/// `cSetupMan_ClientRecvMsg6` (0x2697d0): as `HostRecvMsg7`, with its own return
+/// addresses.
+pub fn csetupman_client_recv_msg6(c: &mut Cpu) {
+    guest(c, |c| row_message_body(c, [0x0026_97fc, 0x0026_9844]));
+}
+
+/// Body shared by `HostRecvMsg7` and `ClientRecvMsg6`. `rets` are the returns after
+/// the 0x10-byte allocation and the 0xc-byte allocation.
+pub(crate) fn row_message_body(c: &mut Cpu, rets: [u32; 2]) -> Flow {
+    c.cycles += 33;
+    let frame = Frame::open(c, 0x50);
+    c.g[A0][0] = 0x10;
+    frame.save(c, S0, 0x40);
+    c.g[A2][0] = 0x2000_0000;
+    c.g[S0][0] = c.g[A1][0];
+    frame.save(c, S1, 0x30);
+    c.g[A1][0] = 0x0048_0000;
+    frame.save_ra(c, 0x20);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xf18));
+    c.g[A3][0] = 0;
+    call_ptr(c, 0x0031_7d70, rets[0])?;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[V1][0] = 0xfb;
+    c.g[V0][0] = 0x0048_0000;
+    let (dst, val) = (c.g[S1][0] as u32, c.g[V1][0]);
+    c.sw(dst, val);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1150));
+    c.g[A0][0] = 0x1;
+    let (dst, val) = ((c.g[S1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+    c.sw(dst, val);
+    c.g[A1][0] = 0x0048_0000;
+    let (dst, val) = ((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+    c.sw(dst, val);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+    let (dst, val) = ((c.g[S1][0] as u32).wrapping_add(0xc), c.g[S0][0]);
+    c.sw(dst, val);
+    c.g[A0][0] = 0xc;
+    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xf0));
+    let (dst, val) = (frame.at(c, 0x10), c.g[V0][0]);
+    c.sw(dst, val);
+    call_ptr(c, 0x0031_7d70, rets[1])?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+    if c.g[V0][0] != 0 {
+        let (dst, val) = ((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S1][0]);
+        c.sw(dst, val);
+    }
+    // Epilogue.
+    c.cycles += 14;
+    let at = frame.at(c, 0x10);
+    c.g[V0][0] = c.lw(at);
+    frame.restore(c, S0, 0x40);
+    let (dst, val) = (c.g[A1][0] as u32, c.g[V0][0]);
+    c.sw(dst, val);
+    frame.restore(c, S1, 0x30);
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+    frame.restore_ra(c, 0x20);
+    let (dst, val) = ((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+    c.sw(dst, val);
+    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+    let (dst, val) = (c.g[A0][0] as u32, c.g[A1][0]);
+    c.sw(dst, val);
+    let at = frame.at(c, 0x10);
+    c.g[V0][0] = c.lw(at);
+    let (dst, val) = ((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+    c.sw(dst, val);
+    let (dst, val) = (sp(c), c.g[A1][0]);
+    c.sw(dst, val);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cSetupMan_HostRecvMsg13` (0x2696f8): the host's message 13. Reads the message
+/// state at `a0` (a state of 8 becomes 7), sends the character message
+/// (`cSetupMan_SendCharacterMsg`), then allocates the 0x10-byte message and the
+/// 0xc-byte node and links the node into the list at `*(gp-0xc8)`.
+pub fn csetupman_host_recv_msg13(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x40);
+        c.g[V1][0] = 0x8;
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0x20);
+        let obj = c.g[A0][0] as u32;
+        c.g[V0][0] = c.lw(obj);
+        if c.g[V0][0] != c.g[V1][0] {
+            c.g[A2][0] = c.lw(obj);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 0x7;
+            let val = c.g[V0][0];
+            c.sw(obj, val);
+            c.g[A2][0] = c.lw(obj);
+        }
+        c.cycles += 30;
+        c.g[A1][0] = 0xc;
+        c.g[A3][0] = 0;
+        Callee {
+            addr: 0x0026_4e50,
+            f: ee::s07::f_00264e50,
+        }
+        .call(c, 0x0026_972c)?;
+        c.g[A1][0] = 0x0048_0000;
+        c.g[A0][0] = 0xc;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xf18));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7d70, 0x0026_9744)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[V1][0] = 0xfe;
+        c.g[V0][0] = 0x0048_0000;
+        let (dst, val) = (c.g[S0][0] as u32, c.g[V1][0]);
+        c.sw(dst, val);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13c0));
+        c.g[A0][0] = 0x1;
+        let (dst, val) = ((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
+        c.sw(dst, val);
+        c.g[A1][0] = 0x0048_0000;
+        let (dst, val) = ((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+        c.sw(dst, val);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+        c.g[A0][0] = 0xc;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xf0));
+        let (dst, val) = (frame.at(c, 0x10), c.g[V0][0]);
+        c.sw(dst, val);
+        call_ptr(c, 0x0031_7d70, 0x0026_9788)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+        if c.g[V0][0] != 0 {
+            let (dst, val) = ((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S0][0]);
+            c.sw(dst, val);
+        }
+        // Epilogue.
+        c.cycles += 13;
+        let at = frame.at(c, 0x10);
+        c.g[V0][0] = c.lw(at);
+        frame.restore(c, S0, 0x30);
+        let (dst, val) = (c.g[A1][0] as u32, c.g[V0][0]);
+        c.sw(dst, val);
+        frame.restore_ra(c, 0x20);
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        let (dst, val) = ((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+        c.sw(dst, val);
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        let (dst, val) = (c.g[A0][0] as u32, c.g[A1][0]);
+        c.sw(dst, val);
+        let at = frame.at(c, 0x10);
+        c.g[V0][0] = c.lw(at);
+        let (dst, val) = ((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+        c.sw(dst, val);
+        let (dst, val) = (sp(c), c.g[A1][0]);
+        c.sw(dst, val);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -5889,5 +6279,402 @@ pub(crate) mod tests {
             &reload_paths_setup,
         );
         assert!(oc805_paths(ee::s07::f_0026ae70__generated, 200, &reload_paths_setup) >= 2);
+    }
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::oc1545_machine;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::OC1545_OBJ;
+    pub(crate) use crate::game::replay::replaycache::tests::leaf_fill;
+
+    use ssx3_ee_rt::cpu::sx;
+    use std::ptr::addr_of_mut;
+
+    #[test]
+    fn path_data_find_near_ai_paths_thunk_matches() {
+        const PATHDATA: u32 = DATA;
+        const POINT: u32 = DATA + 0x80;
+        const PATHS: u32 = DATA + 0x100;
+        const OUT: u32 = DATA + 0x1000;
+        check(
+            ee::s07::f_0026af98__generated,
+            path_data_find_near_ai_paths_thunk,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x0026_af98 ^ (seed as u64) << 4);
+                crate::difftest::scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.bus.write32(GAME_GP - 0x4a4c, 1.0e30f32.to_bits());
+                c.bus.write32(GAME_GP - 0x4a48, 2.0e30f32.to_bits());
+                let n = seed % 4;
+                c.bus.write32(PATHDATA + 0x8, n);
+                c.bus.write32(PATHDATA + 0xc, PATHS);
+                for k in 0..3 {
+                    c.bus.write32(POINT + 4 * k, r.f32(4.0));
+                }
+                for i in 0..n {
+                    let path = PATHS + 0x40 * i;
+                    for k in 0..3u32 {
+                        let p = f32::from_bits(c.bus.read32(POINT + 4 * k));
+                        c.bus.write32(path + 0x1c + 4 * k, (p - 1.0).to_bits());
+                        c.bus.write32(path + 0x28 + 4 * k, (p + 1.0).to_bits());
+                    }
+                    c.bus.write32(path + 0x3c, (r.next_u32() % 3 != 0) as u32);
+                }
+                c.g[A0][0] = sx(PATHDATA);
+                c.g[A1][0] = sx(POINT);
+                c.g[A2][0] = sx(OUT);
+                c.g[A3][0] = sx(((seed / 4 % 5) as i32 - 1) as u32);
+                c.g[T0][0] = (seed % 2) as u64;
+            },
+        );
+    }
+
+    /// `Path_InitAIFields` (0x0026_9ec0) against the generated body.
+    #[test]
+    fn path_init_ai_fields_00269ec0_matches() {
+        check(
+            ee::s07::f_00269ec0__generated,
+            path_init_ai_fields_00269ec0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x269ec0, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Path_InitTrackFields` (0x0026_a068) against the generated body.
+    #[test]
+    fn path_init_track_fields_0026a068_matches() {
+        check(
+            ee::s07::f_0026a068__generated,
+            path_init_track_fields_0026a068,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26a068, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PathData_EmptyHook` (0x0026_ada0) against the generated body.
+    #[test]
+    fn path_data_empty_hook_matches() {
+        check(
+            ee::s07::f_0026ada0__generated,
+            path_data_empty_hook,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x26ada0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cPrivateMessage::~cPrivateMessage`: with and without the free.
+    #[test]
+    fn c_private_message_dtor_matches() {
+        check(
+            ee::s07::f_002688e0__generated,
+            c_private_message_dtor,
+            200,
+            &|c, seed| {
+                oc1545_machine(c, seed, 0x2688e0, 3);
+                c.g[A0][0] = OC1545_OBJ as u64;
+                c.g[A1][0] = seed as u64;
+            },
+        );
+    }
+
+    /// Gate word of this module's fakes (own address and magic in the machine's RAM:
+    /// other tests' machines run the real bodies).
+    pub(crate) const OC1546_CTRL: u32 = DATA + 0xd_0000;
+
+    pub(crate) const OC1546_MAGIC: u32 = 0x1546_f00d;
+
+    /// Fixture objects, clear of the gate, the call log and the stack.
+    pub(crate) const OC1546_OBJ: u32 = DATA + 0xc_0000;
+
+    /// The allocations the message fixtures hand out.
+    pub(crate) const OC1546_ALLOC1: u32 = OC1546_OBJ + 0x100;
+
+    pub(crate) const OC1546_ALLOC2: u32 = OC1546_OBJ + 0x200;
+
+    pub(crate) fn oc1546_gated(c: &mut Cpu) -> bool {
+        c.bus.read32(OC1546_CTRL) == OC1546_MAGIC
+    }
+
+    // Plain fakes: log the call, return the forced result or a hash.
+
+    pub(crate) fn oc1546_fake_alloc(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_alloc),
+                ee::s10::f_00317d70__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0031_7d70);
+    }
+
+    pub(crate) fn oc1546_fake_setlocal(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_setlocal),
+                ee::s07::f_00264cf0__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0026_4cf0);
+    }
+
+    pub(crate) fn oc1546_fake_sendchar(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_sendchar),
+                ee::s07::f_00264e50__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0026_4e50);
+    }
+
+    pub(crate) fn oc1546_fake_sprintf(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_sprintf),
+                ee::s15::f_00417828__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0041_7828);
+    }
+
+    pub(crate) fn oc1546_fake_movie_defaults(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_movie_defaults),
+                ee::s06::f_00253390__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0025_3390);
+    }
+
+    pub(crate) fn oc1546_fake_movie_dtor(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_movie_dtor),
+                ee::s06::f_00253418__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0025_3418);
+    }
+
+    // Mailbox fakes: the call is logged, then `v0` is the mailbox word at
+    // `CTRL + 0x10 + 4k`, sign-extended (a zero or negative result, which the call log
+    // cannot force).
+
+    pub(crate) fn oc1546_fake_find(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_find),
+                ee::s07::f_0026cfe8__generated,
+            );
+        }
+        let v = c.bus.read32(OC1546_CTRL + 0x10);
+        fakes::fake_call(c, 0x0026_cfe8);
+        c.g[V0][0] = sx(v);
+    }
+
+    pub(crate) fn oc1546_fake_load(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_load),
+                ee::s14::f_003df690__generated,
+            );
+        }
+        let v = c.bus.read32(OC1546_CTRL + 0x14);
+        fakes::fake_call(c, 0x003d_f690);
+        c.g[V0][0] = sx(v);
+    }
+
+    pub(crate) fn oc1546_fake_movie_ctor(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_movie_ctor),
+                ee::s06::f_002533c8__generated,
+            );
+        }
+        let v = c.bus.read32(OC1546_CTRL + 0x18);
+        fakes::fake_call(c, 0x0025_33c8);
+        c.g[V0][0] = sx(v);
+    }
+
+    pub(crate) fn oc1546_fake_movie_init(c: &mut Cpu) {
+        if !oc1546_gated(c) {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1546_fake_movie_init),
+                ee::s06::f_002534a8__generated,
+            );
+        }
+        let v = c.bus.read32(OC1546_CTRL + 0x1c);
+        fakes::fake_call(c, 0x0025_34a8);
+        c.g[V0][0] = sx(v);
+    }
+
+    pub(crate) fn oc1546_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc1546_fake_alloc,
+            fakes::prev_cell(oc1546_fake_alloc),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264CF0),
+            oc1546_fake_setlocal,
+            fakes::prev_cell(oc1546_fake_setlocal),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_00264E50),
+            oc1546_fake_sendchar,
+            fakes::prev_cell(oc1546_fake_sendchar),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00417828),
+            oc1546_fake_sprintf,
+            fakes::prev_cell(oc1546_fake_sprintf),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00253390),
+            oc1546_fake_movie_defaults,
+            fakes::prev_cell(oc1546_fake_movie_defaults),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00253418),
+            oc1546_fake_movie_dtor,
+            fakes::prev_cell(oc1546_fake_movie_dtor),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0026CFE8),
+            oc1546_fake_find,
+            fakes::prev_cell(oc1546_fake_find),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DF690),
+            oc1546_fake_load,
+            fakes::prev_cell(oc1546_fake_load),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002533C8),
+            oc1546_fake_movie_ctor,
+            fakes::prev_cell(oc1546_fake_movie_ctor),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_002534A8),
+            oc1546_fake_movie_init,
+            fakes::prev_cell(oc1546_fake_movie_init),
+        );
+    }
+
+    /// The machine with this module's fakes hooked and the gate on.
+    pub(crate) fn oc1546_setup(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
+        oc1546_hook();
+        let r = fakes::machine(c, seed, salt, calls);
+        c.bus.write32(OC1546_CTRL, OC1546_MAGIC);
+        r
+    }
+
+    /// Message fixture: `*(gp-0xc8)` is the list object, its `+0xf0` the node the
+    /// function reads, and the node's `+4` a valid link. The allocations are the
+    /// logged calls `first` and `first + 1`, returning ALLOC1 and ALLOC2; ALLOC2's
+    /// `+8` is zero or not.
+    pub(crate) fn oc1546_message_setup(c: &mut Cpu, seed: u32, first: u32, calls: u32) -> Rng {
+        let mut r = oc1546_setup(c, seed, 0x1546_1, calls);
+        c.g[A0][0] = OC1546_OBJ as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.g[A2][0] = r.next_u32() as u64;
+        let (list, node, link) = (OC1546_OBJ + 0x400, OC1546_OBJ + 0x500, OC1546_OBJ + 0x600);
+        c.bus.write32(GAME_GP - 0xc8, list);
+        c.bus.write32(list + 0xf0, node);
+        c.bus.write32(node + 4, link);
+        c.bus.write32(fakes::LOG_RESULTS + 4 * first, OC1546_ALLOC1);
+        c.bus
+            .write32(fakes::LOG_RESULTS + 4 * (first + 1), OC1546_ALLOC2);
+        let tail = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+        c.bus.write32(OC1546_ALLOC2 + 8, tail);
+        r
+    }
+
+    #[test]
+    fn csetupman_client_recv_msg1_matches() {
+        check(
+            ee::s07::f_00269008__generated,
+            csetupman_client_recv_msg1,
+            240,
+            &|c, seed| {
+                oc1546_message_setup(c, seed, 1, 3);
+            },
+        );
+    }
+
+    #[test]
+    fn csetupman_client_recv_msg3_matches() {
+        check(
+            ee::s07::f_002690c8__generated,
+            csetupman_client_recv_msg3,
+            240,
+            &|c, seed| {
+                oc1546_message_setup(c, seed, 1, 3);
+            },
+        );
+    }
+
+    #[test]
+    fn csetupman_host_recv_msg7_matches() {
+        check(
+            ee::s07::f_00269478__generated,
+            csetupman_host_recv_msg7,
+            240,
+            &|c, seed| {
+                oc1546_message_setup(c, seed, 0, 2);
+            },
+        );
+    }
+
+    #[test]
+    fn csetupman_client_recv_msg6_matches() {
+        check(
+            ee::s07::f_002697d0__generated,
+            csetupman_client_recv_msg6,
+            240,
+            &|c, seed| {
+                oc1546_message_setup(c, seed, 0, 2);
+            },
+        );
+    }
+
+    /// The state word at `a0` is 8 for a third of the seeds (the 7 branch) and a
+    /// random value for the rest.
+    #[test]
+    fn csetupman_host_recv_msg13_matches() {
+        check(
+            ee::s07::f_002696f8__generated,
+            csetupman_host_recv_msg13,
+            240,
+            &|c, seed| {
+                let mut r = oc1546_message_setup(c, seed, 1, 3);
+                let state = if seed % 3 == 0 { 8 } else { r.next_u32() };
+                c.bus.write32(OC1546_OBJ, state);
+            },
+        );
     }
 }

@@ -186,6 +186,119 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_6618, ui_vector_flags_ctor, "UIVectorFlags_ctor"),
     (0x003a_6648, ui_engine_global_ctors, "UIEngine_GlobalCtors"),
     (0x003a_6668, ui_engine_global_dtors, "UIEngine_GlobalDtors"),
+    (
+        0x003a_0274,
+        ui_object_anim_loop_tail,
+        "UIObject_AnimLoopTail",
+    ),
+    (
+        0x003a_3808,
+        ui_vector_set_anim_params,
+        "UIVector_SetAnimParams",
+    ),
+    (
+        0x003a_4bd8,
+        ui_object_handle_input_003a4bd8,
+        "UIObject_HandleInput",
+    ),
+    (
+        0x003a_4be0,
+        ui_object_refresh_text_003a4be0,
+        "UIObject_RefreshText",
+    ),
+    (0x003a_4be8, ui_object_render_003a4be8, "UIObject_Render"),
+    (0x003a_4bf0, ui_object_v18_003a4bf0, "UIObject_v18"),
+    (0x003a_4ea8, ui_icon_get_type_003a4ea8, "UIIcon_GetType"),
+    (
+        0x003a_50f8,
+        c_ui_group_get_type_003a50f8,
+        "cUIGroup_GetType",
+    ),
+    (0x003a_5330, ui_menu_get_type_003a5330, "UIMenu_GetType"),
+    (0x003a_5500, ui_pair_get_type_003a5500, "UIPair_GetType"),
+    (
+        0x003a_56a0,
+        ui_list_box_get_type_003a56a0,
+        "UIListBox_GetType",
+    ),
+    (0x003a_56d8, ui_list_box_v23_003a56d8, "UIListBox_v23"),
+    (0x003a_5aa8, ui_state_init_003a5aa8, "UIState_Init"),
+    (
+        0x003a_5ab0,
+        ui_state_transition_in_003a5ab0,
+        "UIState_TransitionIn",
+    ),
+    (
+        0x003a_5ab8,
+        ui_state_handle_input_003a5ab8,
+        "UIState_HandleInput",
+    ),
+    (
+        0x003a_5ac0,
+        ui_state_transition_out_003a5ac0,
+        "UIState_TransitionOut",
+    ),
+    (
+        0x003a_5ac8,
+        ui_state_on_deactivate_003a5ac8,
+        "UIState_OnDeactivate",
+    ),
+    (0x003a_5ad0, ui_state_on_render_003a5ad0, "UIState_OnRender"),
+    (
+        0x003a_5ad8,
+        ui_state_on_anim_event_003a5ad8,
+        "UIState_OnAnimEvent",
+    ),
+    (
+        0x003a_5b08,
+        ui_state_on_child_event_003a5b08,
+        "UIState_OnChildEvent",
+    ),
+    (
+        0x003a_5b10,
+        ui_state_on_widget_created_003a5b10,
+        "UIState_OnWidgetCreated",
+    ),
+    (
+        0x003a_5b18,
+        ui_state_on_widget_action_003a5b18,
+        "UIState_OnWidgetAction",
+    ),
+    (
+        0x003a_5b20,
+        ui_state_on_widget_notify_003a5b20,
+        "UIState_OnWidgetNotify",
+    ),
+    (0x003a_5b28, ui_state_v21_003a5b28, "UIState_v21"),
+    (0x003a_5b30, ui_state_v22_003a5b30, "UIState_v22"),
+    (0x003a_5b38, ui_state_v23_003a5b38, "UIState_v23"),
+    (
+        0x003a_5b40,
+        ui_state_on_net_event_003a5b40,
+        "UIState_OnNetEvent",
+    ),
+    (0x003a_5df0, ui_text_get_type_003a5df0, "UIText_GetType"),
+    (
+        0x003a_6000,
+        c_ui_scroll_get_type_003a6000,
+        "cUIScroll_GetType",
+    ),
+    (
+        0x003a_6168,
+        c_ui_progress_get_type_003a6168,
+        "cUIProgress_GetType",
+    ),
+    (
+        0x003a_6220,
+        c_ui_slider_get_type_003a6220,
+        "cUISlider_GetType",
+    ),
+    (
+        0x003a_6330,
+        c_ui_text_scroll_get_type_003a6330,
+        "cUITextScroll_GetType",
+    ),
+    (0x003a_6540, ui_vector_get_type_003a6540, "UIVector_GetType"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3324,6 +3437,380 @@ pub fn ui_engine_global_dtors(c: &mut Cpu) {
     })
 }
 
+/// `UIObject_AnimLoopTail` (0x003a0274): the shared loop tail of the `setChannelDataKCP`
+/// style loops: `t0 += 1`, `a2 += 4`, again from 0x3a0168 while `t0 < count`, else return.
+pub fn ui_object_anim_loop_tail(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003a0274 => {
+                    c.cycles += 4;
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = (c.g[T0][0] < c.g[A1][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+                    if t {
+                        c.pc = 0x003a0168;
+                        call_indirect(c, 0x003a0168);
+                        return Ok(());
+                    }
+                    pc = 0x003a0284;
+                    continue;
+                }
+                0x003a0284 => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003a0274, 0x003a028c);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `UIVector_SetAnimParams(this, count, shorts)` (0x003a3808): like the `UIObject` one with
+/// a divide by 9 of the index and a bound from `this+0x74`; jump table at 0x494140.
+pub fn ui_vector_set_anim_params(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003a3808 => {
+                    c.cycles += 4;
+                    c.g[T0][0] = c.g[A0][0];
+                    c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x80));
+                    let t = c.g[V0][0] == 0u64;
+
+                    if t {
+                        c.pc = 0x003a39f0;
+                        call_indirect(c, 0x003a39f0);
+                        return Ok(());
+                    }
+                    pc = 0x003a3818;
+                    continue;
+                }
+                0x003a3818 => {
+                    c.cycles += 2;
+                    let t = c.g[A1][0] == 0u64;
+                    c.g[T2][0] = 0u64;
+                    if t {
+                        c.pc = 0x003a39f0;
+                        call_indirect(c, 0x003a39f0);
+                        return Ok(());
+                    }
+                    pc = 0x003a3820;
+                    continue;
+                }
+                0x003a3820 => {
+                    c.cycles += 7;
+                    c.g[V1][0] = c.lh((c.g[A2][0] as u32).wrapping_add(0x2));
+                    c.g[A0][0] = c.lh(c.g[A2][0] as u32);
+                    c.mtc1(3, 1);
+                    c.cvt_s_w(1, 1);
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 21i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = (c.g[A0][0] < 0x11u64) as u64;
+                    if t {
+                        c.pc = 0x003a3918;
+                        call_indirect(c, 0x003a3918);
+                        return Ok(());
+                    }
+                    pc = 0x003a383c;
+                    continue;
+                }
+                0x003a383c => {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0x9;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x15));
+                    c.div(0, 4, 2);
+
+                    if c.g[V0][0] == 0u64 {
+                        pc = 0x003a3850;
+                        continue;
+                    }
+                    pc = 0x003a3850;
+                    continue;
+                }
+                0x003a3850 => {
+                    c.cycles += 8;
+                    c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x74));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) >> 17);
+                    c.g[A0][0] = c.lo[0];
+                    c.g[T1][0] = c.hi[0];
+                    c.g[A3][0] = c.g[A0][0] & 0xffff;
+                    c.g[V1][0] = (c.g[A3][0] < c.g[V1][0]) as u64;
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[V1][0] = (c.g[T1][0] < 0x9u64) as u64;
+                    if t {
+                        c.pc = 0x003a39e0;
+                        ee::s13::f_003a39e0(c);
+                        return Ok(());
+                    }
+                    pc = 0x003a3870;
+                    continue;
+                }
+                0x003a3870 => {
+                    c.cycles += 2;
+
+                    if c.g[V0][0] == 0u64 {
+                        pc = 0x003a3878;
+                        continue;
+                    }
+                    pc = 0x003a3878;
+                    continue;
+                }
+                0x003a3878 => {
+                    c.cycles += 2;
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[V0][0] = 0x490000;
+                    if t {
+                        c.pc = 0x003a39e0;
+                        ee::s13::f_003a39e0(c);
+                        return Ok(());
+                    }
+                    pc = 0x003a3880;
+                    continue;
+                }
+                0x003a3880 => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[T1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4140));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                _ => {
+                    c.jump_out(pc, 0x003a3808, 0x003a3898);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `UIObject_HandleInput` (0x003a_4bd8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_object_handle_input_003a4bd8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIObject_RefreshText` (0x003a_4be0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_object_refresh_text_003a4be0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIObject_Render` (0x003a_4be8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_object_render_003a4be8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIObject_v18` (0x003a_4bf0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_object_v18_003a4bf0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIIcon_GetType` (0x003a_4ea8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_icon_get_type_003a4ea8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x11;
+    ret(c);
+}
+
+/// `cUIGroup_GetType` (0x003a_50f8): straight-line leaf. Mechanical port of the generated body.
+pub fn c_ui_group_get_type_003a50f8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x10;
+    ret(c);
+}
+
+/// `UIMenu_GetType` (0x003a_5330): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_menu_get_type_003a5330(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x13;
+    ret(c);
+}
+
+/// `UIPair_GetType` (0x003a_5500): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_pair_get_type_003a5500(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x15;
+    ret(c);
+}
+
+/// `UIListBox_GetType` (0x003a_56a0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_list_box_get_type_003a56a0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x12;
+    ret(c);
+}
+
+/// `UIListBox_v23` (0x003a_56d8): straight-line leaf: 1 load(s), 1 store(s). Mechanical port of the generated body.
+pub fn ui_list_box_v23_003a56d8(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x74));
+    c.g[A1][0] = (0u64 < c.g[A1][0]) as u64;
+    c.g[V1][0] = 0xfffffffffffffffb;
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+    c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x74), c.g[V0][0]);
+    ret(c);
+}
+
+/// `UIState_Init` (0x003a_5aa8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_init_003a5aa8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIState_TransitionIn` (0x003a_5ab0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_transition_in_003a5ab0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIState_HandleInput` (0x003a_5ab8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_handle_input_003a5ab8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIState_TransitionOut` (0x003a_5ac0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_transition_out_003a5ac0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIState_OnDeactivate` (0x003a_5ac8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_deactivate_003a5ac8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIState_OnRender` (0x003a_5ad0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_render_003a5ad0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIState_OnAnimEvent` (0x003a_5ad8): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_anim_event_003a5ad8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIState_OnChildEvent` (0x003a_5b08): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_child_event_003a5b08(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIState_OnWidgetCreated` (0x003a_5b10): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_widget_created_003a5b10(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIState_OnWidgetAction` (0x003a_5b18): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_widget_action_003a5b18(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `UIState_OnWidgetNotify` (0x003a_5b20): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_widget_notify_003a5b20(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `UIState_v21` (0x003a_5b28): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_v21_003a5b28(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `UIState_v22` (0x003a_5b30): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_v22_003a5b30(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `UIState_v23` (0x003a_5b38): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_v23_003a5b38(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIState_OnNetEvent` (0x003a_5b40): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_state_on_net_event_003a5b40(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `UIText_GetType` (0x003a_5df0): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_text_get_type_003a5df0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x17;
+    ret(c);
+}
+
+/// `cUIScroll_GetType` (0x003a_6000): straight-line leaf. Mechanical port of the generated body.
+pub fn c_ui_scroll_get_type_003a6000(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x21;
+    ret(c);
+}
+
+/// `cUIProgress_GetType` (0x003a_6168): straight-line leaf. Mechanical port of the generated body.
+pub fn c_ui_progress_get_type_003a6168(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x19;
+    ret(c);
+}
+
+/// `cUISlider_GetType` (0x003a_6220): straight-line leaf. Mechanical port of the generated body.
+pub fn c_ui_slider_get_type_003a6220(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x16;
+    ret(c);
+}
+
+/// `cUITextScroll_GetType` (0x003a_6330): straight-line leaf. Mechanical port of the generated body.
+pub fn c_ui_text_scroll_get_type_003a6330(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x20;
+    ret(c);
+}
+
+/// `UIVector_GetType` (0x003a_6540): straight-line leaf. Mechanical port of the generated body.
+pub fn ui_vector_get_type_003a6540(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x18;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5040,6 +5527,624 @@ pub(crate) mod tests {
             &|c, seed| {
                 fakes::machine(c, seed, 0x1090_0006, 1);
                 c.bus.write32(OC1090_STATIC_CTRL, OC1090_MAGIC);
+            },
+        );
+    }
+
+    use crate::difftest::check_lohi;
+    use crate::difftest::elf_image;
+
+    /// The distinct cycle totals the generated body takes over the seeds.
+    pub(crate) fn oc1477_paths(
+        generated: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) -> usize {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..seeds {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, generated);
+            seen.insert(c.cycles - before);
+        }
+        seen.len()
+    }
+
+    // ------------------------------------------------------------------
+    // The (index, value) short-pair loops: 0x3a0158, 0x3a0274, 0x3a3808.
+
+    pub(crate) const OC1477_SHORTS: u32 = DATA + 0x1000;
+
+    pub(crate) const OC1477_OBJ: u32 = DATA + 0x2000;
+
+    /// A machine with the game image (the jump tables) and the pair array.
+    pub(crate) fn oc1477_pairs_machine(c: &mut Cpu, seed: u32, salt: u64) -> crate::difftest::Rng {
+        let mut r = fakes::machine(c, seed, salt, 6);
+        elf_image(c);
+        fill(c, &mut r, OC1477_SHORTS, 16);
+        fill(c, &mut r, OC1477_OBJ, 64);
+        r
+    }
+
+    /// `UIObject_AnimLoopTail`: a counter below and at the count, and the return
+    /// entry 0x3a0284.
+    pub(crate) fn oc1477_tail_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1477_pairs_machine(c, seed, 0x3a0274);
+        for i in 0..4u32 {
+            let idx = 0x11 + r.next_u32() % 0x20;
+            c.bus.write16(OC1477_SHORTS + 4 * i, idx as u16);
+        }
+        c.g[A0][0] = OC1477_OBJ as u64;
+        c.g[A1][0] = (seed % 5) as u64;
+        c.g[A2][0] = OC1477_SHORTS as u64;
+        c.g[T0][0] = (seed / 5 % 4) as u64;
+        c.pc = if seed % 7 == 6 {
+            0x003a_0284
+        } else {
+            0x003a_0274
+        };
+    }
+
+    #[test]
+    fn ui_object_anim_loop_tail_matches() {
+        check(
+            ee::s13::f_003a0274__generated,
+            ui_object_anim_loop_tail,
+            140,
+            &oc1477_tail_setup,
+        );
+        assert!(
+            oc1477_paths(ee::s13::f_003a0274__generated, 140, &oc1477_tail_setup) >= 3,
+            "fixture reaches too few paths"
+        );
+    }
+
+    /// `UIVector_SetAnimParams` fixture: the object's channel word (zero or
+    /// not), the bound in `this+0x74`, indices below 21 and `21 + 9 q + r`,
+    /// every resume entry.
+    pub(crate) fn oc1477_vector_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1477_pairs_machine(c, seed, 0x3a3808);
+        c.bus
+            .write32(OC1477_OBJ + 0x80, if seed % 7 == 0 { 0 } else { 0x1234 });
+        c.bus.write32(
+            OC1477_OBJ + 0x74,
+            (r.next_u32() % 5) << 17 | 0x1_ffff & r.next_u32(),
+        );
+        for i in 0..4u32 {
+            let idx = if r.next_u32() % 6 == 0 {
+                r.next_u32() % 21
+            } else {
+                21 + 9 * (r.next_u32() % 5) + r.next_u32() % 9
+            };
+            c.bus.write16(OC1477_SHORTS + 4 * i, idx as u16);
+            c.bus
+                .write16(OC1477_SHORTS + 4 * i + 2, r.next_u32() as u16);
+        }
+        c.g[A0][0] = OC1477_OBJ as u64;
+        c.g[A1][0] = (seed / 8 % 5) as u64;
+        c.g[A2][0] = OC1477_SHORTS as u64;
+        c.g[T0][0] = OC1477_OBJ as u64;
+        c.g[T2][0] = (seed / 40 % 3) as u64;
+        let idx21 = 21 + 9 * (r.next_u32() % 5) as u64 + (r.next_u32() % 9) as u64;
+        c.pc = match seed % 8 {
+            0 => 0x003a_3808,
+            1 => 0x003a_3818,
+            2 => 0x003a_3820,
+            3 => {
+                c.g[A0][0] = idx21;
+                0x003a_383c
+            }
+            4 => {
+                c.g[V0][0] = 9;
+                c.lo[0] = r.next_u32() as u64 % 6;
+                c.hi[0] = r.next_u32() as u64 % 9;
+                0x003a_3850
+            }
+            5 => {
+                c.g[V1][0] = (seed / 8 % 2) as u64;
+                c.g[T1][0] = (r.next_u32() % 9) as u64;
+                0x003a_3870
+            }
+            6 => {
+                c.g[V1][0] = (seed / 8 % 2) as u64;
+                c.g[T1][0] = (r.next_u32() % 9) as u64;
+                0x003a_3878
+            }
+            _ => {
+                c.g[T1][0] = (r.next_u32() % 9) as u64;
+                0x003a_3880
+            }
+        };
+    }
+
+    #[test]
+    fn ui_vector_set_anim_params_matches() {
+        check_lohi(
+            ee::s13::f_003a3808__generated,
+            ui_vector_set_anim_params,
+            320,
+            &oc1477_vector_setup,
+        );
+        assert!(
+            oc1477_paths(ee::s13::f_003a3808__generated, 320, &oc1477_vector_setup) >= 8,
+            "fixture reaches too few paths"
+        );
+    }
+
+    /// An edge-case 64-bit register value (0, 1, -1, small, random).
+    #[allow(dead_code)]
+    pub(crate) fn leaf_val(r: &mut Rng) -> u64 {
+        match r.next_u32() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => u64::MAX,
+            3 => (r.next_u32() % 64) as u64,
+            4 => sx(r.next_u32()),
+            5 => r.next_u32() as u64,
+            6 => 0x8000_0000,
+            _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        }
+    }
+
+    /// Fill `size` bytes at `start` with zero / small / random words, or, when
+    /// `chase` is set, with pointers (16-byte aligned) into `ptr_lo..ptr_lo + 0x200`.
+    #[allow(dead_code)]
+    pub(crate) fn leaf_fill(
+        c: &mut Cpu,
+        r: &mut Rng,
+        start: u32,
+        size: u32,
+        chase: bool,
+        ptr_lo: u32,
+    ) {
+        for i in 0..size / 4 {
+            let w = if chase {
+                ptr_lo + 16 * (r.next_u32() % 32)
+            } else {
+                match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.next_u32() % 16,
+                    _ => r.next_u32(),
+                }
+            };
+            c.bus.write32(start + 4 * i, w);
+        }
+    }
+
+    /// `UIObject_HandleInput` (0x003a_4bd8) against the generated body.
+    #[test]
+    fn ui_object_handle_input_003a4bd8_matches() {
+        check(
+            ee::s13::f_003a4bd8__generated,
+            ui_object_handle_input_003a4bd8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a4bd8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIObject_RefreshText` (0x003a_4be0) against the generated body.
+    #[test]
+    fn ui_object_refresh_text_003a4be0_matches() {
+        check(
+            ee::s13::f_003a4be0__generated,
+            ui_object_refresh_text_003a4be0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a4be0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIObject_Render` (0x003a_4be8) against the generated body.
+    #[test]
+    fn ui_object_render_003a4be8_matches() {
+        check(
+            ee::s13::f_003a4be8__generated,
+            ui_object_render_003a4be8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a4be8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIObject_v18` (0x003a_4bf0) against the generated body.
+    #[test]
+    fn ui_object_v18_003a4bf0_matches() {
+        check(
+            ee::s13::f_003a4bf0__generated,
+            ui_object_v18_003a4bf0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a4bf0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIIcon_GetType` (0x003a_4ea8) against the generated body.
+    #[test]
+    fn ui_icon_get_type_003a4ea8_matches() {
+        check(
+            ee::s13::f_003a4ea8__generated,
+            ui_icon_get_type_003a4ea8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a4ea8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cUIGroup_GetType` (0x003a_50f8) against the generated body.
+    #[test]
+    fn c_ui_group_get_type_003a50f8_matches() {
+        check(
+            ee::s13::f_003a50f8__generated,
+            c_ui_group_get_type_003a50f8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a50f8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIMenu_GetType` (0x003a_5330) against the generated body.
+    #[test]
+    fn ui_menu_get_type_003a5330_matches() {
+        check(
+            ee::s13::f_003a5330__generated,
+            ui_menu_get_type_003a5330,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5330, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIPair_GetType` (0x003a_5500) against the generated body.
+    #[test]
+    fn ui_pair_get_type_003a5500_matches() {
+        check(
+            ee::s13::f_003a5500__generated,
+            ui_pair_get_type_003a5500,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5500, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIListBox_GetType` (0x003a_56a0) against the generated body.
+    #[test]
+    fn ui_list_box_get_type_003a56a0_matches() {
+        check(
+            ee::s13::f_003a56a0__generated,
+            ui_list_box_get_type_003a56a0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a56a0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIListBox_v23` (0x003a_56d8) against the generated body.
+    #[test]
+    fn ui_list_box_v23_003a56d8_matches() {
+        check(
+            ee::s13::f_003a56d8__generated,
+            ui_list_box_v23_003a56d8,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a56d8, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_Init` (0x003a_5aa8) against the generated body.
+    #[test]
+    fn ui_state_init_003a5aa8_matches() {
+        check(
+            ee::s13::f_003a5aa8__generated,
+            ui_state_init_003a5aa8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5aa8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_TransitionIn` (0x003a_5ab0) against the generated body.
+    #[test]
+    fn ui_state_transition_in_003a5ab0_matches() {
+        check(
+            ee::s13::f_003a5ab0__generated,
+            ui_state_transition_in_003a5ab0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5ab0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_HandleInput` (0x003a_5ab8) against the generated body.
+    #[test]
+    fn ui_state_handle_input_003a5ab8_matches() {
+        check(
+            ee::s13::f_003a5ab8__generated,
+            ui_state_handle_input_003a5ab8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5ab8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_TransitionOut` (0x003a_5ac0) against the generated body.
+    #[test]
+    fn ui_state_transition_out_003a5ac0_matches() {
+        check(
+            ee::s13::f_003a5ac0__generated,
+            ui_state_transition_out_003a5ac0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5ac0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnDeactivate` (0x003a_5ac8) against the generated body.
+    #[test]
+    fn ui_state_on_deactivate_003a5ac8_matches() {
+        check(
+            ee::s13::f_003a5ac8__generated,
+            ui_state_on_deactivate_003a5ac8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5ac8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnRender` (0x003a_5ad0) against the generated body.
+    #[test]
+    fn ui_state_on_render_003a5ad0_matches() {
+        check(
+            ee::s13::f_003a5ad0__generated,
+            ui_state_on_render_003a5ad0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5ad0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnAnimEvent` (0x003a_5ad8) against the generated body.
+    #[test]
+    fn ui_state_on_anim_event_003a5ad8_matches() {
+        check(
+            ee::s13::f_003a5ad8__generated,
+            ui_state_on_anim_event_003a5ad8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5ad8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnChildEvent` (0x003a_5b08) against the generated body.
+    #[test]
+    fn ui_state_on_child_event_003a5b08_matches() {
+        check(
+            ee::s13::f_003a5b08__generated,
+            ui_state_on_child_event_003a5b08,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b08, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnWidgetCreated` (0x003a_5b10) against the generated body.
+    #[test]
+    fn ui_state_on_widget_created_003a5b10_matches() {
+        check(
+            ee::s13::f_003a5b10__generated,
+            ui_state_on_widget_created_003a5b10,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b10, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnWidgetAction` (0x003a_5b18) against the generated body.
+    #[test]
+    fn ui_state_on_widget_action_003a5b18_matches() {
+        check(
+            ee::s13::f_003a5b18__generated,
+            ui_state_on_widget_action_003a5b18,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b18, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnWidgetNotify` (0x003a_5b20) against the generated body.
+    #[test]
+    fn ui_state_on_widget_notify_003a5b20_matches() {
+        check(
+            ee::s13::f_003a5b20__generated,
+            ui_state_on_widget_notify_003a5b20,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b20, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_v21` (0x003a_5b28) against the generated body.
+    #[test]
+    fn ui_state_v21_003a5b28_matches() {
+        check(
+            ee::s13::f_003a5b28__generated,
+            ui_state_v21_003a5b28,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b28, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_v22` (0x003a_5b30) against the generated body.
+    #[test]
+    fn ui_state_v22_003a5b30_matches() {
+        check(
+            ee::s13::f_003a5b30__generated,
+            ui_state_v22_003a5b30,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b30, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_v23` (0x003a_5b38) against the generated body.
+    #[test]
+    fn ui_state_v23_003a5b38_matches() {
+        check(
+            ee::s13::f_003a5b38__generated,
+            ui_state_v23_003a5b38,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b38, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIState_OnNetEvent` (0x003a_5b40) against the generated body.
+    #[test]
+    fn ui_state_on_net_event_003a5b40_matches() {
+        check(
+            ee::s13::f_003a5b40__generated,
+            ui_state_on_net_event_003a5b40,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5b40, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIText_GetType` (0x003a_5df0) against the generated body.
+    #[test]
+    fn ui_text_get_type_003a5df0_matches() {
+        check(
+            ee::s13::f_003a5df0__generated,
+            ui_text_get_type_003a5df0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a5df0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cUIScroll_GetType` (0x003a_6000) against the generated body.
+    #[test]
+    fn c_ui_scroll_get_type_003a6000_matches() {
+        check(
+            ee::s13::f_003a6000__generated,
+            c_ui_scroll_get_type_003a6000,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a6000, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cUIProgress_GetType` (0x003a_6168) against the generated body.
+    #[test]
+    fn c_ui_progress_get_type_003a6168_matches() {
+        check(
+            ee::s13::f_003a6168__generated,
+            c_ui_progress_get_type_003a6168,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a6168, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cUISlider_GetType` (0x003a_6220) against the generated body.
+    #[test]
+    fn c_ui_slider_get_type_003a6220_matches() {
+        check(
+            ee::s13::f_003a6220__generated,
+            c_ui_slider_get_type_003a6220,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a6220, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cUITextScroll_GetType` (0x003a_6330) against the generated body.
+    #[test]
+    fn c_ui_text_scroll_get_type_003a6330_matches() {
+        check(
+            ee::s13::f_003a6330__generated,
+            c_ui_text_scroll_get_type_003a6330,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a6330, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `UIVector_GetType` (0x003a_6540) against the generated body.
+    #[test]
+    fn ui_vector_get_type_003a6540_matches() {
+        check(
+            ee::s13::f_003a6540__generated,
+            ui_vector_get_type_003a6540,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3a6540, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

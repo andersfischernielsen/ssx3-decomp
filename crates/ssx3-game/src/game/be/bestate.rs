@@ -1,6 +1,7 @@
 //! `src/be/bestate.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi::ret;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
@@ -27,6 +28,8 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0015_3088, be_race_get_instance, "BERace_GetInstance"),
     (0x0015_30e0, be_race_get_interface, "BERace_GetInterface"),
+    (0x0015_3200, be_race_state_on_exit, "cBERaceState_onExit"),
+    (0x0015_3258, be_race_state_on_enter, "cBERaceState_onEnter"),
 ];
 
 /// `BERace_GetInstance(int id)` (0x153088): the `BERace` singleton, allocated
@@ -278,6 +281,61 @@ pub fn be_race_get_interface(c: &mut Cpu) {
     })
 }
 
+/// `void cBERaceState::onExit()` (0x00153200): clears the `bIsActive` word
+/// (+0x8) of the ten `cBE*Interface_instance` singletons. Each singleton
+/// pointer is a global at a `gp` offset; the register chain (`v0`, `v1`, `a0`)
+/// is the generated one, load and store in the same order.
+pub fn be_race_state_on_exit(c: &mut Cpu) {
+    c.cycles += 21;
+    c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ee4)).lw(c);
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ea8)).lw(c);
+    Addr((c.g[V0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1f28)).lw(c);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1f30)).lw(c);
+    Addr((c.g[A0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1f3c)).lw(c);
+    Addr((c.g[V0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1eb8)).lw(c);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1edc)).lw(c);
+    Addr((c.g[A0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ea4)).lw(c);
+    Addr((c.g[V0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1e8c)).lw(c);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ed4)).lw(c);
+    Addr((c.g[A0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    Addr((c.g[V0][0] as u32).wrapping_add(0x8)).sw(c, 0);
+    ret(c);
+}
+
+/// `void cBERaceState::onEnter()` (0x00153258): sets `bIsActive` (+0x8, to 1)
+/// on the eight `cBE*Interface_instance` singletons the race state uses. The
+/// same register chain as [`be_race_state_on_exit`].
+pub fn be_race_state_on_enter(c: &mut Cpu) {
+    c.cycles += 18;
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ee4)).lw(c);
+    c.g[V0][0] = 1;
+    let one = c.g[V0][0];
+    c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ea8)).lw(c);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1f28)).lw(c);
+    Addr((c.g[A0][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1eb8)).lw(c);
+    Addr((c.g[A1][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1edc)).lw(c);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[A1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ea4)).lw(c);
+    Addr((c.g[A0][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[A2][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1e8c)).lw(c);
+    Addr((c.g[A1][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x1ed4)).lw(c);
+    Addr((c.g[A2][0] as u32).wrapping_add(0x8)).sw(c, one);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, one);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -381,6 +439,71 @@ pub(crate) mod tests {
                         .write32(GAME_GP.wrapping_sub(*off), DATA + 0x1000 + 0x100 * i as u32);
                 }
                 c.g[A1][0] = sx(kind);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    use crate::difftest::Rng;
+
+    /// Writes the `gp` globals of the singleton pointers (`gp - off` holds the
+    /// address of an object at `DATA + 0x7000 + 0x40 * k`, whose +8 word starts
+    /// random).
+    pub(crate) fn interface_fixture(c: &mut Cpu, r: &mut Rng, offs: &[u32]) {
+        for (k, off) in offs.iter().enumerate() {
+            let obj = DATA + 0x7000 + 0x40 * k as u32;
+            c.bus.write32(GAME_GP.wrapping_sub(*off), obj);
+            c.bus.write32(obj + 8, r.next_u32());
+        }
+    }
+
+    /// The `gp` offsets of the ten `cBE*Interface_instance` globals that
+    /// `onExit` clears, in the order the generated body loads them.
+    pub(crate) const EXIT_OFFS: [u32; 10] = [
+        0x1ee4, 0x1ea8, 0x1f28, 0x1f30, 0x1f3c, 0x1eb8, 0x1edc, 0x1ea4, 0x1e8c, 0x1ed4,
+    ];
+
+    /// The eight globals `onEnter` sets.
+    pub(crate) const ENTER_OFFS: [u32; 8] = [
+        0x1ee4, 0x1ea8, 0x1f28, 0x1eb8, 0x1edc, 0x1ea4, 0x1e8c, 0x1ed4,
+    ];
+
+    #[test]
+    fn be_race_state_on_exit_matches() {
+        check(
+            ee::s01::f_00153200__generated,
+            be_race_state_on_exit,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                let mut r = fakes::machine(c, seed, 0x1532_00, 0);
+                interface_fixture(c, &mut r, &EXIT_OFFS);
+                // Half the seeds: every singleton already points at one object.
+                if seed % 2 == 0 {
+                    let shared = DATA + 0x7000;
+                    for off in EXIT_OFFS {
+                        c.bus.write32(GAME_GP.wrapping_sub(off), shared);
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn be_race_state_on_enter_matches() {
+        check(
+            ee::s01::f_00153258__generated,
+            be_race_state_on_enter,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                let mut r = fakes::machine(c, seed, 0x1532_58, 0);
+                interface_fixture(c, &mut r, &ENTER_OFFS);
+                if seed % 3 == 0 {
+                    let shared = DATA + 0x7040;
+                    for off in ENTER_OFFS {
+                        c.bus.write32(GAME_GP.wrapping_sub(off), shared);
+                    }
+                }
             },
         );
     }

@@ -13,6 +13,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -311,6 +312,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_8818,
         cworldsound_static_init,
         "cWorldSound_StaticInit",
+    ),
+    (
+        0x002b_6950,
+        world_trigger_manager_set_enabled,
+        "WorldTriggerManager_SetEnabled",
+    ),
+    (
+        0x002b_83b8,
+        c_world_sound_debug_printf,
+        "cWorldSound_DebugPrintf",
+    ),
+    (
+        0x002b_add0,
+        world_sound_collect_subtree,
+        "cWorldSound_CollectSubtree",
+    ),
+    (
+        0x002b_aee8,
+        cworld_sound_global_ctors,
+        "cWorldSound_GlobalCtors",
     ),
 ];
 
@@ -6651,9 +6672,332 @@ pub(crate) const WS_REMOVE_EMITTER: Callee = Callee {
 /// after an unwound callee or event) runs the generated body.
 pub fn world_sound_unlink_emitter(c: &mut Cpu) {
     if c.pc != UNLINK_EMITTER_ENTRY {
-        return ee::s08::f_002b7410__generated(c);
+        return world_sound_unlink_emitter_resume(c);
     }
     guest(c, unlink_emitter_body);
+}
+
+/// Native resume of `world_sound_unlink_emitter` (converted from the `generated` body): any entry
+/// other than 0x002b7410, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn world_sound_unlink_emitter_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x002b7410 => {
+                    c.cycles += 8;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[S1][0] = c.g[A1][0];
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.g[S2][0] = c.g[A0][0];
+                    let t = c.g[S1][0] == 0u64;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
+                    if t {
+                        pc = 0x002b75b4;
+                        continue;
+                    }
+                    pc = 0x002b7430;
+                    continue;
+                }
+                0x002b7430 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V0][0] == 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    if t {
+                        pc = 0x002b75b8;
+                        continue;
+                    }
+                    pc = 0x002b743c;
+                    continue;
+                }
+                0x002b743c => {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                    let t = c.g[V1][0] == 0u64;
+                    c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    if t {
+                        pc = 0x002b75b8;
+                        continue;
+                    }
+                    pc = 0x002b744c;
+                    continue;
+                }
+                0x002b744c => {
+                    c.cycles += 50;
+                    c.g[RA][0] = sx(0x002b7454);
+                    c.g[A2][0] = c.g[SP][0];
+                    Callee {
+                        addr: 0x002b6cf8,
+                        f: ee::s08::cWorldSound_ComputeRegionBounds,
+                    }
+                    .call(c, 0x002b7454)?;
+                    c.g[RA][0] = sx(0x002b745c);
+                    call_ptr(c, 0x0028b1c8, 0x002b745c)?;
+                    c.lwc1(6, c.g[SP][0] as u32);
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lwc1(5, (c.g[SP][0] as u32).wrapping_add(0x4));
+                    c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lwc1(1, (c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.lwc1(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.lwc1(3, (c.g[SP][0] as u32).wrapping_add(0x14));
+                    c.lwc1(4, (c.g[SP][0] as u32).wrapping_add(0x18));
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 0);
+                    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
+                    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x24));
+                    c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x28));
+                    c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x34));
+                    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x38));
+                    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x3c));
+                    c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x2c));
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.g[RA][0] = sx(0x002b74b8);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xa0), c.g[V0][0]);
+                    call_ptr(c, 0x00328f28, 0x002b74b8)?;
+                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x44));
+                    c.g[A3][0] = 0xffffffffffffffff;
+                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x48));
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x50));
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4c));
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = c.g[S0][0];
+                    }
+                    c.g[A0][0] = ((c.g[A3][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x28));
+                    c.g[A3][0] = ((c.g[A3][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                    if c.g[A0][0] != 0 {
+                        c.g[V0][0] = c.g[V1][0];
+                    }
+                    c.g[A1][0] = 0x2;
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14));
+                    c.g[A2][0] = c.g[S1][0];
+                    if c.g[A3][0] != 0 {
+                        c.g[S0][0] = c.g[V0][0];
+                    }
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[RA][0] = sx(0x002b7504);
+                    c.g[T0][0] = c.g[S0][0];
+                    call_ptr(c, 0x003284b8, 0x002b7504)?;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b7514;
+                    continue;
+                }
+                0x002b7514 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b7520;
+                    continue;
+                }
+                0x002b7520 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b752c;
+                    continue;
+                }
+                0x002b752c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b7538;
+                    continue;
+                }
+                0x002b7538 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b7544;
+                    continue;
+                }
+                0x002b7544 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b7550;
+                    continue;
+                }
+                0x002b7550 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b755c;
+                    continue;
+                }
+                0x002b755c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                    if t {
+                        pc = 0x002b7570;
+                        continue;
+                    }
+                    pc = 0x002b7568;
+                    continue;
+                }
+                0x002b7568 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x002b7594;
+                        continue;
+                    }
+                    pc = 0x002b7570;
+                    continue;
+                }
+                0x002b7570 => {
+                    c.cycles += 2;
+                    c.g[A0][0] = 0u64;
+                    pc = 0x002b7578;
+                    continue;
+                }
+                0x002b7578 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x002b7568) {
+                            return Ok(());
+                        }
+                        pc = 0x002b7568;
+                        continue;
+                    }
+                    pc = 0x002b7584;
+                    continue;
+                }
+                0x002b7584 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A0][0] as i64) < 3i64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if back_edge_unwinds(c, 0x002b7578) {
+                            return Ok(());
+                        }
+                        pc = 0x002b7578;
+                        continue;
+                    }
+                    pc = 0x002b7590;
+                    continue;
+                }
+                0x002b7590 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x1;
+                    pc = 0x002b7594;
+                    continue;
+                }
+                0x002b7594 => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.g[S2][0];
+                    if t {
+                        pc = 0x002b75ac;
+                        continue;
+                    }
+                    pc = 0x002b759c;
+                    continue;
+                }
+                0x002b759c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x002b75a4);
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    call_ptr(c, 0x00317e50, 0x002b75a4)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+                    c.g[A0][0] = c.g[S2][0];
+                    pc = 0x002b75ac;
+                    continue;
+                }
+                0x002b75ac => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x002b75b4);
+                    c.g[A1][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x002b77c0,
+                        f: ee::s08::cWorldSound_RemoveEmitter,
+                    }
+                    .call(c, 0x002b75b4)?;
+                    pc = 0x002b75b4;
+                    continue;
+                }
+                0x002b75b4 => {
+                    c.cycles += 1;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    pc = 0x002b75b8;
+                    continue;
+                }
+                0x002b75b8 => {
+                    c.cycles += 5;
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x002b7410, 0x002b75cc);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 pub(crate) fn unlink_emitter_body(c: &mut Cpu) -> Flow {
@@ -6838,6 +7182,174 @@ pub(crate) fn unlink_emitter_exit(c: &mut Cpu, f: Frame) -> Flow {
     f.restore_ra(c, 0x50);
     f.close(c);
     Ok(())
+}
+
+/// `cWorldSound_DebugPrintf` (0x002b_83b8): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn c_world_sound_debug_printf(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `void WorldTriggerManager_SetEnabled(WorldTriggerManager* self, int a, int b)`
+/// (0x2b6950): stores `a` as the manager's enabled word (+0x334) when `a` or
+/// `b` is zero. Otherwise it calls `func_00289400(func_0028B180())`: the
+/// first call gets `self` in a0, the second gets the result in a0 and `a1`
+/// as the first call left it.
+pub fn world_trigger_manager_set_enabled(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let mut store = c.g[A1][0] == 0;
+        if !store {
+            c.cycles += 2;
+            store = c.g[A2][0] == 0;
+        }
+        if store {
+            c.cycles += 2;
+            let value = c.g[A1][0];
+            c.sw(r32(c, A0).wrapping_add(0x334), value);
+        } else {
+            c.cycles += 4;
+            call_ptr(c, 0x0028_b180, 0x002b_6974)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0028_9400, 0x002b_697c)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One child step of `world_sound_collect_subtree`: recurse into the child in
+/// a0 (when set), then load the next child (`next`, a byte offset in the
+/// node) into a0. The callee returns to `ret`.
+pub(crate) fn wsc_collect_child(c: &mut Cpu, ret: u32, next: u32) -> Flow {
+    c.cycles += 2;
+    if c.g[A0][0] != 0 {
+        c.cycles += 3;
+        c.g[A1][0] = c.g[S0][0];
+        Callee {
+            addr: 0x002b_add0,
+            f: ee::s08::f_002badd0,
+        }
+        .call(c, ret)?;
+    }
+    c.g[A0][0] = c.lw(r32(c, S1).wrapping_add(next));
+    Ok(())
+}
+
+/// `void cWorldSound_CollectSubtree(Node* node, List** out)` (0x2badd0):
+/// appends every item of type 5 in `node`'s item list (at +0x28), then
+/// recurses into the eight children (pointers at +0x0..+0x1c), in order, into
+/// the list `*out` (count at +0, items array at +4).
+pub fn world_sound_collect_subtree(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = c.lw(r32(c, S1).wrapping_add(0x28));
+        if c.g[A1][0] == 0 {
+            c.g[A0][0] = c.lw(r32(c, S1));
+        } else {
+            c.cycles += 3;
+            c.g[A2][0] = 0x5;
+            c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x8));
+            loop {
+                c.cycles += 2;
+                if c.g[V0][0] != c.g[A2][0] {
+                    c.g[A1][0] = c.lw(r32(c, A1));
+                } else {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.lw(r32(c, S0));
+                    c.g[V1][0] = c.lw(r32(c, A0));
+                    c.g[V0][0] = sx(r32(c, V1) << 2);
+                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x1));
+                    let slot = r32(c, V0).wrapping_add(0x4);
+                    let item = c.g[A1][0];
+                    c.sw(slot, item);
+                    let count = c.g[V1][0];
+                    c.sw(r32(c, A0), count);
+                    c.g[A1][0] = c.lw(r32(c, A1));
+                }
+                c.cycles += 2;
+                if c.g[A1][0] != 0 {
+                    c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x8));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002b_ae00);
+                    }
+                } else {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.lw(r32(c, S1));
+                    break;
+                }
+            }
+        }
+        wsc_collect_child(c, 0x002b_ae44, 0x4)?;
+        wsc_collect_child(c, 0x002b_ae58, 0x8)?;
+        wsc_collect_child(c, 0x002b_ae6c, 0xc)?;
+        wsc_collect_child(c, 0x002b_ae80, 0x10)?;
+        wsc_collect_child(c, 0x002b_ae94, 0x14)?;
+        wsc_collect_child(c, 0x002b_aea8, 0x18)?;
+        wsc_collect_child(c, 0x002b_aebc, 0x1c)?;
+        // The last child: no next pointer, and s0 is restored after it.
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            Callee {
+                addr: 0x002b_add0,
+                f: ee::s08::f_002badd0,
+            }
+            .call(c, 0x002b_aed0)?;
+        }
+        frame.restore(c, 16, 0x20);
+        c.cycles += 4;
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cWorldSound_GlobalCtors` (0x2baee8): the static constructor of the world
+/// sound system, `cWorldSound_StaticInit(1, 0xffff)`.
+pub fn cworld_sound_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1;
+        c.g[A1][0] = 0xffff;
+        Callee {
+            addr: 0x002b_8818,
+            f: ee::s08::f_002b8818,
+        }
+        .call(c, 0x002b_aefc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -9885,6 +10397,213 @@ pub(crate) mod tests {
                     .write32(DATA + 0x1204, if seed % 3 == 2 { 0 } else { DATA + 0x1300 });
                 c.bus.write32(DATA + 0x1300, seed);
                 c.bus.write32(DATA + 0x1320, seed.wrapping_mul(3));
+            },
+        );
+    }
+
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::leaf_val;
+    pub(crate) use crate::game::worldpainter::worldpainterman::tests::oc1549_gated_fake;
+    pub(crate) use crate::game::worldpainter::worldpainterman::tests::OC1549_MAGIC;
+
+    /// `cWorldSound_DebugPrintf` (0x002b_83b8) against the generated body.
+    #[test]
+    fn c_world_sound_debug_printf_matches() {
+        check(
+            ee::s08::f_002b83b8__generated,
+            c_world_sound_debug_printf,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b83b8, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Gate of this module's callee fakes: the magic word at `OC1548_CTRL`.
+    pub(crate) const OC1548_CTRL: u32 = DATA + 0xf_f000;
+
+    pub(crate) const OC1548_MAGIC: u32 = 0x1548_c0de;
+
+    /// Gated fakes of the callees (hooked once per process; with the gate off
+    /// they run the body they replaced).
+    macro_rules! oc1548_fakes {
+        ($($fake:ident, $prev:ident, $addr:literal, $slot:path, $gen:path;)*) => {
+            $(
+                static $prev: AtomicUsize = AtomicUsize::new(0);
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32(OC1548_CTRL) != OC1548_MAGIC {
+                        return fakes::fall_back(c, &$prev, $gen);
+                    }
+                    fakes::fake_call(c, $addr)
+                }
+            )*
+            pub(crate) fn oc1548_install_fakes() {
+                $( fakes::hook(addr_of_mut!($slot), $fake, &$prev); )*
+            }
+        };
+    }
+
+    oc1548_fakes! {
+        oc1548_fake_28b180, OC1548_PREV_28B180, 0x0028_b180, ee::s07::OVERRIDE_0028B180, ee::s07::f_0028b180__generated;
+        oc1548_fake_289400, OC1548_PREV_289400, 0x0028_9400, ee::s07::OVERRIDE_00289400, ee::s07::f_00289400__generated;
+        oc1548_fake_289df0, OC1548_PREV_289DF0, 0x0028_9df0, ee::s07::OVERRIDE_00289DF0, ee::s07::f_00289df0__generated;
+        oc1548_fake_3ba020, OC1548_PREV_3BA020, 0x003b_a020, ee::s13::OVERRIDE_003BA020, ee::s13::f_003ba020__generated;
+        oc1548_fake_3b58a0, OC1548_PREV_3B58A0, 0x003b_58a0, ee::s13::OVERRIDE_003B58A0, ee::s13::f_003b58a0__generated;
+        oc1548_fake_3b58d8, OC1548_PREV_3B58D8, 0x003b_58d8, ee::s13::OVERRIDE_003B58D8, ee::s13::f_003b58d8__generated;
+        oc1548_fake_3b65d0, OC1548_PREV_3B65D0, 0x003b_65d0, ee::s13::OVERRIDE_003B65D0, ee::s13::f_003b65d0__generated;
+    }
+
+    /// `world_trigger_manager_set_enabled` against the generated body: the
+    /// store path (a or b zero) and the two-call path, with both callees
+    /// gated fakes.
+    #[test]
+    fn world_trigger_manager_set_enabled_matches() {
+        oc1548_install_fakes();
+        check(
+            ee::s08::f_002b6950__generated,
+            world_trigger_manager_set_enabled,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_6950, 0);
+                c.bus.write32(OC1548_CTRL, OC1548_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    (r.next_u32() | 1) as u64
+                };
+                c.g[A2][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    (r.next_u32() | 1) as u64
+                };
+            },
+        );
+    }
+
+    /// Node and item layout for `world_sound_collect_subtree`: nodes of
+    /// 0x40 bytes (children at +0..+0x1c, item list at +0x28), items of 0x10
+    /// bytes (next at +0, type at +8), the list (count at +0, items at +4) and
+    /// the out cell holding its address. Children have higher indices, so the
+    /// tree is acyclic. With `flat` no node has children.
+    pub(crate) fn wsc_collect_fixture(c: &mut Cpu, r: &mut Rng, seed: u32, flat: bool) {
+        const NODES: u32 = DATA + 0x1_0000;
+        const ITEMS: u32 = DATA + 0x2_0000;
+        const LIST: u32 = DATA + 0x3_0000;
+        const OUT: u32 = DATA + 0x3_8000;
+        let count = 1 + seed % 6;
+        for i in 0..count {
+            let node = NODES + i * 0x40;
+            for k in 0..8u32 {
+                let child = if flat || i + 1 == count || r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    NODES + (i + 1 + r.next_u32() % (count - i - 1)) * 0x40
+                };
+                c.bus.write32(node + 4 * k, child);
+            }
+            // Flat fixtures always have a few items, so the loop's back edges
+            // (where the events are due) run.
+            let items = if flat {
+                2 + r.next_u32() % 3
+            } else {
+                r.next_u32() % 4
+            };
+            let mut head = 0;
+            for k in (0..items).rev() {
+                let item = ITEMS + (i * 4 + k) * 0x10;
+                let kind = [5, 5, 2, 1][(r.next_u32() % 4) as usize];
+                c.bus.write32(item, head);
+                c.bus.write32(item + 8, kind);
+                head = item;
+            }
+            c.bus.write32(node + 0x28, head);
+        }
+        c.bus.write32(OUT, LIST);
+        c.bus.write32(LIST, r.next_u32() % 3);
+        c.g[A0][0] = sx(NODES);
+        c.g[A1][0] = sx(OUT);
+    }
+
+    /// `world_sound_collect_subtree` against the generated body on random
+    /// trees: the item filter, the list growth, the children (recursing
+    /// through the generated body) and the empty-list path.
+    #[test]
+    fn world_sound_collect_subtree_matches() {
+        check(
+            ee::s08::f_002badd0__generated,
+            world_sound_collect_subtree,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x002b_add0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                wsc_collect_fixture(c, &mut r, seed, false);
+            },
+        );
+    }
+
+    /// The same body on flat lists with events due at its back edges.
+    #[test]
+    fn world_sound_collect_subtree_events_match() {
+        driven!(gen_collect, ee::s08::f_002badd0__generated);
+        driven!(hand_collect, world_sound_collect_subtree);
+        check_events(gen_collect, hand_collect, 96, &|c, seed| {
+            let mut r = Rng(0x002b_add0 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            wsc_collect_fixture(c, &mut r, seed, true);
+            c.g[RA][0] = crate::difftest::RA as u64;
+            schedule(c, &mut r, seed, 0x002b_add0)
+        });
+    }
+
+    /// Gate words of this module's tests (one per test, in the fixture area
+    /// above the call log and below the stack).
+    pub(crate) const OC1549_SS_GATE: u32 = DATA + 0x2e_0000;
+
+    // WorldPainter_StaticInit's callee cWorldSound_StaticInit.
+    oc1549_gated_fake!(
+        oc1549_ss_init,
+        OC1549_SS_PREV,
+        OC1549_SS_GATE,
+        4,
+        ee::s08::f_002b8818__generated,
+        0x002b_8818
+    );
+
+    pub(crate) fn oc1549_ss_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002B8818),
+            oc1549_ss_init,
+            &OC1549_SS_PREV,
+        );
+    }
+
+    /// `cWorldSound_GlobalCtors` against the generated body, with the static
+    /// init faked (gate on) so the test does not run it.
+    #[test]
+    fn cworld_sound_global_ctors_matches() {
+        check(
+            ee::s08::f_002baee8__generated,
+            cworld_sound_global_ctors,
+            200,
+            &|c, seed| {
+                oc1549_ss_hook();
+                machine(c, seed, 0x2b_aee8, 2);
+                c.bus.write32(OC1549_SS_GATE, OC1549_MAGIC);
+                c.bus.write32(OC1549_SS_GATE + 4, seed);
+                c.pc = 0x002b_aee8;
             },
         );
     }

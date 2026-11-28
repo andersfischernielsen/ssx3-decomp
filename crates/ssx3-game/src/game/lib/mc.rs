@@ -44,6 +44,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_ae00, sce_mc_rename, "sceMcRename"),
     (0x0040_af58, sce_mc_unformat, "sceMcUnformat"),
     (0x0040_b028, sce_mc_get_ent_space, "sceMcGetEntSpace"),
+    (0x0040_a320, libmc_delay_alarm, "libmc_DelayAlarmHandler"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2165,6 +2166,20 @@ pub fn sce_mc_write(c: &mut Cpu) {
     })
 }
 
+pub(crate) const ALARM_CALL_SIGNAL_SEMA: Callee = Callee {
+    addr: 0x0042_3dd0,
+    f: ee::s15::iSignalSema,
+};
+
+/// `void libmc_DelayAlarmHandler(alarmId, ticks, sema)` (0x40a320): signals the
+/// semaphore (the third argument) through `iSignalSema`.
+pub fn libmc_delay_alarm(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[A0][0] = c.g[A2][0];
+    c.pc = ALARM_CALL_SIGNAL_SEMA.addr;
+    (ALARM_CALL_SIGNAL_SEMA.f)(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::ee;
@@ -3492,6 +3507,28 @@ pub(crate) mod tests {
                 }
                 mode
             },
+        );
+    }
+
+    use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::seg::seg_2fe810::tests::oc1592_arm;
+
+    pub(crate) use crate::game::seg::seg_2fe810::tests::oc1592_install;
+
+    pub(crate) fn oc1592_alarm_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x1598, 1);
+        oc1592_arm(c, seed);
+        c.g[A2][0] = (seed as u64) * 3 + 1;
+    }
+
+    #[test]
+    fn libmc_delay_alarm_matches() {
+        oc1592_install();
+        check(
+            ee::s15::f_0040a320__generated,
+            libmc_delay_alarm,
+            16,
+            &oc1592_alarm_setup,
         );
     }
 }

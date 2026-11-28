@@ -159,6 +159,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Replay_RestoreSnapshot",
     ),
     (0x0026_dbd0, world_state_restore_2, "WorldState_Restore"),
+    (
+        0x0026_c998,
+        playbackman_is_file_loaded,
+        "PlaybackMan_IsFileLoaded",
+    ),
+    (
+        0x0026_c9f0,
+        playbackman_start_file_load,
+        "PlaybackMan_StartFileLoad",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2760,7 +2770,7 @@ pub fn playback_man_start_file_load(c: &mut Cpu) {
 /// generated body (at install: its `__generated` alias).
 pub fn playback_man_load_playback(c: &mut Cpu) {
     if c.pc != 0x0026caf8 {
-        return ee::s07::f_0026caf8__generated(c);
+        return playback_man_load_playback_resume(c);
     }
     guest(c, |c| {
         c.cycles += 9;
@@ -2882,6 +2892,182 @@ pub fn playback_man_load_playback(c: &mut Cpu) {
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
         c.pc = t;
         Ok(())
+    });
+}
+
+/// Native resume of `playback_man_load_playback` (converted from the `generated` body): any entry
+/// other than 0x0026caf8, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn playback_man_load_playback_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0026caf8 => {
+                    c.cycles += 9;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x70));
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S1][0] = c.g[A1][0];
+                    if t {
+                        pc = 0x0026cb94;
+                        continue;
+                    }
+                    pc = 0x0026cb1c;
+                    continue;
+                }
+                0x0026cb1c => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x0026cb24);
+                    Callee {
+                        addr: 0x0026cfe8,
+                        f: ee::s07::PlaybackMan_FindFile,
+                    }
+                    .call(c, 0x0026cb24)?;
+                    c.g[S2][0] = c.g[V0][0];
+                    let t = (c.g[S2][0] as i64) < 0;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0026cb94;
+                        continue;
+                    }
+                    pc = 0x0026cb30;
+                    continue;
+                }
+                0x0026cb30 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026cb38);
+                    c.g[A1][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0026c9f0,
+                        f: ee::s07::PlaybackMan_StartFileLoad,
+                    }
+                    .call(c, 0x0026cb38)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0026cb94;
+                        continue;
+                    }
+                    pc = 0x0026cb40;
+                    continue;
+                }
+                0x0026cb40 => {
+                    c.cycles += 2;
+                    let t = true;
+
+                    if t {
+                        pc = 0x0026cb64;
+                        continue;
+                    }
+                    pc = 0x0026cb48;
+                    continue;
+                }
+                0x0026cb48 => {
+                    c.cycles += 7;
+                    c.g[RA][0] = sx(0x0026cb50);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x0026c5f8,
+                        f: ee::s07::PlaybackMan_PollFileLoad,
+                    }
+                    .call(c, 0x0026cb50)?;
+                    c.g[RA][0] = sx(0x0026cb58);
+                    c.g[A0][0] = 0u64;
+                    call_ptr(c, 0x003e5928, 0x0026cb58)?;
+                    c.g[RA][0] = sx(0x0026cb60);
+                    c.g[A0][0] = 0x1;
+                    call_ptr(c, 0x003e52b0, 0x0026cb60)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    pc = 0x0026cb64;
+                    continue;
+                }
+                0x0026cb64 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026cb6c);
+                    c.g[A1][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0026c998,
+                        f: ee::s07::PlaybackMan_IsFileLoaded,
+                    }
+                    .call(c, 0x0026cb6c)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A1][0] = c.g[S2][0];
+                    if t {
+                        if back_edge_unwinds(c, 0x0026cb48) {
+                            return Ok(());
+                        }
+                        pc = 0x0026cb48;
+                        continue;
+                    }
+                    pc = 0x0026cb74;
+                    continue;
+                }
+                0x0026cb74 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0026cb7c);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x0026d020,
+                        f: ee::s07::PlaybackMan_ApplyFile,
+                    }
+                    .call(c, 0x0026cb7c)?;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0026cb98;
+                        continue;
+                    }
+                    pc = 0x0026cb84;
+                    continue;
+                }
+                0x0026cb84 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                    let t = (c.g[V1][0] as i64) > 0;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0026cb98;
+                        continue;
+                    }
+                    pc = 0x0026cb94;
+                    continue;
+                }
+                0x0026cb94 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = 0x0026cb98;
+                    continue;
+                }
+                0x0026cb98 => {
+                    c.cycles += 6;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0026caf8, 0x0026cbb0);
+                    return Ok(());
+                }
+            }
+        }
     });
 }
 
@@ -3120,6 +3306,136 @@ pub fn world_state_restore_2(c: &mut Cpu) {
         Target::Direct(oc683_direct(0x0026_dbf0)),
         0x0026_dbe0,
     );
+}
+
+/// `PlaybackMan_IsFileLoaded(self, file)` (0x26c998): finds the file's entry with
+/// `PlaybackMan_FindFile`. A missing entry (negative index) gives 0. Otherwise the
+/// 12-byte entry at `self+0x58` is consulted: a non-zero flag word gives 1; a zero
+/// flag gives 1 only when `self+0x78` is negative, else 0.
+pub fn playbackman_is_file_loaded(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0x00);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0026_cfe8,
+            f: ee::s07::f_0026cfe8,
+        }
+        .call(c, 0x0026_c9ac)?;
+        c.g[V1][0] = c.g[V0][0];
+        let not_found = (c.g[V1][0] as i64) < 0;
+        c.g[V0][0] = 0xc;
+        if not_found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 6;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+            c.mult(0, V0, V1, V0);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+            let flagged = c.g[V1][0] != 0;
+            c.g[V0][0] = 1;
+            if flagged {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x78));
+                let negative = (c.g[V1][0] as i64) < 0;
+                frame.restore(c, S0, 0x10);
+                if !negative {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x10);
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0x00);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `PlaybackMan_StartFileLoad(self, file)` (0x26c9f0): finds the file's entry; a
+/// missing one gives 0. For an entry with no flag, it records the index at
+/// `self+0x74`, sets `self+0x78` to -1, and asks `sprintf` and the loader
+/// (0x3df690) for it; the loader's result (negative: -1 kept) goes to `self+0x78`,
+/// and a non-negative result returns 1. An entry already flagged returns 1.
+pub fn playbackman_start_file_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x130);
+        frame.save(c, S0, 0x120);
+        frame.save(c, S1, 0x110);
+        frame.save_ra(c, 0x100);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0026_cfe8,
+            f: ee::s07::f_0026cfe8,
+        }
+        .call(c, 0x0026_ca08)?;
+        c.g[A1][0] = c.g[V0][0];
+        let not_found = (c.g[A1][0] as i64) < 0;
+        c.g[V0][0] = 0xc;
+        if not_found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 6;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+            c.mult(0, V0, A1, V0);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = 0x1;
+            } else {
+                c.cycles += 16;
+                c.g[S1][0] = u64::MAX;
+                let slot = c.g[S0][0] as u32;
+                let (dst, val) = (slot.wrapping_add(0x74), c.g[A1][0]);
+                c.sw(dst, val);
+                let (dst, val) = (slot.wrapping_add(0x78), c.g[S1][0]);
+                c.sw(dst, val);
+                c.g[A2][0] = 0x004a_0000;
+                c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x324));
+                c.g[A0][0] = c.g[SP][0];
+                c.g[T1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x3430));
+                c.g[A3][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x320));
+                c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                call_ptr(c, 0x0041_7828, 0x0026_ca58)?;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = 0x100;
+                call_ptr(c, 0x003d_f690, 0x0026_ca64)?;
+                let loader_negative = (c.g[V0][0] as i64) < 0;
+                let (dst, val) = (slot.wrapping_add(0x78), c.g[V0][0]);
+                c.sw(dst, val);
+                if loader_negative {
+                    c.cycles += 1;
+                    let (dst, val) = (slot.wrapping_add(0x78), c.g[S1][0]);
+                    c.sw(dst, val);
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x1;
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x120);
+        frame.restore(c, S1, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -5316,4 +5632,62 @@ pub(crate) mod tests {
 
     #[allow(dead_code)]
     pub(crate) const OC683_BP: u32 = DATA + 0x20_a000;
+
+    use crate::difftest::fakes::check_reaching;
+
+    pub(crate) use crate::game::bx::bxstringctor::tests::oc1546_setup;
+    pub(crate) use crate::game::bx::bxstringctor::tests::OC1546_CTRL;
+
+    pub(crate) use crate::game::bx::bxstringctor::tests::OC1546_OBJ;
+
+    use ssx3_ee_rt::cpu::sx;
+
+    /// File fixture: `self` (a0) has a 12-byte entry table at `+0x58` whose flag
+    /// words are bits of `seed`; `self+0x78` is negative or positive; the find call
+    /// returns an index (-1 for none) and the loader call a negative or positive
+    /// result.
+    pub(crate) fn oc1546_file_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        let mut r = oc1546_setup(c, seed, 0x1546_2, calls);
+        let obj = OC1546_OBJ;
+        let table = OC1546_OBJ + 0x1000;
+        c.g[A0][0] = obj as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.bus.write32(obj + 0x58, table);
+        c.bus
+            .write32(obj + 0x78, if seed % 3 == 0 { u32::MAX } else { 5 });
+        for i in 0u32..3 {
+            c.bus.write32(table + 12 * i, r.next_u32());
+            c.bus.write32(table + 12 * i + 4, (seed >> i) & 1);
+        }
+        let idx: i32 = if seed % 5 == 0 { -1 } else { (seed % 3) as i32 };
+        c.bus.write32(OC1546_CTRL + 0x10, idx as u32);
+        c.bus
+            .write32(OC1546_CTRL + 0x14, if seed % 2 == 0 { u32::MAX } else { 7 });
+        r
+    }
+
+    #[test]
+    fn playbackman_is_file_loaded_matches() {
+        check(
+            ee::s07::f_0026c998__generated,
+            playbackman_is_file_loaded,
+            240,
+            &|c, seed| {
+                oc1546_file_setup(c, seed, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn playbackman_start_file_load_matches() {
+        check_reaching(
+            ee::s07::f_0026c9f0__generated,
+            playbackman_start_file_load,
+            160,
+            &[0x0026_ca64],
+            &|c, seed| {
+                oc1546_file_setup(c, seed, 3);
+            },
+        );
+    }
 }

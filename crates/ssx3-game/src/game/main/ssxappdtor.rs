@@ -240,6 +240,77 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_game_load_state_conquer_init,
         "cGameLoadStateConquer_Init",
     ),
+    (
+        0x0024_3ab0,
+        pre_start_screen_load_00243ab0,
+        "PreStartScreen_Load",
+    ),
+    (
+        0x0024_3cb0,
+        game_state_overlay_enter_00243cb0,
+        "GameState_OverlayEnter",
+    ),
+    (
+        0x0024_3cb8,
+        game_state_overlay_update_00243cb8,
+        "GameState_OverlayUpdate",
+    ),
+    (
+        0x0024_3cc0,
+        game_state_overlay_exit_00243cc0,
+        "GameState_OverlayExit",
+    ),
+    (0x0024_3cc8, game_state_enter_00243cc8, "GameState_Enter"),
+    (0x0024_3cd0, game_state_update_00243cd0, "GameState_Update"),
+    (0x0024_3cd8, game_state_exit_00243cd8, "GameState_Exit"),
+    (0x0024_3ce0, game_state_v08_00243ce0, "GameState_v08"),
+    (0x0024_3ce8, game_state_v09_00243ce8, "GameState_v09"),
+    (
+        0x0024_43f8,
+        generic_stream_pause_v03_002443f8,
+        "GenericStreamPause_v03",
+    ),
+    (0x0024_4528, gm_handler_reset_00244528, "GMHandler_Reset"),
+    (0x0024_4530, gm_handler_v06_00244530, "GMHandler_v06"),
+    (0x0024_4538, gm_handler_v07_00244538, "GMHandler_v07"),
+    (
+        0x0024_4540,
+        gm_handler_on_rider_finished_00244540,
+        "GMHandler_OnRiderFinished",
+    ),
+    (0x0024_4548, gm_handler_v09_00244548, "GMHandler_v09"),
+    (
+        0x0024_4550,
+        gm_handler_save_state_00244550,
+        "GMHandler_SaveState",
+    ),
+    (
+        0x0024_4558,
+        gm_handler_load_state_00244558,
+        "GMHandler_LoadState",
+    ),
+    (
+        0x0024_4620,
+        gm_handler9_save_state_00244620,
+        "GMHandler9_SaveState",
+    ),
+    (
+        0x0024_4628,
+        gm_handler9_load_state_00244628,
+        "GMHandler9_LoadState",
+    ),
+    (0x0024_47f0, gm_handler_set_title_w, "GMHandler_SetTitleW"),
+    (0x0024_4810, gm_handler_set_title_a, "GMHandler_SetTitleA"),
+    (
+        0x0024_5690,
+        c_game_load_state_out_lodge_on_widget_created_00245690,
+        "cGameLoadStateOutLodge_OnWidgetCreated",
+    ),
+    (
+        0x0024_58b0,
+        c_game_load_state_conquer_on_widget_created_002458b0,
+        "cGameLoadStateConquer_OnWidgetCreated",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1026,7 +1097,7 @@ pub fn c_game_load_state_init(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[ssx3_ee_rt::cpu::reg::RA][0]);
                     c.g[S1][0] = c.g[A0][0];
                     call_ptr(c, 0x0014dc80, 0x00245430)?;
                     c.g[A0][0] = c.g[V0][0];
@@ -1103,8 +1174,8 @@ pub fn c_game_load_state_init(c: &mut Cpu) {
         call_ptr(c, 0x00246cf8, 0x002454e4)?;
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
+        c.g[ssx3_ee_rt::cpu::reg::RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[ssx3_ee_rt::cpu::reg::RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
         c.pc = t;
         Ok(())
@@ -1140,7 +1211,7 @@ pub fn app_module_vt47d818_ctor(c: &mut Cpu) {
         let frame = Frame::open(c, 0x20);
         frame.save(c, S0, 0x10);
         frame.save_ra(c, 0);
-        c.g[RA][0] = sx(0x00243b2c);
+        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00243b2c);
         c.g[S0][0] = c.g[A0][0];
         call_ptr(c, 0x00231cd0, 0x00243b2c)?; // AppModule_ctor
         c.g[V1][0] = 0x0048_0000;
@@ -1165,7 +1236,7 @@ pub fn c_game_load_screen_ctor(c: &mut Cpu) {
         let frame = Frame::open(c, 0x20);
         frame.save(c, S0, 0x10);
         frame.save_ra(c, 0);
-        c.g[RA][0] = sx(0x00243bc4);
+        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00243bc4);
         c.g[S0][0] = c.g[A0][0];
         call_ptr(c, 0x00231cd0, 0x00243bc4)?; // AppModule_ctor
         c.g[V1][0] = 0x0048_0000;
@@ -1686,11 +1757,11 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                 c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
                 c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                 c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
-                c.g[RA][0] = sx(0x00244b60);
+                c.sd(c.g[SP][0] as u32, c.g[ssx3_ee_rt::cpu::reg::RA][0]);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244b60);
                 c.g[S1][0] = c.g[A0][0];
                 call_ptr(c, 0x0020cfd0, 0x00244b60)?;
-                c.g[RA][0] = sx(0x00244b68);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244b68);
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
                 call_ptr(c, 0x002cc098, 0x00244b68)?;
                 let t = c.g[V0][0] != 0u64;
@@ -1710,7 +1781,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                         } else {
                             'b_244bfc: {
                                 c.cycles += 7;
-                                c.g[RA][0] = sx(0x00244b8c);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244b8c);
                                 c.g[A0][0] = c.g[A1][0];
                                 call_ptr(c, 0x0030c870, 0x00244b8c)?;
                                 c.g[A1][0] = c.g[V0][0];
@@ -1721,7 +1792,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                     break 'b_244bfc;
                                 } else {
                                     c.cycles += 23;
-                                    c.g[RA][0] = sx(0x00244ba8);
+                                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244ba8);
                                     c.g[A0][0] = 0x1d;
                                     call_ptr(c, 0x0020ab50, 0x00244ba8)?;
                                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
@@ -1736,14 +1807,14 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                         sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x6a0), c.g[A2][0]);
                                     c.sw(c.g[V0][0] as u32, c.g[A1][0]);
-                                    c.g[RA][0] = sx(0x00244bdc);
+                                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244bdc);
                                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[A0][0]);
                                     call_ptr(c, 0x0028b180, 0x00244bdc)?;
                                     c.g[AT][0] = 0x3f800000;
                                     c.mtc1(1, 12);
                                     c.g[A0][0] = c.g[V0][0];
                                     c.g[A1][0] = 0x4;
-                                    c.g[RA][0] = sx(0x00244bf4);
+                                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244bf4);
                                     c.g[A2][0] = 0u64;
                                     call_ptr(c, 0x0029ced8, 0x00244bf4)?;
                                     let t = true;
@@ -1766,17 +1837,17 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                     c.g[A3][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
                                     c.g[A2][0] = 0x5;
                                     c.g[A1][0] = c.lw(c.g[A1][0] as u32);
-                                    c.g[RA][0] = sx(0x00244c18);
+                                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244c18);
                                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
                                     call_ptr(c, 0x0030a868, 0x00244c18)?;
                                     c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
                                     c.g[A0][0] = 0x480000;
                                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x4868));
-                                    c.g[RA][0] = sx(0x00244c2c);
+                                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244c2c);
                                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                                     call_ptr(c, 0x00317670, 0x00244c2c)?;
                                     c.g[A0][0] = c.g[S0][0];
-                                    c.g[RA][0] = sx(0x00244c38);
+                                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244c38);
                                     c.g[A1][0] = c.g[V0][0];
                                     call_ptr(c, 0x0039f9d8, 0x00244c38)?;
                                     if c.g[V0][0] != 0u64 {
@@ -1784,7 +1855,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                         break 'b_244c88;
                                     } else {
                                         c.cycles += 18;
-                                        c.g[RA][0] = sx(0x00244c48);
+                                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244c48);
                                         c.g[A0][0] = 0x1e;
                                         call_ptr(c, 0x0020ab50, 0x00244c48)?;
                                         c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
@@ -1800,7 +1871,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                             sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                                         c.sw(c.g[V0][0] as u32, c.g[A3][0]);
                                         c.sw((c.g[GP][0] as u32).wrapping_sub(0x6a0), c.g[A2][0]);
-                                        c.g[RA][0] = sx(0x00244c80);
+                                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244c80);
                                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
                                         call_ptr(c, 0x00398038, 0x00244c80)?;
                                         let t = true;
@@ -1813,7 +1884,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                     }
                                 }
                                 c.cycles += 4;
-                                c.g[RA][0] = sx(0x00244c90);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244c90);
                                 c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c4));
                                 call_ptr(c, 0x0030c820, 0x00244c90)?;
                                 let t = true;
@@ -1840,7 +1911,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                     break 'b_244d00;
                 } else {
                     c.cycles += 22;
-                    c.g[RA][0] = sx(0x00244cb0);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244cb0);
                     c.g[A0][0] = 0x22;
                     call_ptr(c, 0x0020ab50, 0x00244cb0)?;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
@@ -1857,10 +1928,10 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                     c.g[V1][0] = c.g[V1][0] | 0xffff;
                     c.sw(c.g[V0][0] as u32, c.g[A0][0]);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x1024), c.g[V1][0]);
-                    c.g[RA][0] = sx(0x00244cf0);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244cf0);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[A1][0]);
                     call_ptr(c, 0x0028b180, 0x00244cf0)?;
-                    c.g[RA][0] = sx(0x00244cf8);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244cf8);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x0029ed18, 0x00244cf8)?;
                     let t = true;
@@ -1874,7 +1945,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
             }
             'b_244d28: {
                 c.cycles += 4;
-                c.g[RA][0] = sx(0x00244d08);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d08);
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
                 call_ptr(c, 0x002cc098, 0x00244d08)?;
                 let t = c.g[V0][0] == 0u64;
@@ -1883,10 +1954,10 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                     break 'b_244d28;
                 } else {
                     c.cycles += 6;
-                    c.g[RA][0] = sx(0x00244d18);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d18);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
                     call_ptr(c, 0x00398038, 0x00244d18)?;
-                    c.g[RA][0] = sx(0x00244d20);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d20);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
                     call_ptr(c, 0x002cc0c0, 0x00244d20)?;
                     let t = true;
@@ -1900,7 +1971,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
             }
             'b_244e00: {
                 c.cycles += 4;
-                c.g[RA][0] = sx(0x00244d30);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d30);
                 c.g[A1][0] = 0u64;
                 Callee {
                     addr: 0x00231840,
@@ -1942,7 +2013,7 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                             break 'b_244e00;
                         } else {
                             c.cycles += 4;
-                            c.g[RA][0] = sx(0x00244d70);
+                            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d70);
                             call_ptr(c, 0x0020cbe8, 0x00244d70)?;
                             let t = c.g[V0][0] == 0u64;
                             c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x6a0));
@@ -1950,10 +2021,10 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                 break 'b_244e00;
                             } else {
                                 c.cycles += 34;
-                                c.g[RA][0] = sx(0x00244d80);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d80);
                                 c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x850));
                                 call_ptr(c, 0x00326ae0, 0x00244d80)?;
-                                c.g[RA][0] = sx(0x00244d88);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244d88);
                                 call_ptr(c, 0x0020ca10, 0x00244d88)?;
                                 c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
                                 c.g[V1][0] = 0x530000;
@@ -1975,18 +2046,18 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                                 c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x160));
                                 c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x164));
                                 let t = c.g[V1][0] as u32;
-                                c.g[RA][0] = sx(0x00244dd8);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244dd8);
                                 c.g[A0][0] =
                                     sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                 call_ptr(c, t, 0x00244dd8)?;
-                                c.g[RA][0] = sx(0x00244de0);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244de0);
                                 call_ptr(c, 0x0028b180, 0x00244de0)?;
-                                c.g[RA][0] = sx(0x00244de8);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244de8);
                                 c.g[A0][0] = c.g[V0][0];
                                 call_ptr(c, 0x00289b70, 0x00244de8)?;
-                                c.g[RA][0] = sx(0x00244df0);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244df0);
                                 call_ptr(c, 0x0028b180, 0x00244df0)?;
-                                c.g[RA][0] = sx(0x00244df8);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244df8);
                                 c.g[A0][0] = c.g[V0][0];
                                 call_ptr(c, 0x00294f48, 0x00244df8)?;
                                 let t = true;
@@ -2003,10 +2074,10 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
             }
             c.cycles += 7;
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
-            c.g[RA][0] = sx(0x00244e0c);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244e0c);
             c.g[S0][0] = c.g[V0][0] & 0x1;
             call_ptr(c, 0x00398038, 0x00244e0c)?;
-            c.g[RA][0] = sx(0x00244e14);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244e14);
             call_ptr(c, 0x0020cba0, 0x00244e14)?;
             let t = c.g[V0][0] != 0u64;
             c.g[V0][0] = 0u64;
@@ -2014,10 +2085,10 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
                 break 'b_244e4c;
             } else {
                 c.cycles += 6;
-                c.g[RA][0] = sx(0x00244e24);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244e24);
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
                 call_ptr(c, 0x0026c5f8, 0x00244e24)?;
-                c.g[RA][0] = sx(0x00244e2c);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244e2c);
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xa4));
                 call_ptr(c, 0x002cc098, 0x00244e2c)?;
                 if c.g[V0][0] != 0u64 {
@@ -2051,8 +2122,8 @@ pub fn game_module_update_pause_and_ui(c: &mut Cpu) {
         c.cycles += 5;
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
+        c.g[ssx3_ee_rt::cpu::reg::RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[ssx3_ee_rt::cpu::reg::RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
         c.pc = t;
         return Ok(());
@@ -2077,7 +2148,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                 c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                 c.g[S1][0] = c.g[A0][0];
                 c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                c.sd(c.g[SP][0] as u32, c.g[ssx3_ee_rt::cpu::reg::RA][0]);
                 c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
                 if c.g[A0][0] == 0u64 {
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x214));
@@ -2085,7 +2156,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                 } else {
                     c.cycles += 5;
                     c.g[S2][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2898));
-                    c.g[RA][0] = sx(0x00244e90);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244e90);
                     Callee {
                         addr: 0x00237950,
                         f: ee::s06::InputSync_IsReady,
@@ -2113,7 +2184,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                     } else {
                         c.cycles += 9;
                         c.g[S0][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2898));
-                        c.g[RA][0] = sx(0x00244eb4);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244eb4);
                         c.g[A0][0] = c.g[S1][0];
                         Callee {
                             addr: 0x00230f40,
@@ -2122,7 +2193,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                         .call(c, 0x00244eb4)?;
                         c.g[S2][0] = c.g[S0][0];
                         c.g[A0][0] = c.g[S0][0];
-                        c.g[RA][0] = sx(0x00244ec4);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244ec4);
                         c.g[A1][0] = 0x1;
                         call_ptr(c, 0x00354c98, 0x00244ec4)?;
                         let t = true;
@@ -2135,7 +2206,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                     }
                 }
                 c.cycles += 4;
-                c.g[RA][0] = sx(0x00244ed4);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244ed4);
                 c.g[A0][0] = c.g[S1][0];
                 Callee {
                     addr: 0x00230f40,
@@ -2155,14 +2226,14 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                     break 'b_244ef0;
                 } else {
                     c.cycles += 2;
-                    c.g[RA][0] = sx(0x00244ef0);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244ef0);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
                     call_ptr(c, 0x0026f4a8, 0x00244ef0)?;
                     break 'b_244ef0;
                 }
             }
             c.cycles += 4;
-            c.g[RA][0] = sx(0x00244ef8);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244ef8);
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
             call_ptr(c, 0x00270280, 0x00244ef8)?;
             let t = c.g[V0][0] != 0u64;
@@ -2183,7 +2254,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V1][0] as u32;
-                    c.g[RA][0] = sx(0x00244f24);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244f24);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00244f24)?;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x6a0));
@@ -2201,7 +2272,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                     break 'b_244f44;
                 } else {
                     c.cycles += 4;
-                    c.g[RA][0] = sx(0x00244f3c);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244f3c);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
                     call_ptr(c, 0x00270280, 0x00244f3c)?;
                     let t = c.g[V0][0] == 0u64;
@@ -2235,7 +2306,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                                 break 'b_244f6c;
                             } else {
                                 c.cycles += 4;
-                                c.g[RA][0] = sx(0x00244f64);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244f64);
                                 Callee {
                                     addr: 0x002379c8,
                                     f: ee::s06::InputSync_ApplyInput,
@@ -2250,7 +2321,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                             }
                         }
                         c.cycles += 4;
-                        c.g[RA][0] = sx(0x00244f74);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244f74);
                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
                         call_ptr(c, 0x0026ce50, 0x00244f74)?;
                         if c.g[V0][0] != 0u64 {
@@ -2276,7 +2347,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                                 break 'b_244fa0;
                             } else {
                                 c.cycles += 3;
-                                c.g[RA][0] = sx(0x00244f9c);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244f9c);
                                 c.g[A1][0] = 0x1;
                                 call_ptr(c, 0x00354f98, 0x00244f9c)?;
                                 c.g[A0][0] = c.g[S2][0];
@@ -2285,11 +2356,11 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                         }
                         'b_244fd4: {
                             c.cycles += 9;
-                            c.g[RA][0] = sx(0x00244fa8);
+                            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244fa8);
                             c.g[A1][0] = 0x5;
                             call_ptr(c, 0x00354f98, 0x00244fa8)?;
                             c.g[A0][0] = c.g[S2][0];
-                            c.g[RA][0] = sx(0x00244fb4);
+                            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244fb4);
                             c.g[A1][0] = 0x6;
                             call_ptr(c, 0x00354f98, 0x00244fb4)?;
                             c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x6a0));
@@ -2300,7 +2371,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                             } else {
                                 c.cycles += 4;
                                 c.g[A0][0] = c.g[S2][0];
-                                c.g[RA][0] = sx(0x00244fd0);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244fd0);
                                 c.g[A1][0] = 0x1;
                                 call_ptr(c, 0x00355028, 0x00244fd0)?;
                                 c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
@@ -2313,7 +2384,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                             c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x18));
                             c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
                             let t = c.g[V1][0] as u32;
-                            c.g[RA][0] = sx(0x00244fe8);
+                            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00244fe8);
                             c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                             call_ptr(c, t, 0x00244fe8)?;
                             c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x6a0));
@@ -2325,7 +2396,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                             } else {
                                 c.cycles += 4;
                                 c.g[A0][0] = c.g[S2][0];
-                                c.g[RA][0] = sx(0x00245004);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245004);
                                 c.g[A1][0] = 0x2;
                                 call_ptr(c, 0x00354f98, 0x00245004)?;
                                 c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x6a0));
@@ -2341,27 +2412,27 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                                 break 'b_24501c;
                             } else {
                                 c.cycles += 2;
-                                c.g[RA][0] = sx(0x0024501c);
+                                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024501c);
                                 c.g[A1][0] = 0x3;
                                 call_ptr(c, 0x00354f98, 0x0024501c)?;
                                 break 'b_24501c;
                             }
                         }
                         c.cycles += 13;
-                        c.g[RA][0] = sx(0x00245024);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245024);
                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
                         call_ptr(c, 0x00309270, 0x00245024)?;
-                        c.g[RA][0] = sx(0x0024502c);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024502c);
                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
                         call_ptr(c, 0x002294c8, 0x0024502c)?;
-                        c.g[RA][0] = sx(0x00245034);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245034);
                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x3c));
                         call_ptr(c, 0x003440c8, 0x00245034)?;
-                        c.g[RA][0] = sx(0x0024503c);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024503c);
                         c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                         call_ptr(c, 0x00357bf8, 0x0024503c)?;
                         c.g[A0][0] = c.g[S2][0];
-                        c.g[RA][0] = sx(0x00245048);
+                        c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245048);
                         c.g[A1][0] = 0x1;
                         call_ptr(c, 0x00354c98, 0x00245048)?;
                         let t = true;
@@ -2375,7 +2446,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                 }
             }
             c.cycles += 6;
-            c.g[RA][0] = sx(0x00245058);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245058);
             c.g[A1][0] = 0x5;
             call_ptr(c, 0x00354f98, 0x00245058)?;
             c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x6a0));
@@ -2386,7 +2457,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                 break 'b_245074;
             } else {
                 c.cycles += 3;
-                c.g[RA][0] = sx(0x00245070);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245070);
                 c.g[A1][0] = 0x3;
                 call_ptr(c, 0x00354f98, 0x00245070)?;
                 c.g[A0][0] = c.g[S2][0];
@@ -2395,7 +2466,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
         }
         'b_245090: {
             c.cycles += 6;
-            c.g[RA][0] = sx(0x0024507c);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024507c);
             c.g[A1][0] = 0x4;
             call_ptr(c, 0x00354f98, 0x0024507c)?;
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
@@ -2428,7 +2499,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                 }
             }
             c.cycles += 3;
-            c.g[RA][0] = sx(0x002450a8);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002450a8);
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
             call_ptr(c, 0x0022e840, 0x002450a8)?;
             c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xac));
@@ -2455,7 +2526,7 @@ pub fn game_module_sim_step(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
-                    c.g[RA][0] = sx(0x002450e8);
+                    c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002450e8);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
                     call_ptr(c, 0x002b7848, 0x002450e8)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x84));
@@ -2477,8 +2548,8 @@ pub fn game_module_sim_step(c: &mut Cpu) {
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
+        c.g[ssx3_ee_rt::cpu::reg::RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[ssx3_ee_rt::cpu::reg::RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
         c.pc = t;
         return Ok(());
@@ -2503,16 +2574,16 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
             c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
             c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
             c.g[A0][0] = 0x480000;
-            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.sd(c.g[SP][0] as u32, c.g[ssx3_ee_rt::cpu::reg::RA][0]);
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x4328));
             c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-            c.g[RA][0] = sx(0x0024575c);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024575c);
             c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
             call_ptr(c, 0x00317670, 0x0024575c)?;
             c.g[A0][0] = c.g[S0][0];
             c.g[A2][0] = c.g[V0][0];
             c.g[A1][0] = c.g[S1][0];
-            c.g[RA][0] = sx(0x00245770);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245770);
             c.g[A3][0] = 0u64;
             call_ptr(c, 0x00397cc0, 0x00245770)?;
             let t = c.g[V0][0] == 0u64;
@@ -2523,7 +2594,7 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
                 c.cycles += 4;
                 c.g[A0][0] = c.g[V0][0];
                 c.g[A1][0] = 0u64;
-                c.g[RA][0] = sx(0x00245788);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245788);
                 c.g[A2][0] = 0u64;
                 call_ptr(c, 0x0039c870, 0x00245788)?;
                 break 'b_245788;
@@ -2534,23 +2605,23 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
             c.g[V0][0] = 0x480000;
             c.g[S0][0] = 0x480000;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x4318));
-            c.g[RA][0] = sx(0x0024579c);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024579c);
             c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4308));
             call_ptr(c, 0x0014dc80, 0x0024579c)?;
             c.g[A0][0] = c.g[V0][0];
-            c.g[RA][0] = sx(0x002457a8);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002457a8);
             c.g[A1][0] = 0x1;
             call_ptr(c, 0x0014dd58, 0x002457a8)?;
             c.g[A1][0] = 0u64;
-            c.g[RA][0] = sx(0x002457b4);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002457b4);
             c.g[A0][0] = c.g[V0][0];
             call_ptr(c, 0x00147618, 0x002457b4)?;
             c.g[A0][0] = c.g[S0][0];
-            c.g[RA][0] = sx(0x002457c0);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002457c0);
             c.g[S2][0] = c.g[V0][0];
             call_ptr(c, 0x00317670, 0x002457c0)?;
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
-            c.g[RA][0] = sx(0x002457cc);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002457cc);
             c.g[A1][0] = c.g[V0][0];
             call_ptr(c, 0x0039d860, 0x002457cc)?;
             c.g[A2][0] = c.g[V0][0];
@@ -2564,7 +2635,7 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
                 c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                 c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                 let t = c.g[V1][0] as u32;
-                c.g[RA][0] = sx(0x002457ec);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002457ec);
                 c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                 call_ptr(c, t, 0x002457ec)?;
                 break 'b_2457ec;
@@ -2573,11 +2644,11 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
         'b_245824: {
             c.cycles += 9;
             c.g[A0][0] = 0x480000;
-            c.g[RA][0] = sx(0x002457f8);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x002457f8);
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x42f8));
             call_ptr(c, 0x00317670, 0x002457f8)?;
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
-            c.g[RA][0] = sx(0x00245804);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245804);
             c.g[A1][0] = c.g[V0][0];
             call_ptr(c, 0x0039d860, 0x00245804)?;
             c.g[A2][0] = c.g[V0][0];
@@ -2591,7 +2662,7 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
                 c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                 c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                 let t = c.g[V1][0] as u32;
-                c.g[RA][0] = sx(0x00245824);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245824);
                 c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                 call_ptr(c, t, 0x00245824)?;
                 break 'b_245824;
@@ -2599,11 +2670,11 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
         }
         'b_245858: {
             c.cycles += 8;
-            c.g[RA][0] = sx(0x0024582c);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0024582c);
             c.g[A0][0] = c.g[S3][0];
             call_ptr(c, 0x00317670, 0x0024582c)?;
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
-            c.g[RA][0] = sx(0x00245838);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245838);
             c.g[A1][0] = c.g[V0][0];
             call_ptr(c, 0x0039d860, 0x00245838)?;
             c.g[A2][0] = c.g[V0][0];
@@ -2617,7 +2688,7 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
                 c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                 c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                 let t = c.g[V1][0] as u32;
-                c.g[RA][0] = sx(0x00245858);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245858);
                 c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                 call_ptr(c, t, 0x00245858)?;
                 break 'b_245858;
@@ -2626,11 +2697,11 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
         'b_245890: {
             c.cycles += 9;
             c.g[A0][0] = 0x480000;
-            c.g[RA][0] = sx(0x00245864);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245864);
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x42e8));
             call_ptr(c, 0x00317670, 0x00245864)?;
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
-            c.g[RA][0] = sx(0x00245870);
+            c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245870);
             c.g[A1][0] = c.g[V0][0];
             call_ptr(c, 0x0039d860, 0x00245870)?;
             c.g[A2][0] = c.g[V0][0];
@@ -2644,7 +2715,7 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
                 c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                 c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                 let t = c.g[V1][0] as u32;
-                c.g[RA][0] = sx(0x00245890);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x00245890);
                 c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                 call_ptr(c, t, 0x00245890)?;
                 break 'b_245890;
@@ -2655,11 +2726,171 @@ pub fn c_game_load_state_conquer_init(c: &mut Cpu) {
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
         c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
         c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-        let t = c.g[RA][0] as u32;
+        c.g[ssx3_ee_rt::cpu::reg::RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[ssx3_ee_rt::cpu::reg::RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
         c.pc = t;
         return Ok(());
+    });
+}
+
+/// `PreStartScreen_Load` (0x0024_3ab0): straight-line leaf. Mechanical port of the generated body.
+pub fn pre_start_screen_load_00243ab0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_OverlayEnter` (0x0024_3cb0): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_overlay_enter_00243cb0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_OverlayUpdate` (0x0024_3cb8): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_overlay_update_00243cb8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_OverlayExit` (0x0024_3cc0): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_overlay_exit_00243cc0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_Enter` (0x0024_3cc8): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_enter_00243cc8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_Update` (0x0024_3cd0): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_update_00243cd0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_Exit` (0x0024_3cd8): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_exit_00243cd8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameState_v08` (0x0024_3ce0): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_v08_00243ce0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `GameState_v09` (0x0024_3ce8): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_v09_00243ce8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GenericStreamPause_v03` (0x0024_43f8): straight-line leaf. Mechanical port of the generated body.
+pub fn generic_stream_pause_v03_002443f8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `GMHandler_Reset` (0x0024_4528): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_reset_00244528(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler_v06` (0x0024_4530): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_v06_00244530(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `GMHandler_v07` (0x0024_4538): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_v07_00244538(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler_OnRiderFinished` (0x0024_4540): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_on_rider_finished_00244540(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler_v09` (0x0024_4548): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_v09_00244548(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `GMHandler_SaveState` (0x0024_4550): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_save_state_00244550(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler_LoadState` (0x0024_4558): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler_load_state_00244558(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler9_SaveState` (0x0024_4620): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler9_save_state_00244620(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler9_LoadState` (0x0024_4628): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler9_load_state_00244628(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cGameLoadStateOutLodge_OnWidgetCreated` (0x0024_5690): straight-line leaf. Mechanical port of the generated body.
+pub fn c_game_load_state_out_lodge_on_widget_created_00245690(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cGameLoadStateConquer_OnWidgetCreated` (0x0024_58b0): straight-line leaf. Mechanical port of the generated body.
+pub fn c_game_load_state_conquer_on_widget_created_002458b0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GMHandler_SetTitleW` (0x2447f0): `strcpy1(overlayManager + 0x276)`, the
+/// wide title copy into the overlay manager.
+pub fn gm_handler_set_title_w(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x276));
+        call_ptr(c, 0x002c_2508, 0x0024_4800)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `GMHandler_SetTitleA` (0x244810): the same as [`gm_handler_set_title_w`]
+/// with the other title copy (0x2c2540).
+pub fn gm_handler_set_title_a(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x276));
+        call_ptr(c, 0x002c_2540, 0x0024_4820)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
     });
 }
 
@@ -3911,6 +4142,337 @@ pub(crate) mod tests {
                     0,
                 );
                 c.g[A0][0] = OC682_OBJ as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::install_all;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::open_gates;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::G_STRCPY;
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::G_STRCPY_A;
+
+    /// `PreStartScreen_Load` (0x0024_3ab0) against the generated body.
+    #[test]
+    fn pre_start_screen_load_00243ab0_matches() {
+        check(
+            ee::s06::f_00243ab0__generated,
+            pre_start_screen_load_00243ab0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243ab0, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_OverlayEnter` (0x0024_3cb0) against the generated body.
+    #[test]
+    fn game_state_overlay_enter_00243cb0_matches() {
+        check(
+            ee::s06::f_00243cb0__generated,
+            game_state_overlay_enter_00243cb0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243cb0, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_OverlayUpdate` (0x0024_3cb8) against the generated body.
+    #[test]
+    fn game_state_overlay_update_00243cb8_matches() {
+        check(
+            ee::s06::f_00243cb8__generated,
+            game_state_overlay_update_00243cb8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243cb8, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_OverlayExit` (0x0024_3cc0) against the generated body.
+    #[test]
+    fn game_state_overlay_exit_00243cc0_matches() {
+        check(
+            ee::s06::f_00243cc0__generated,
+            game_state_overlay_exit_00243cc0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243cc0, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_Enter` (0x0024_3cc8) against the generated body.
+    #[test]
+    fn game_state_enter_00243cc8_matches() {
+        check(
+            ee::s06::f_00243cc8__generated,
+            game_state_enter_00243cc8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243cc8, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_Update` (0x0024_3cd0) against the generated body.
+    #[test]
+    fn game_state_update_00243cd0_matches() {
+        check(
+            ee::s06::f_00243cd0__generated,
+            game_state_update_00243cd0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243cd0, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_Exit` (0x0024_3cd8) against the generated body.
+    #[test]
+    fn game_state_exit_00243cd8_matches() {
+        check(
+            ee::s06::f_00243cd8__generated,
+            game_state_exit_00243cd8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243cd8, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_v08` (0x0024_3ce0) against the generated body.
+    #[test]
+    fn game_state_v08_00243ce0_matches() {
+        check(
+            ee::s06::f_00243ce0__generated,
+            game_state_v08_00243ce0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243ce0, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameState_v09` (0x0024_3ce8) against the generated body.
+    #[test]
+    fn game_state_v09_00243ce8_matches() {
+        check(
+            ee::s06::f_00243ce8__generated,
+            game_state_v09_00243ce8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x243ce8, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GenericStreamPause_v03` (0x0024_43f8) against the generated body.
+    #[test]
+    fn generic_stream_pause_v03_002443f8_matches() {
+        check(
+            ee::s06::f_002443f8__generated,
+            generic_stream_pause_v03_002443f8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2443f8, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_Reset` (0x0024_4528) against the generated body.
+    #[test]
+    fn gm_handler_reset_00244528_matches() {
+        check(
+            ee::s06::f_00244528__generated,
+            gm_handler_reset_00244528,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244528, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_v06` (0x0024_4530) against the generated body.
+    #[test]
+    fn gm_handler_v06_00244530_matches() {
+        check(
+            ee::s06::f_00244530__generated,
+            gm_handler_v06_00244530,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244530, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_v07` (0x0024_4538) against the generated body.
+    #[test]
+    fn gm_handler_v07_00244538_matches() {
+        check(
+            ee::s06::f_00244538__generated,
+            gm_handler_v07_00244538,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244538, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_OnRiderFinished` (0x0024_4540) against the generated body.
+    #[test]
+    fn gm_handler_on_rider_finished_00244540_matches() {
+        check(
+            ee::s06::f_00244540__generated,
+            gm_handler_on_rider_finished_00244540,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244540, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_v09` (0x0024_4548) against the generated body.
+    #[test]
+    fn gm_handler_v09_00244548_matches() {
+        check(
+            ee::s06::f_00244548__generated,
+            gm_handler_v09_00244548,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244548, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_SaveState` (0x0024_4550) against the generated body.
+    #[test]
+    fn gm_handler_save_state_00244550_matches() {
+        check(
+            ee::s06::f_00244550__generated,
+            gm_handler_save_state_00244550,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244550, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler_LoadState` (0x0024_4558) against the generated body.
+    #[test]
+    fn gm_handler_load_state_00244558_matches() {
+        check(
+            ee::s06::f_00244558__generated,
+            gm_handler_load_state_00244558,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244558, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler9_SaveState` (0x0024_4620) against the generated body.
+    #[test]
+    fn gm_handler9_save_state_00244620_matches() {
+        check(
+            ee::s06::f_00244620__generated,
+            gm_handler9_save_state_00244620,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244620, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GMHandler9_LoadState` (0x0024_4628) against the generated body.
+    #[test]
+    fn gm_handler9_load_state_00244628_matches() {
+        check(
+            ee::s06::f_00244628__generated,
+            gm_handler9_load_state_00244628,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x244628, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cGameLoadStateOutLodge_OnWidgetCreated` (0x0024_5690) against the generated body.
+    #[test]
+    fn c_game_load_state_out_lodge_on_widget_created_00245690_matches() {
+        check(
+            ee::s06::f_00245690__generated,
+            c_game_load_state_out_lodge_on_widget_created_00245690,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x245690, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cGameLoadStateConquer_OnWidgetCreated` (0x0024_58b0) against the generated body.
+    #[test]
+    fn c_game_load_state_conquer_on_widget_created_002458b0_matches() {
+        check(
+            ee::s06::f_002458b0__generated,
+            c_game_load_state_conquer_on_widget_created_002458b0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2458b0, 0);
+                c.g[ssx3_ee_rt::cpu::reg::RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn gm_handler_set_title_w_matches() {
+        install_all();
+        check(
+            ee::s06::f_002447f0__generated,
+            gm_handler_set_title_w,
+            200,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x2447_f0, 0);
+                open_gates(c, &[G_STRCPY]);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x100 * (seed % 4));
+            },
+        );
+    }
+
+    #[test]
+    fn gm_handler_set_title_a_matches() {
+        install_all();
+        check(
+            ee::s06::f_00244810__generated,
+            gm_handler_set_title_a,
+            200,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x2448_10, 0);
+                open_gates(c, &[G_STRCPY_A]);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x100 * (seed % 4));
             },
         );
     }

@@ -131,7 +131,6 @@ pub fn install() {
                 .iter()
                 .find(|(addr, _, _)| *addr == a)
                 .map(|(_, f, _)| *f)
-                .or_else(|| ssx3_ee::generated_body(a))
                 .expect("event boot: no function to wrap");
             (a, f)
         })
@@ -244,9 +243,8 @@ pub(crate) fn install_world_swap() {
 }
 
 fn install_world_swap_once() {
-    let was = ssx3_ee::get_override(GAME_MODULE_LOAD_WORLD)
-        .or_else(|| ssx3_ee::generated_body(GAME_MODULE_LOAD_WORLD))
-        .expect("event boot: no world load to wrap");
+    let was =
+        ssx3_ee::get_override(GAME_MODULE_LOAD_WORLD).expect("event boot: no world load to wrap");
     LOAD_WORLD_PREV.set_for_host(was);
     assert!(ssx3_ee::set_override(GAME_MODULE_LOAD_WORLD, load_world));
 }

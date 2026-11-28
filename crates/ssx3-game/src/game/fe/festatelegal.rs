@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -52,6 +53,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_7d38,
         cfe_state_options_apply_cheat_code,
         "cFEStateOptions_ApplyCheatCode",
+    ),
+    (
+        0x001d_e9f0,
+        fe_screen_autosave_popup_transition_in_001de9f0,
+        "FEScreenAutosavePopup_TransitionIn",
     ),
 ];
 
@@ -780,6 +786,13 @@ pub fn fe_screen_autosave_popup_init(c: &mut Cpu) {
     })
 }
 
+/// `FEScreenAutosavePopup_TransitionIn` (0x001d_e9f0): straight-line leaf. Mechanical port of the generated body.
+pub fn fe_screen_autosave_popup_transition_in_001de9f0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1234,6 +1247,20 @@ pub(crate) mod tests {
                 if seed % 2 == 1 {
                     oc832_force_zero(c, 0x0039_7cc0);
                 }
+            },
+        );
+    }
+
+    /// `FEScreenAutosavePopup_TransitionIn` (0x001d_e9f0) against the generated body.
+    #[test]
+    fn fe_screen_autosave_popup_transition_in_001de9f0_matches() {
+        check(
+            ee::s04::f_001de9f0__generated,
+            fe_screen_autosave_popup_transition_in_001de9f0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de9f0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

@@ -90,6 +90,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SndBankMan_NotifyQueueHeads",
     ),
     (0x0028_a230, snd_load_queue_flush, "SndLoadQueue_Flush"),
+    (
+        0x002b_9e70,
+        snd_load_queue_finish_current_ok,
+        "SndLoadQueue_FinishCurrentOk",
+    ),
+    (
+        0x002b_9e90,
+        snd_load_queue_finish_current_fail,
+        "SndLoadQueue_FinishCurrentFail",
+    ),
 ];
 
 /// The audio app / view objects: `world + 0x84` is the audio system, its
@@ -3074,7 +3084,7 @@ pub fn snd_bank_man_notify_queue_heads(c: &mut Cpu) {
 /// A resumable function: entered at any other pc it runs the generated body.
 pub fn snd_load_queue_flush(c: &mut Cpu) {
     if c.pc != 0x0028_a230 {
-        return ee::s07::f_0028a230__generated(c);
+        return snd_load_queue_flush_resume(c);
     }
     guest(c, |c| {
         c.cycles += 6;
@@ -3124,6 +3134,133 @@ pub fn snd_load_queue_flush(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     });
+}
+
+/// Native resume of `snd_load_queue_flush` (converted from the `generated` body): any entry
+/// other than 0x0028a230, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn snd_load_queue_flush_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0028a230 => {
+                    c.cycles += 6;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[A1][0] = 0x1;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.g[A0][0];
+                    let t = true;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    if t {
+                        pc = 0x0028a258;
+                        continue;
+                    }
+                    pc = 0x0028a248;
+                    continue;
+                }
+                0x0028a248 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x0028a250);
+                    c.g[A0][0] = 0x2;
+                    call_ptr(c, 0x003e4fb0, 0x0028a250)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0x1;
+                    pc = 0x0028a258;
+                    continue;
+                }
+                0x0028a258 => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x0028a260);
+                    Callee {
+                        addr: 0x00289df0,
+                        f: ee::s07::SndLoadQueue_FinishCurrent,
+                    }
+                    .call(c, 0x0028a260)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x0028a248) {
+                            return Ok(());
+                        }
+                        pc = 0x0028a248;
+                        continue;
+                    }
+                    pc = 0x0028a26c;
+                    continue;
+                }
+                0x0028a26c => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1cc));
+
+                    if c.g[A0][0] == 0u64 {
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        pc = 0x0028a28c;
+                        continue;
+                    }
+                    pc = 0x0028a278;
+                    continue;
+                }
+                0x0028a278 => {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x0028a280);
+                    call_ptr(c, 0x00317e98, 0x0028a280)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1d0), 0u64);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x1cc), 0u64);
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    pc = 0x0028a28c;
+                    continue;
+                }
+                0x0028a28c => {
+                    c.cycles += 3;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0028a230, 0x0028a298);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// The shared body of `SndLoadQueue_FinishCurrentOk` / `..._Fail`: one call of
+/// `SndLoadQueue_FinishCurrent(self, flush)` (0x289df0) with `a1 = flush`,
+/// returning to `ret`.
+pub(crate) fn snd_load_queue_finish_with(c: &mut Cpu, flush: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = flush;
+        call_ptr(c, 0x0028_9df0, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SndLoadQueue_FinishCurrentOk(SndLoadQueue* a)` (0x2b9e70): finishes
+/// the current load without flushing the queue (`flush = 0`).
+pub fn snd_load_queue_finish_current_ok(c: &mut Cpu) {
+    snd_load_queue_finish_with(c, 0, 0x002b_9e80);
+}
+
+/// `void SndLoadQueue_FinishCurrentFail(SndLoadQueue* a)` (0x2b9e90): the
+/// same with `flush = 1` (the queue is flushed after the failed load).
+pub fn snd_load_queue_finish_current_fail(c: &mut Cpu) {
+    snd_load_queue_finish_with(c, 1, 0x002b_9ea0);
 }
 
 #[cfg(test)]
@@ -4262,5 +4399,43 @@ pub(crate) mod tests {
         );
         let paths = oc1024_paths(ee::s07::f_0028a230__generated, 160, &oc1024_flush_setup);
         assert!(paths >= 6, "only {paths} paths");
+    }
+
+    use crate::game::sound::icepick::worldtriggermanager::tests::oc1548_install_fakes;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::OC1548_CTRL;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::OC1548_MAGIC;
+
+    /// The two `SndLoadQueue_FinishCurrent` wrappers against their generated
+    /// bodies: the flush argument and the return address of the one call.
+    #[test]
+    fn snd_load_queue_finish_current_ok_matches() {
+        oc1548_install_fakes();
+        check(
+            ee::s08::f_002b9e70__generated,
+            snd_load_queue_finish_current_ok,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_9e70, 0);
+                c.bus.write32(OC1548_CTRL, OC1548_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn snd_load_queue_finish_current_fail_matches() {
+        oc1548_install_fakes();
+        check(
+            ee::s08::f_002b9e90__generated,
+            snd_load_queue_finish_current_fail,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_9e90, 0);
+                c.bus.write32(OC1548_CTRL, OC1548_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
     }
 }

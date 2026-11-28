@@ -169,6 +169,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2GraphicsMan_EmitColorFilterPacket",
     ),
     (0x0039_1508, font_style_ctor, "FontStyle_ctor"),
+    (
+        0x0038_f560,
+        sprstream_end_current_block,
+        "SprStream_EndCurrentBlock",
+    ),
+    (
+        0x0038_f7f8,
+        vfx_visual_effects_test_update_0038f7f8,
+        "VfxVisualEffectsTest_Update",
+    ),
+    (
+        0x0039_04a0,
+        ps2_graphics_man_render_color_filter,
+        "PS2GraphicsMan_RenderColorFilter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3471,152 +3486,146 @@ pub fn render2d_draw_line(c: &mut Cpu) {
 /// turning the corners through the rot90 path when bit 2 is set.
 pub fn render2d_draw_sprite(c: &mut Cpu) {
     guest(c, |c| {
-        'b_3a2218: {
-            'b_3a2214: {
-                c.cycles += 23;
-                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
-                c.g[T0][0] = c.g[A0][0];
-                c.sd((c.g[SP][0] as u32).wrapping_add(0xe0), c.g[RA][0]);
-                c.g[T2][0] = c.g[SP][0];
-                c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                c.ldr(2, c.g[A1][0] as u32);
-                c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
-                c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
-                c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                c.sdr(2, c.g[SP][0] as u32);
-                c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
-                c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
-                c.g[A1][0] = c.lw(c.g[T0][0] as u32);
-                c.ldl(11, (c.g[A2][0] as u32).wrapping_add(0x7));
-                c.ldr(11, c.g[A2][0] as u32);
-                c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0xf));
-                c.ldr(2, (c.g[A2][0] as u32).wrapping_add(0x8));
-                c.sdl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
-                c.sdr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
-                c.sdr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
-                let t = (c.g[A1][0] as i64) < 0;
-                c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        // 0x3a2218 / 0x3a2214: draw the sprite unless its width is
+        // negative; a rotated quad reports below without the plain
+        // path's tail.
+        let mut rotated = false;
+        c.cycles += 23;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
+        c.g[T0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0xe0), c.g[RA][0]);
+        c.g[T2][0] = c.g[SP][0];
+        c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
+        c.ldr(2, c.g[A1][0] as u32);
+        c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
+        c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
+        c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
+        c.sdr(2, c.g[SP][0] as u32);
+        c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
+        c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = c.lw(c.g[T0][0] as u32);
+        c.ldl(11, (c.g[A2][0] as u32).wrapping_add(0x7));
+        c.ldr(11, c.g[A2][0] as u32);
+        c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0xf));
+        c.ldr(2, (c.g[A2][0] as u32).wrapping_add(0x8));
+        c.sdl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
+        c.sdr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
+        c.sdr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+        let t = (c.g[A1][0] as i64) < 0;
+        c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        if !t {
+            // 0x3a2128: stage the blend for the sprite's edge.
+            c.cycles += 9;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+            c.g[A0][0] = c.g[A3][0] & 0x1;
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
+            c.sh((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+            c.lwc1(6, (c.g[T0][0] as u32).wrapping_add(0xc));
+            c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0x18));
+            c.lwc1(5, (c.g[T0][0] as u32).wrapping_add(0x10));
+            let t = c.g[A0][0] == 0u64;
+            c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x14));
+            if !t {
+                c.cycles += 2;
+                c.mov_s(5, 3);
+                c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x10));
+            }
+            // 0x3a213c: stage the blend for the sprite's corner.
+            c.cycles += 3;
+            c.g[V0][0] = c.g[A3][0] & 0x2;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[A3][0] & 0x4;
+            if !t {
+                c.cycles += 2;
+                c.mov_s(6, 4);
+                c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0xc));
+            }
+            // 0x3a2148: index the four corners, then draw the
+            // quad below.
+            c.cycles += 3;
+            c.g[V0][0] = 0x3;
+            c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = 0xffffffffffffffff;
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                let t = c.g[V0][0] != c.g[V1][0];
+                c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
                 if t {
-                    break 'b_3a2214;
-                }
-                'b_3a2128: {
-                    c.cycles += 9;
-                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
-                    c.g[A0][0] = c.g[A3][0] & 0x1;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
-                    c.sh((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A1][0]);
-                    c.lwc1(6, (c.g[T0][0] as u32).wrapping_add(0xc));
-                    c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0x18));
-                    c.lwc1(5, (c.g[T0][0] as u32).wrapping_add(0x10));
-                    let t = c.g[A0][0] == 0u64;
-                    c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x14));
-                    if t {
-                        break 'b_3a2128;
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_2148);
                     }
-                    c.cycles += 2;
-                    c.mov_s(5, 3);
-                    c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x10));
-                    break 'b_3a2128;
+                    continue;
                 }
-                'b_3a213c: {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.g[A3][0] & 0x2;
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.g[A3][0] & 0x4;
-                    if t {
-                        break 'b_3a213c;
-                    }
-                    c.cycles += 2;
-                    c.mov_s(6, 4);
-                    c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0xc));
-                    break 'b_3a213c;
-                }
-                c.cycles += 3;
-                c.g[V0][0] = 0x3;
-                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-                c.g[V1][0] = 0xffffffffffffffff;
-                'l_3a2148: loop {
-                    c.cycles += 7;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
-                    let t = c.g[V0][0] != c.g[V1][0];
-                    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
-                    if t {
+                c.cycles += 7;
+                c.g[AT][0] = 0x43000000;
+                c.mtc1(1, 2);
+                c.g[V1][0] = c.g[A1][0];
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 7);
+                c.lwc1(0, c.g[T1][0] as u32);
+                // 0x3a2180: transform one corner per pass.
+                loop {
+                    c.cycles += 20;
+                    c.mul_s(0, 0, 2);
+                    c.cvt_w_s(1, 0);
+                    c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x1c));
+                    c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0x4));
+                    c.mul_s(1, 1, 2);
+                    c.cvt_w_s(0, 1);
+                    c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.lwc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+                    c.mul_s(0, 0, 2);
+                    c.cvt_w_s(1, 0);
+                    c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x14));
+                    c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
+                    c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.mul_s(1, 1, 2);
+                    c.cvt_w_s(0, 1);
+                    c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.lwc1(0, c.g[T1][0] as u32);
                         if event_due(c) {
-                            deliver_event_here(c, 0x003a_2148);
+                            deliver_event_here(c, 0x003a_2180);
                         }
-                        continue 'l_3a2148;
+                        continue;
                     }
-                    c.cycles += 7;
-                    c.g[AT][0] = 0x43000000;
-                    c.mtc1(1, 2);
-                    c.g[V1][0] = c.g[A1][0];
-                    c.g[AT][0] = 0x3f800000;
-                    c.mtc1(1, 7);
-                    c.lwc1(0, c.g[T1][0] as u32);
-                    'l_3a2180: loop {
-                        c.cycles += 20;
-                        c.mul_s(0, 0, 2);
-                        c.cvt_w_s(1, 0);
-                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x1c));
-                        c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0x4));
-                        c.mul_s(1, 1, 2);
-                        c.cvt_w_s(0, 1);
-                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x10));
-                        c.lwc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
-                        c.mul_s(0, 0, 2);
-                        c.cvt_w_s(1, 0);
-                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x14));
-                        c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
-                        c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
-                        c.mul_s(1, 1, 2);
-                        c.cvt_w_s(0, 1);
-                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
-                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
-                        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
-                        if c.g[V0][0] != 0u64 {
-                            c.lwc1(0, c.g[T1][0] as u32);
-                            if event_due(c) {
-                                deliver_event_here(c, 0x003a_2180);
-                            }
-                            continue 'l_3a2180;
-                        }
-                        'b_3a2208: {
-                            c.cycles += 9;
-                            c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x54));
-                            c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x80));
-                            c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xb0));
-                            c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0xb4));
-                            c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x20));
-                            c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x24));
-                            c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x50));
-                            let t = c.g[A0][0] == 0u64;
-                            c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x84));
-                            if t {
-                                break 'b_3a2208;
-                            }
-                            c.cycles += 5;
-                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
-                            c.g[A2][0] = c.g[T2][0];
-                            callee::RENDER2D_DRAW_QUAD_ROT90.call(c, 0x003a_2200)?;
-                            let t = true;
-                            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
-                            if t {
-                                break 'b_3a2218;
-                            }
-                            break 'b_3a2208;
-                        }
+                    // 0x3a2208: draw the quad rotated when the
+                    // sprite flags ask for it.
+                    c.cycles += 9;
+                    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x54));
+                    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0xb4));
+                    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x24));
+                    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    let t = c.g[A0][0] == 0u64;
+                    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x84));
+                    if t {
                         c.cycles += 3;
                         c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
                         c.g[A2][0] = c.g[T2][0];
                         callee::RENDER2D_DRAW_QUAD.call(c, 0x003a_2214)?;
-                        break 'b_3a2214;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
+                        c.g[A2][0] = c.g[T2][0];
+                        callee::RENDER2D_DRAW_QUAD_ROT90.call(c, 0x003a_2200)?;
+                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
+                        rotated = true;
                     }
+                    break;
                 }
+                break;
             }
+        }
+        if !rotated {
             c.cycles += 1;
             c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
-            break 'b_3a2218;
         }
         c.cycles += 2;
         let t = c.g[RA][0] as u32;
@@ -5782,6 +5791,252 @@ pub fn tex_man_swizzle_t4_block(c: &mut Cpu) {
     frame.close(c);
 }
 
+/// `c.lwc1 f<fd>, 0(addr)`: loads a float into FPU register `fd` and returns it.
+#[inline]
+pub(crate) fn load_fpr(c: &mut Cpu, fd: usize, addr: u32) -> FpuF32 {
+    let v = Addr(addr).read_fpu(c);
+    abi::set_fpr(c, fd, v);
+    v
+}
+
+/// `c.eq.s a, b`: the compare result, latched in the FCC bit.
+#[inline]
+pub(crate) fn eq_s_latched(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
+    let eq = a.eq_s(b);
+    abi::set_fcc(c, eq);
+    eq
+}
+
+/// The compare chain of `PS2GraphicsMan_RenderColorFilter` (the blocks
+/// `'b_390580`..`'b_390588` of the generated body): it compares the entry of
+/// the colour-filter table (`gs + 0x6ca4 + 0x18 * i`) against 1.0 three times
+/// and 0.0 three times. Ends in one of the two exits the body has.
+pub(crate) enum FilterExit {
+    /// Some compare failed: the body goes on to the stream and path calls.
+    Calls,
+    /// The last compare matched: straight to the epilogue.
+    Done,
+}
+
+pub(crate) fn filter_chain(c: &mut Cpu) -> FilterExit {
+    c.cycles += 10;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1);
+    c.mult(0, V0, S1, V0);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x6ca4));
+    c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+    let entry = r32(c, V0);
+    let one = FpuF32(c.f[1]);
+    let x0 = load_fpr(c, 0, entry);
+    let eq0 = eq_s_latched(c, x0, one);
+    let gp_1384 = r32(c, GP).wrapping_add(0x1384);
+    c.g[S0][0] = c.lw(gp_1384);
+    if !eq0 {
+        return filter_fall_580(c);
+    }
+    c.cycles += 5;
+    let x1 = load_fpr(c, 0, entry.wrapping_add(0x4));
+    let eq1 = eq_s_latched(c, x1, one);
+    c.g[A3][0] = 0;
+    if !eq1 {
+        return filter_fall_584(c);
+    }
+    c.cycles += 5;
+    let x2 = load_fpr(c, 0, entry.wrapping_add(0x8));
+    let eq2 = eq_s_latched(c, x2, one);
+    if !eq2 {
+        let s3 = r32(c, S3);
+        c.g[A1][0] = c.lw(s3);
+        return FilterExit::Calls;
+    }
+    c.cycles += 6;
+    let x3 = load_fpr(c, 0, entry.wrapping_add(0xc));
+    c.mtc1(0, 1);
+    let zero = FpuF32(c.f[1]);
+    let eq3 = eq_s_latched(c, x3, zero);
+    if !eq3 {
+        let s3 = r32(c, S3);
+        c.g[A1][0] = c.lw(s3);
+        return FilterExit::Calls;
+    }
+    c.cycles += 5;
+    let x4 = load_fpr(c, 0, entry.wrapping_add(0x10));
+    let eq4 = eq_s_latched(c, x4, zero);
+    if !eq4 {
+        let s3 = r32(c, S3);
+        c.g[A1][0] = c.lw(s3);
+        return FilterExit::Calls;
+    }
+    c.cycles += 5;
+    let x5 = load_fpr(c, 0, entry.wrapping_add(0x14));
+    let eq5 = eq_s_latched(c, x5, zero);
+    let sp_now = r32(c, SP);
+    c.lq(S0, sp_now.wrapping_add(0x60));
+    if eq5 {
+        return FilterExit::Done;
+    }
+    c.cycles += 1;
+    c.g[S0][0] = c.lw(gp_1384);
+    filter_fall_580(c)
+}
+
+/// The fall-through from a failed compare in `'b_390580`: `A3 = 0`, then the
+/// `'b_390584` exit.
+pub(crate) fn filter_fall_580(c: &mut Cpu) -> FilterExit {
+    c.cycles += 1;
+    c.g[A3][0] = 0;
+    filter_fall_584(c)
+}
+
+/// The `'b_390584` exit: `A1 = s3`, then the `'b_390588` exit into the calls.
+pub(crate) fn filter_fall_584(c: &mut Cpu) -> FilterExit {
+    c.cycles += 1;
+    let s3 = r32(c, S3);
+    c.g[A1][0] = c.lw(s3);
+    FilterExit::Calls
+}
+
+/// The stream and path calls of `PS2GraphicsMan_RenderColorFilter` (the
+/// `'b_390588` tail, depth 4 of the generated body).
+pub(crate) fn filter_calls(c: &mut Cpu) -> Flow {
+    c.cycles += 16;
+    c.g[A2][0] = u64::MAX;
+    c.g[A0][0] = c.g[S0][0];
+    Callee {
+        addr: 0x0038_f460,
+        f: ee::s12::SprStream_BeginBlock,
+    }
+    .call(c, 0x0039_0594)?;
+    c.g[A2][0] = c.g[SP][0];
+    let sp = r32(c, SP);
+    let v0 = c.g[V0][0];
+    c.sw(sp, v0);
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A0][0] = c.g[S2][0];
+    Callee {
+        addr: 0x0039_05e8,
+        f: ee::s12::PS2GraphicsMan_EmitColorFilterPacket,
+    }
+    .call(c, 0x0039_05a8)?;
+    let sp = r32(c, SP);
+    c.g[A1][0] = c.lw(sp);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = 4;
+    Callee {
+        addr: 0x0038_f668,
+        f: ee::s12::SprStream_EndBlockAligned,
+    }
+    .call(c, 0x0039_05b8)?;
+    let s3 = r32(c, S3);
+    let v0 = c.g[V0][0];
+    c.sw(s3, v0);
+    c.g[A1][0] = c.g[S4][0];
+    let a_18f4 = r32(c, S2).wrapping_add(0x18f4);
+    c.g[A0][0] = c.lw(a_18f4);
+    Callee {
+        addr: 0x0036_8138,
+        f: ee::s12::TexMan_EmitPath3Window,
+    }
+    .call(c, 0x0039_05c8)?;
+    Ok(())
+}
+
+/// `PS2GraphicsMan_RenderColorFilter(gs, i, pp, path)` (0x003904a0): loads the
+/// colour filter entry `i` of the table at `gs + 0x6ca4` (24-byte entries) and
+/// compares it with 1.0 and 0.0; if the filter matches, it calls the stream and
+/// path emitters (`ResetColorFilter` first when the global at `gp + 0x14ec` is set).
+pub fn ps2_graphics_man_render_color_filter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x70));
+        let gp_14e8 = r32(c, GP).wrapping_add(0x14e8);
+        c.g[V0][0] = c.lw(gp_14e8);
+        let sp = r32(c, SP);
+        c.sq(S1, sp.wrapping_add(0x50));
+        c.sq(S2, sp.wrapping_add(0x40));
+        c.g[S1][0] = c.g[A1][0];
+        c.sq(S3, sp.wrapping_add(0x30));
+        c.g[S2][0] = c.g[A0][0];
+        c.sq(S4, sp.wrapping_add(0x20));
+        c.g[S3][0] = c.g[A3][0];
+        c.sq(S0, sp.wrapping_add(0x60));
+        c.g[S4][0] = c.g[A2][0];
+        let initial_zero = c.g[V0][0] == 0;
+        let ra = c.g[RA][0];
+        c.sd(sp.wrapping_add(0x10), ra);
+
+        let mut direct_exit = false;
+        if !initial_zero {
+            c.cycles += 3;
+            let gp_14ec = r32(c, GP).wrapping_add(0x14ec);
+            c.g[V0][0] = c.lw(gp_14ec);
+            let reset_zero = c.g[V0][0] == 0;
+            c.g[V0][0] = 0x18;
+            if !reset_zero {
+                c.cycles += 3;
+                Callee {
+                    addr: 0x0039_0458,
+                    f: ee::s12::PS2GraphicsMan_ResetColorFilter,
+                }
+                .call(c, 0x0039_04e8)?;
+                c.g[V0][0] = 0x18;
+            }
+            match filter_chain(c) {
+                FilterExit::Done => direct_exit = true,
+                FilterExit::Calls => filter_calls(c)?,
+            }
+        }
+        if !direct_exit {
+            // The `'b_3905c8` exit: one cycle, then restore s0.
+            c.cycles += 1;
+            c.lq(S0, sp.wrapping_add(0x60));
+        }
+        // Epilogue.
+        c.cycles += 7;
+        c.lq(S1, sp.wrapping_add(0x50));
+        c.lq(S2, sp.wrapping_add(0x40));
+        c.lq(S3, sp.wrapping_add(0x30));
+        c.lq(S4, sp.wrapping_add(0x20));
+        c.g[RA][0] = c.ld(sp.wrapping_add(0x10));
+        c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x70));
+        abi::ret(c);
+        Ok(())
+    })
+}
+
+/// `VfxVisualEffectsTest_Update` (0x0038_f7f8): straight-line leaf. Mechanical port of the generated body.
+pub fn vfx_visual_effects_test_update_0038f7f8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `SprStream_EndCurrentBlock(stream, flags)` (0x38f560): calls
+/// `SprStream_EndBlock(stream, unk_2C[mDMABlock] << 4, flags)` and returns
+/// what it returns. The block index lives at +0xc, the table of block
+/// offsets at +0x2c (words), and `ra` is saved in the 0x10-byte frame.
+pub fn sprstream_end_current_block(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x2c)).lw(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 4);
+        Callee {
+            addr: 0x0038_f598,
+            f: ee::s12::f_0038f598,
+        }
+        .call(c, 0x0038_f588)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7502,10 +7757,11 @@ pub(crate) mod tests {
     #[test]
     fn render2d_draw_sprite_matches() {
         sprite_hook();
-        check(
+        check_paths(
             ee::s13::f_003a20a0__generated,
             render2d_draw_sprite,
             200,
+            &[26, 168, 169, 170, 171, 172, 173],
             &|c, seed| {
                 sprite_setup(c, seed);
             },
@@ -8116,5 +8372,245 @@ pub(crate) mod tests {
         let _resumes = check_events(sprite_wipe_generated, sprite_wipe_hand, 48, &|c, seed| {
             sprite_events(c, seed, 0x003a_2220, 0, 83, 0)
         });
+    }
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::hook_fakes;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1581_GATE_END_BLOCK;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1581_MAGIC_END_BLOCK;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::RET;
+
+    /// The gate word of this module's gated callee fakes, in the machine's RAM.
+    pub(crate) const OC1485_CTRL: u32 = DATA + 0x6_e000;
+
+    pub(crate) const OC1485_MAGIC: u32 = 0x1485_c0de;
+
+    /// Gated fake of a callee slot: logs the call like `fakes::fake` only when
+    /// this test's gate word is set, else runs the body the slot held before.
+    macro_rules! oc1485_fake {
+        ($name:ident, $prev:ident, $gen:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(OC1485_CTRL) != OC1485_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let target = c.pc;
+                let ret = c.g[RA][0] as u32;
+                fakes::fake(c, target, ret);
+            }
+        };
+    }
+
+    oc1485_fake!(oc1485_f_view, OC1485_P_VIEW, ee::s12::f_0037d968__generated);
+
+    oc1485_fake!(
+        oc1485_f_begin_block,
+        OC1485_P_BEGIN,
+        ee::s12::f_0038f460__generated
+    );
+
+    oc1485_fake!(
+        oc1485_f_end_block,
+        OC1485_P_END,
+        ee::s12::f_0038f668__generated
+    );
+
+    oc1485_fake!(
+        oc1485_f_reset_filter,
+        OC1485_P_RESET,
+        ee::s12::f_00390458__generated
+    );
+
+    oc1485_fake!(
+        oc1485_f_emit_filter,
+        OC1485_P_EMIT,
+        ee::s12::f_003905e8__generated
+    );
+
+    oc1485_fake!(
+        oc1485_f_path3,
+        OC1485_P_PATH3,
+        ee::s12::f_00368138__generated
+    );
+
+    oc1485_fake!(
+        oc1485_f_complete,
+        OC1485_P_COMPLETE,
+        ee::s14::f_003de420__generated
+    );
+
+    oc1485_fake!(
+        oc1485_f_lseek,
+        OC1485_P_LSEEK,
+        ee::s15::f_00428168__generated
+    );
+
+    oc1485_fake!(oc1485_f_read, OC1485_P_READ, ee::s15::f_004283a0__generated);
+
+    pub(crate) fn oc1485_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0037D968),
+            oc1485_f_view,
+            &OC1485_P_VIEW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038F460),
+            oc1485_f_begin_block,
+            &OC1485_P_BEGIN,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038F668),
+            oc1485_f_end_block,
+            &OC1485_P_END,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00390458),
+            oc1485_f_reset_filter,
+            &OC1485_P_RESET,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_003905E8),
+            oc1485_f_emit_filter,
+            &OC1485_P_EMIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00368138),
+            oc1485_f_path3,
+            &OC1485_P_PATH3,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DE420),
+            oc1485_f_complete,
+            &OC1485_P_COMPLETE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00428168),
+            oc1485_f_lseek,
+            &OC1485_P_LSEEK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004283A0),
+            oc1485_f_read,
+            &OC1485_P_READ,
+        );
+    }
+
+    pub(crate) fn oc1485_gate(c: &mut Cpu) {
+        c.bus.write32(OC1485_CTRL, OC1485_MAGIC);
+    }
+
+    /// The colour filter fixture: the branch selectors (`gp+0x14e8`,
+    /// `gp+0x14ec`), the table entry `i` (its six floats match 1.0, 1.0, 1.0,
+    /// 0.0, 0.0, 0.0 up to the `fail` index) and the path pointers.
+    pub(crate) fn oc1485_filter_setup(c: &mut Cpu, seed: u32, calls: u32) {
+        oc1485_install();
+        let mut r = fakes::machine(c, seed, 0x1485_3904, calls);
+        oc1485_gate(c);
+        let gp = GAME_GP;
+        let gs = DATA + 0x1_0000;
+        c.bus
+            .write32(gp + 0x14e8, if seed % 4 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(gp + 0x14ec, if seed % 3 == 0 { 0 } else { 1 });
+        c.bus.write32(gp + 0x1384, DATA + 0x2_2000);
+        let i = (seed / 3) % 3;
+        c.g[A0][0] = sx(gs);
+        c.g[A1][0] = i as u64;
+        c.g[A2][0] = 7;
+        c.g[A3][0] = sx(DATA + 0x1_8000);
+        let fail = (seed / 12) % 7;
+        let entry = gs + 0x6ca4 + 0x18 * i;
+        for j in 0..6u32 {
+            let good = if j < 3 { 1.0f32 } else { 0.0f32 };
+            let bad = if j < 3 { 2.0f32 } else { 0.5f32 };
+            let v = if j < fail {
+                good.to_bits()
+            } else if j == fail {
+                bad.to_bits()
+            } else {
+                r.next_u32()
+            };
+            c.bus.write32(entry + 4 * j, v);
+        }
+        c.bus.write32(gs + 0x18f4, DATA + 0x2_0000);
+        c.bus.write32(DATA + 0x1_8000, r.next_u32());
+        fill(c, &mut r, DATA + 0x2_0000, 8);
+    }
+
+    #[test]
+    fn render_color_filter_matches() {
+        check_lohi(
+            ee::s12::f_003904a0__generated,
+            ps2_graphics_man_render_color_filter,
+            300,
+            &|c, seed| oc1485_filter_setup(c, seed, 0),
+        );
+    }
+
+    #[test]
+    fn render_color_filter_unwinds() {
+        fakes::covered(
+            ee::s12::f_003904a0__generated,
+            ps2_graphics_man_render_color_filter,
+            300,
+            &|c, seed| oc1485_filter_setup(c, seed, 5),
+        );
+    }
+
+    #[test]
+    fn render_color_filter_reaches_every_call() {
+        fakes::check_reaching(
+            ee::s12::f_003904a0__generated,
+            ps2_graphics_man_render_color_filter,
+            300,
+            &[
+                0x0039_04e8,
+                0x0039_0594,
+                0x0039_05a8,
+                0x0039_05b8,
+                0x0039_05c8,
+            ],
+            &|c, seed| oc1485_filter_setup(c, seed, 0),
+        );
+    }
+
+    /// `VfxVisualEffectsTest_Update` (0x0038_f7f8) against the generated body.
+    #[test]
+    fn vfx_visual_effects_test_update_0038f7f8_matches() {
+        check(
+            ee::s12::f_0038f7f8__generated,
+            vfx_visual_effects_test_update_0038f7f8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x38f7f8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn sprstream_end_current_block_matches() {
+        hook_fakes();
+        check(
+            ee::s12::f_0038f560__generated,
+            sprstream_end_current_block,
+            120,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0038_f560, 1);
+                c.bus.write32(OC1581_GATE_END_BLOCK, OC1581_MAGIC_END_BLOCK);
+                c.g[RA][0] = sx(RET);
+                let stream = DATA + 0x1000;
+                let block = seed % 4;
+                c.g[A0][0] = sx(stream);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.bus.write32(stream + 0xc, block);
+                c.bus
+                    .write32(stream + 0x2c + 4 * block, r.next_u32() & 0xff);
+                c.bus
+                    .write32(stream + 0x2c + 4 * ((block + 1) % 4), r.next_u32());
+            },
+        );
     }
 }

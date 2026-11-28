@@ -47,6 +47,10 @@ def sizes():
             out[int(p[0], 16)] = int(p[1], 16)
         except (ValueError, IndexError):
             pass
+    for l in open(os.path.join(ROOT, "generated/ee-symbols.tsv")):
+        p = l.rstrip("\n").split("\t")
+        if not l.startswith("#") and len(p) >= 3:
+            out.setdefault(int(p[1], 16), int(p[2], 16))
     return out
 
 

@@ -3,12 +3,16 @@
 
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp;
 pub(crate) use crate::game::main::gamemode::sw_r;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -27,6 +31,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssxapp_static_init_destruct,
         "SSXApp_StaticInitDestruct",
     ),
+    (0x0024_2e58, ssx_app_list_clear, "SSXApp_ListClear"),
+    (0x0024_38b0, module_base_dtor_2, "ModuleBase_dtor_2"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -753,6 +759,85 @@ pub(crate) fn ssxapp_destruct(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `void SSXApp_ListClear(self)` (0x242e58): deletes every node of the
+/// circular list whose head sits at `self + 4` (a node's word 0 is its next
+/// node; the head's word 0 is the first node) through `__builtin_delete`,
+/// then points the head at itself (`head.next = head`, `head.prev = head`).
+pub fn ssx_app_list_clear(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+        c.g[S0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        if c.g[S0][0] == c.g[V0][0] {
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+            loop {
+                c.cycles += 5;
+                c.g[S0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                Callee {
+                    addr: 0x0031_7e50,
+                    f: ee::s10::f_00317e50,
+                }
+                .call(c, 0x0024_2e88)?;
+                c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+                let more = c.g[S0][0] != c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0024_2e80);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+                frame.restore(c, S0, 0x20);
+                break;
+            }
+        }
+        c.cycles += 7;
+        let head = c.g[V0][0];
+        Addr(head as u32).sw(c, head);
+        frame.restore_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4)).lw(c);
+        frame.restore(c, S1, 0x10);
+        let head_again = c.g[V1][0];
+        Addr((head_again as u32).wrapping_add(0x4)).sw(c, head_again);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `ModuleBase` deleting destructor (0x2438b0): stores the vtable value
+/// `0x46d970` at `this` and, when bit 0 of the flags (`a1`) is set, frees the
+/// object with `__builtin_delete`. v0 keeps the vtable value.
+pub fn module_base_dtor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[V0][0] = 0x0047_0000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2690));
+        frame.save_ra(c, 0);
+        c.g[A1][0] &= 1;
+        let vtable = c.g[V0][0];
+        Addr(c.g[A0][0] as u32).sw(c, vtable);
+        if c.g[A1][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x0024_38d4)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -865,6 +950,80 @@ pub(crate) mod tests {
             ssxapp_static_init_destruct,
             200,
             &oc519_setup,
+        );
+    }
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::install_all;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::open_gates;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::G_DELETE;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1543_MAGIC;
+
+    pub(crate) const OC1543_DELETE_CTRL: u32 = DATA + 0x2e_5000;
+
+    pub(crate) static OC1543_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `__builtin_delete`: a logged no-op while the gate is on.
+    pub(crate) fn oc1543_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC1543_DELETE_CTRL) != OC1543_MAGIC {
+            return fakes::fall_back(c, &OC1543_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e50);
+    }
+
+    pub(crate) fn oc1543_hook_delete() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1543_fake_delete,
+            &OC1543_PREV_DELETE,
+        );
+    }
+
+    /// The list is a ring of `seed % 4` nodes (0 means empty), each node's
+    /// word 0 pointing at the next and the last at the head.
+    #[test]
+    fn ssx_app_list_clear_matches() {
+        oc1543_hook_delete();
+        check(
+            ee::s06::f_00242e58__generated,
+            ssx_app_list_clear,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x242e, 0);
+                c.bus.write32(OC1543_DELETE_CTRL, OC1543_MAGIC);
+                let this = DATA + 0x2000;
+                let head = DATA + 0x2100;
+                let nodes = seed % 4;
+                for k in 0..nodes {
+                    let node = DATA + 0x2200 + 0x40 * k;
+                    let next = if k + 1 < nodes { node + 0x40 } else { head };
+                    c.bus.write32(node, next);
+                }
+                let first = if nodes == 0 { head } else { DATA + 0x2200 };
+                c.bus.write32(head, first);
+                c.bus.write32(this + 0x4, head);
+                c.g[A0][0] = this as u64;
+                c.pc = 0x0024_2e58;
+            },
+        );
+    }
+
+    #[test]
+    fn module_base_dtor_2_matches() {
+        install_all();
+        check(
+            ee::s06::f_002438b0__generated,
+            module_base_dtor_2,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2438_b0, 0);
+                open_gates(c, &[G_DELETE]);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                // Bit 0 of the flags: the object is freed on every other seed.
+                c.g[A1][0] = (r.next_u32() as u64 & !1) | (seed % 2) as u64;
+            },
         );
     }
 }

@@ -87,6 +87,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "LunoVMRegister_Add",
     ),
     (0x0022_2648, luno_vm_call_with_arg, "LunoVM_CallWithArg"),
+    (0x0022_24a0, luno_vm_return_zero, "LunoVM_ReturnZero"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6548,6 +6549,13 @@ pub fn luno_vm_call_with_arg(c: &mut Cpu) {
     })
 }
 
+/// `LunoVM_ReturnZero` (0x0022_24a0): straight-line leaf. Mechanical port of the generated body.
+pub fn luno_vm_return_zero(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7717,6 +7725,20 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(table);
                 c.g[A3][0] = sx(value);
                 c.g[T0][0] = sx(ret_var);
+            },
+        );
+    }
+
+    /// `LunoVM_ReturnZero` (0x0022_24a0) against the generated body.
+    #[test]
+    fn luno_vm_return_zero_matches() {
+        check(
+            ee::s05::f_002224a0__generated,
+            luno_vm_return_zero,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2224a0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

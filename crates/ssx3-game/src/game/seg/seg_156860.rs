@@ -7,6 +7,7 @@ use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -24,6 +25,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0025_5d38,
         c_comm_system_has_channel,
         "cCommSystem_HasChannel",
+    ),
+    (
+        0x0025_61b8,
+        cfe_state_auth_dnas_create_ctor,
+        "cFEStateAuthDNASCreate_ctor",
     ),
 ];
 
@@ -337,6 +343,28 @@ pub fn c_comm_system_update(c: &mut Cpu) {
     });
 }
 
+/// `cFEStateAuthDNASCreate_ctor(this)` (0x2561b8, `DNASMan_DNASMan`): calls
+/// `DNASAuth_Init()` and returns `this`.
+pub fn cfe_state_auth_dnas_create_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0025_6228,
+            f: ee::s06::f_00256228,
+        }
+        .call(c, 0x0025_61cc)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -605,6 +633,29 @@ pub(crate) mod tests {
                         _ => r.next_u32(),
                     },
                 );
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::install_all;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::open_gates;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::G_DNAS_INIT;
+
+    #[test]
+    fn cfe_state_auth_dnas_create_ctor_matches() {
+        install_all();
+        check(
+            ee::s06::f_002561b8__generated,
+            cfe_state_auth_dnas_create_ctor,
+            200,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x2561_b8, 0);
+                open_gates(c, &[G_DNAS_INIT]);
+                c.g[A0][0] = sx(DATA + 0x5800 + 0x40 * (seed % 4));
             },
         );
     }

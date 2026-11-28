@@ -6,6 +6,7 @@ use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -57,6 +58,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0028_3c80, script_cmd_queue_push_2, "ScriptCmdQueue_Push"),
     (0x0028_39a8, script_movie_start, "ScriptMovie_Start"),
+    (0x0028_38e8, scriptmovie_open, "ScriptMovie_Open"),
+    (
+        0x0028_3be0,
+        script_movie_debug_printf,
+        "ScriptMovie_DebugPrintf",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -798,6 +805,104 @@ pub(crate) fn start_movie(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `ScriptMovie_DebugPrintf` (0x0028_3be0): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn script_movie_debug_printf(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `cVidEngine_ReadyVideo(void** self, int file)` (0x2838e8), the `ScriptMovie_Open`
+/// of the scripter: if `*self` already holds a movie it returns 0; otherwise it
+/// allocates a 0x44-byte movie, constructs it, stores it in `*self`, sets the
+/// default options and initialises the movie with them. A zero init result drops
+/// the movie again (destroyed with `cMoviePlayer` dtor, arg 3, when one was
+/// stored); a non-zero result returns 1.
+pub fn scriptmovie_open(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        let slot = c.g[S0][0] as u32;
+        c.g[V0][0] = c.lw(slot);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 25;
+            c.g[A1][0] = 0x0048_0000;
+            c.g[A2][0] = 0x100;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1fc8));
+            c.g[A3][0] = 0;
+            c.g[A0][0] = 0x44;
+            call_ptr(c, 0x0031_7d70, 0x0028_3928)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0025_33c8, 0x0028_3930)?;
+            let (dst, val) = (slot, c.g[V0][0]);
+            c.sw(dst, val);
+            c.g[A0][0] = c.g[SP][0];
+            call_ptr(c, 0x0025_3390, 0x0028_393c)?;
+            c.g[A0][0] = c.lw(slot);
+            c.g[V0][0] = 0x1;
+            c.g[V1][0] = 0x100;
+            c.g[A2][0] = 0x9;
+            let base = sp(c);
+            let val = c.g[S1][0];
+            c.sw(base, val);
+            c.g[A1][0] = c.g[SP][0];
+            let val = c.g[V0][0];
+            c.sw(base.wrapping_add(0x8), val);
+            let val = c.g[V1][0];
+            c.sw(base.wrapping_add(0x18), val);
+            let val = c.g[A2][0];
+            c.sw(base.wrapping_add(0x1c), val);
+            c.sw(base.wrapping_add(0xc), 0);
+            c.sw(base.wrapping_add(0x10), 0);
+            call_ptr(c, 0x0025_34a8, 0x0028_396c)?;
+            let init_ok = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x1;
+            if !init_ok {
+                c.cycles += 3;
+                c.g[A0][0] = c.lw(slot);
+                if c.g[A0][0] == 0 {
+                    c.sw(slot, 0);
+                } else {
+                    c.cycles += 3;
+                    c.g[A1][0] = 0x3;
+                    call_ptr(c, 0x0025_3418, 0x0028_3988)?;
+                    c.sw(slot, 0);
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        // Epilogue.
+        c.cycles += 5;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1162,6 +1267,76 @@ pub(crate) mod tests {
                 c.bus.write32(cut + 0x10, seed % 4);
                 c.bus.write32(GAME_GP - 0x69c, seed % 4);
                 c.g[A0][0] = movie as u64;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::check_reaching;
+
+    pub(crate) use crate::game::bx::bxstringctor::tests::oc1546_setup;
+    pub(crate) use crate::game::bx::bxstringctor::tests::OC1546_ALLOC1;
+    pub(crate) use crate::game::bx::bxstringctor::tests::OC1546_CTRL;
+
+    pub(crate) use crate::game::bx::bxstringctor::tests::OC1546_OBJ;
+    pub(crate) use crate::game::replay::replaycache::tests::leaf_val;
+
+    use ssx3_ee_rt::cpu::sx;
+
+    /// `ScriptMovie_DebugPrintf` (0x0028_3be0) against the generated body.
+    #[test]
+    fn script_movie_debug_printf_matches() {
+        check(
+            ee::s07::f_00283be0__generated,
+            script_movie_debug_printf,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x283be0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Movie fixture: `self` (a0) is a `void**` slot; it holds a movie (the early
+    /// return) for a quarter of the seeds. The allocation (logged call 0) returns
+    /// ALLOC1; the constructor and the init are mailbox fakes (zero included).
+    pub(crate) fn oc1546_movie_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        let mut r = oc1546_setup(c, seed, 0x1546_3, calls);
+        let slot = OC1546_OBJ + 0x800;
+        c.g[A0][0] = slot as u64;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.bus
+            .write32(slot, if seed % 4 == 0 { OC1546_OBJ + 0x900 } else { 0 });
+        c.bus.write32(
+            OC1546_CTRL + 0x18,
+            if seed % 5 == 0 { 0 } else { OC1546_OBJ + 0xa00 },
+        );
+        c.bus.write32(OC1546_CTRL + 0x1c, seed % 2);
+        c.bus.write32(fakes::LOG_RESULTS, OC1546_ALLOC1);
+        r
+    }
+
+    /// The dtor path (a movie was stored, the init failed) must be reached.
+    #[test]
+    fn scriptmovie_open_matches() {
+        check_reaching(
+            ee::s07::f_002838e8__generated,
+            scriptmovie_open,
+            160,
+            &[0x0028_3988],
+            &|c, seed| {
+                oc1546_movie_setup(c, seed, 5);
             },
         );
     }

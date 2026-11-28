@@ -7,7 +7,10 @@ use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::be::gp;
@@ -21,6 +24,7 @@ pub(crate) use crate::game::fe::feasyncfile::sb_r;
 pub(crate) use crate::game::fe::fepopup::oc508_vtable_dtor;
 pub(crate) use crate::game::fe::fepopupmisc::lb;
 pub(crate) use crate::game::fe::fepopupmisc::p_2;
+pub(crate) use crate::game::fe::festateprofile::cfe_state_ctor_tail;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
@@ -28,6 +32,7 @@ pub(crate) use crate::game::main::gamestate::vslot;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_4;
 pub(crate) use crate::game::ui::uiengine::lb_r;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -36,6 +41,7 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0018_6518, c_fe_state_on_activate, "cFEState_OnActivate"),
+    (0x0019_59a8, fe_locale_load_table, "FELocale_LoadTable"),
     (
         0x0019_5948,
         fe_locale_unload_all_tables,
@@ -78,6 +84,40 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001d_cbd8, felocale_dtor, "FELocale_dtor"),
     (0x001d_cc08, felocale_v02, "FELocale_v02"),
     (0x001d_d750, c_fe_state_dtor, "cFEState_dtor"),
+    (0x0019_5aa0, felocale_set_language, "FELocale_v03"),
+    (
+        0x0019_5be0,
+        fe_locale_load_fe_tables,
+        "FELocale_LoadFETables",
+    ),
+    (
+        0x0019_5de0,
+        felocale_load_game_tables,
+        "FELocale_LoadGameTables",
+    ),
+    (
+        0x0019_5ff0,
+        cfe_state_audio_options_ctor,
+        "cFEStateAudioOptions_ctor",
+    ),
+    (
+        0x0019_6378,
+        cfe_state_audio_options_on_gain_focus,
+        "cFEStateAudioOptions_OnActivate",
+    ),
+    (
+        0x001d_cc38,
+        fe_locale_set_field1_001dcc38,
+        "FELocale_SetField1",
+    ),
+    (
+        0x001d_cc58,
+        fe_locale_v04_cc58_001dcc58,
+        "FELocale_v04_cc58",
+    ),
+    (0x001d_d6a8, cfe_state_ctor_2, "cFEState_ctor_2"),
+    (0x001d_d6e0, cfe_state_ctor_3, "cFEState_ctor_3"),
+    (0x001d_d718, cfe_state_ctor_4, "cFEState_ctor_4"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -527,7 +567,9 @@ pub fn fe_locale_load_table(c: &mut Cpu) {
         frame.save(c, S2, 0x10);
         let negative = (c.g[S0][0] as i64) < 0;
         frame.save_ra(c, 0);
-        let mut one = !negative;
+        // The negative and the allocating paths both fall through to the
+        // `+1` at the join; only a non-null existing entry skips it.
+        let mut one = true;
         if !negative {
             c.cycles += 6;
             c.g[V1][0] = sx(p_5(r32(c, A0), 8));
@@ -932,6 +974,787 @@ pub fn c_fe_state_dtor(c: &mut Cpu) {
     })
 }
 
+/// The changed-language arm of `FELocale_v03` (`'b_195b5c`): when the locale's
+/// flag bit 0 (byte +3) is clear, runs the language switch, loads the table of
+/// the slot, then the FE tables (byte +0x58 == 1) or the game tables. Returns
+/// true when the generated code takes its `cycles += 1` exit.
+pub(crate) fn felocale_changed(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+    c.cycles += 4;
+    c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x3));
+    c.g[V0][0] = c.g[V0][0] & 0x1;
+    let flagged = c.g[V0][0] != 0u64;
+    c.sb((c.g[S1][0] as u32).wrapping_add(0x1), c.g[S0][0]);
+    if flagged {
+        return Ok(true);
+    }
+    felocale_slot(c)?;
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S1][0];
+    Callee {
+        addr: 0x0019_59a8,
+        f: ee::s02::f_001959a8,
+    }
+    .call(c, 0x0019_5b34)?;
+    c.g[V1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x58));
+    c.g[V0][0] = 0x1;
+    if c.g[V1][0] != c.g[V0][0] {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0019_5de0,
+            f: ee::s02::f_00195de0,
+        }
+        .call(c, 0x0019_5b5c)?;
+        return Ok(true);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S1][0];
+    Callee {
+        addr: 0x0019_5be0,
+        f: ee::s02::f_00195be0,
+    }
+    .call(c, 0x0019_5b4c)?;
+    Ok(false)
+}
+
+/// The language switch of `FELocale_v03`: unloads the tables, then leaves in
+/// `a1` the slot for the language `s0`: 1 for language 1, 0 for 0, 2 and 3 for
+/// themselves, -1 for the others (the cycle charges follow the generated
+/// branches).
+pub(crate) fn felocale_slot(c: &mut Cpu) -> Result<(), crate::call::Unwound> {
+    c.cycles += 5;
+    Callee {
+        addr: 0x0019_5948,
+        f: ee::s02::f_00195948,
+    }
+    .call(c, 0x0019_5ae0)?;
+    c.g[V0][0] = 0x1;
+    let is_one = c.g[S0][0] == c.g[V0][0];
+    c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+    if is_one {
+        c.cycles += 2;
+        c.g[A1][0] = 0x1;
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[S0][0] as i64) < 2i64) as u64;
+    let at_least_two = c.g[V0][0] == 0u64;
+    c.g[V0][0] = 0x2;
+    if !at_least_two {
+        c.cycles += 2;
+        if c.g[S0][0] == 0u64 {
+            c.g[A1][0] = 0u64;
+            return Ok(());
+        }
+        c.cycles += 2;
+        return Ok(());
+    }
+    c.cycles += 2;
+    let is_two = c.g[S0][0] == c.g[V0][0];
+    c.g[V0][0] = 0x3;
+    if is_two {
+        c.cycles += 1;
+        c.g[A1][0] = 0x2;
+        return Ok(());
+    }
+    c.cycles += 2;
+    if c.g[S0][0] == c.g[V0][0] {
+        c.g[A1][0] = 0x3;
+        return Ok(());
+    }
+    c.cycles += 2;
+    Ok(())
+}
+
+/// `FELocale_v03(FELocale* self, int lang)` (0x195aa0), `cFELocale_setLanguage`:
+/// if `lang` (the low byte of a1) is not the current language (byte +1), stores
+/// it and, unless the flag bit 0 of byte +3 is set, reloads the tables for it.
+pub fn felocale_set_language(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x1));
+        if c.g[V0][0] != c.g[S0][0] {
+            let plus_one = felocale_changed(c)?;
+            if plus_one {
+                c.cycles += 1;
+            }
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void FELocale_LoadGameTables(FELocale* self)` (0x00195de0, `cFELocale_loadOV`):
+/// marks `self` (+0x58) as 2, picks the locale file from the byte at +1 (0 ->
+/// 0xc, 1 -> 0xd, 2 -> 0xe, 3 -> 0xf, anything else -> -1), and loads it through
+/// `FELocale_LoadTable` (0x001959a8, `cFELocale_addFile`).
+pub fn felocale_load_game_tables(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let this = c.g[A0][0] as u32;
+        c.g[V1][0] = 2;
+        let two = c.g[V1][0];
+        Addr(this.wrapping_add(0x58)).sb(c, two);
+        c.g[V0][0] = 1;
+        c.g[A2][0] = Addr(this.wrapping_add(1)).lb(c);
+        let kind = c.g[A2][0];
+        c.g[A1][0] = u64::MAX;
+        if kind == 1 {
+            c.cycles += 2;
+            c.g[A1][0] = 0xd;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((kind as i64) < 2) as u64;
+            let below_two = c.g[V0][0] == 1;
+            c.g[V0][0] = 2;
+            if below_two {
+                c.cycles += 2;
+                if kind == 0 {
+                    c.g[A1][0] = 0xc;
+                } else {
+                    c.cycles += 2;
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 3;
+                if kind == 2 {
+                    c.cycles += 1;
+                    c.g[A1][0] = 0xe;
+                } else {
+                    c.cycles += 2;
+                    if kind == 3 {
+                        c.g[A1][0] = 0xf;
+                    } else {
+                        c.cycles += 2;
+                    }
+                }
+            }
+        }
+        c.cycles += 5;
+        Callee {
+            addr: 0x0019_59a8,
+            f: ee::s02::f_001959a8,
+        }
+        .call(c, 0x0019_5e48)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `FELocale_SetField1` (0x001d_cc38): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn fe_locale_set_field1_001dcc38(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sb((c.g[A0][0] as u32).wrapping_add(0x1), c.g[A1][0]);
+    ret(c);
+}
+
+/// `FELocale_v04_cc58` (0x001d_cc58): straight-line leaf. Mechanical port of the generated body.
+pub fn fe_locale_v04_cc58_001dcc58(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `cFELocale_addFile` (0x1959a8, `FELocale_LoadTable`): `(self, table id)`.
+pub(crate) const OC1538_FE_LOCALE_ADD_FILE: Callee = Callee {
+    addr: 0x0019_59a8,
+    f: ee::s02::f_001959a8,
+};
+
+/// `cFELocale::loadFE(self)` (0x195be0): the FE locale's three table loads.
+/// Reads the language byte at `self+1` (signed: 0..3 select a table, any
+/// other value takes the default) and loads one table per switch through
+/// `FELocale_LoadTable` (0x1959a8): ids 4..7 (`cFELocale_addFile`), 8..11,
+/// then 0x10..0x13. Sets `self+0x58 = 1`. The byte is read again before each
+/// switch, as the generated code does. The switch chains are transcribed
+/// from the generated block structure.
+#[allow(unused_labels, unreachable_code)]
+pub fn fe_locale_load_fe_tables(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_195c60: {
+            'b_195c5c: {
+                'b_195c58: {
+                    'b_195c50: {
+                        'b_195c48: {
+                            c.cycles += 11;
+                            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                            c.g[V1][0] = 0x1;
+                            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            c.g[V0][0] = 0x1;
+                            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                            c.g[S1][0] = c.g[A0][0];
+                            c.sb((c.g[S1][0] as u32).wrapping_add(0x58), c.g[V1][0]);
+                            c.g[A0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x1));
+                            let t = c.g[A0][0] == c.g[V0][0];
+                            c.g[S0][0] = 0xffffffffffffffff;
+                            if t {
+                                break 'b_195c48;
+                            } else {
+                                'b_195c40: {
+                                    'b_195c28: {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = ((c.g[A0][0] as i64) < 2i64) as u64;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = 0x2;
+                                        if t {
+                                            break 'b_195c28;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = c.g[A0][0] == 0u64;
+                                            c.g[A0][0] = c.g[S1][0];
+                                            if t {
+                                                break 'b_195c40;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = true;
+
+                                                if t {
+                                                    break 'b_195c60;
+                                                } else {
+                                                    break 'b_195c28;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    let t = c.g[A0][0] == c.g[V0][0];
+                                    c.g[V0][0] = 0x3;
+                                    if t {
+                                        break 'b_195c50;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[A0][0] == c.g[V0][0];
+                                        c.g[A0][0] = c.g[S1][0];
+                                        if t {
+                                            break 'b_195c58;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+
+                                            if t {
+                                                break 'b_195c60;
+                                            } else {
+                                                break 'b_195c40;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[S0][0] = 0x4;
+                                if t {
+                                    break 'b_195c5c;
+                                } else {
+                                    break 'b_195c48;
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = true;
+                        c.g[S0][0] = 0x5;
+                        if t {
+                            break 'b_195c5c;
+                        } else {
+                            break 'b_195c50;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S0][0] = 0x6;
+                    if t {
+                        break 'b_195c5c;
+                    } else {
+                        break 'b_195c58;
+                    }
+                }
+                c.cycles += 1;
+                c.g[S0][0] = 0x7;
+                break 'b_195c5c;
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S1][0];
+            break 'b_195c60;
+        }
+        'b_195cc8: {
+            'b_195cc4: {
+                'b_195cc0: {
+                    'b_195cb8: {
+                        'b_195cb0: {
+                            c.cycles += 6;
+                            c.g[A1][0] = c.g[S0][0];
+                            OC1538_FE_LOCALE_ADD_FILE.call(c, 0x00195c68)?;
+                            c.g[V1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x1));
+                            c.g[V0][0] = 0x1;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[V0][0] = ((c.g[V1][0] as i64) < 2i64) as u64;
+                            if t {
+                                break 'b_195cb0;
+                            } else {
+                                'b_195ca8: {
+                                    'b_195c90: {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = 0x2;
+                                        if t {
+                                            break 'b_195c90;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = c.g[V1][0] == 0u64;
+                                            c.g[A1][0] = c.g[S0][0];
+                                            if t {
+                                                break 'b_195ca8;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = true;
+
+                                                if t {
+                                                    break 'b_195cc8;
+                                                } else {
+                                                    break 'b_195c90;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    c.g[V0][0] = 0x3;
+                                    if t {
+                                        break 'b_195cb8;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V1][0] == c.g[V0][0];
+                                        c.g[A1][0] = c.g[S0][0];
+                                        if t {
+                                            break 'b_195cc0;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+
+                                            if t {
+                                                break 'b_195cc8;
+                                            } else {
+                                                break 'b_195ca8;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[S0][0] = 0x8;
+                                if t {
+                                    break 'b_195cc4;
+                                } else {
+                                    break 'b_195cb0;
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = true;
+                        c.g[S0][0] = 0x9;
+                        if t {
+                            break 'b_195cc4;
+                        } else {
+                            break 'b_195cb8;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S0][0] = 0xa;
+                    if t {
+                        break 'b_195cc4;
+                    } else {
+                        break 'b_195cc0;
+                    }
+                }
+                c.cycles += 1;
+                c.g[S0][0] = 0xb;
+                break 'b_195cc4;
+            }
+            c.cycles += 1;
+            c.g[A1][0] = c.g[S0][0];
+            break 'b_195cc8;
+        }
+        'b_195d34: {
+            'b_195d30: {
+                'b_195d2c: {
+                    'b_195d24: {
+                        'b_195d1c: {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S1][0];
+                            OC1538_FE_LOCALE_ADD_FILE.call(c, 0x00195cd0)?;
+                            c.g[V1][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x1));
+                            c.g[V0][0] = 0x1;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.g[S0][0] = 0xffffffffffffffff;
+                            if t {
+                                break 'b_195d1c;
+                            } else {
+                                'b_195d14: {
+                                    'b_195cfc: {
+                                        c.cycles += 3;
+                                        c.g[V0][0] = ((c.g[V1][0] as i64) < 2i64) as u64;
+                                        let t = c.g[V0][0] == 0u64;
+                                        c.g[V0][0] = 0x2;
+                                        if t {
+                                            break 'b_195cfc;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = c.g[V1][0] == 0u64;
+                                            c.g[A0][0] = c.g[S1][0];
+                                            if t {
+                                                break 'b_195d14;
+                                            } else {
+                                                c.cycles += 2;
+                                                let t = true;
+
+                                                if t {
+                                                    break 'b_195d34;
+                                                } else {
+                                                    break 'b_195cfc;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] == c.g[V0][0];
+                                    c.g[V0][0] = 0x3;
+                                    if t {
+                                        break 'b_195d24;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V1][0] == c.g[V0][0];
+                                        c.g[A0][0] = c.g[S1][0];
+                                        if t {
+                                            break 'b_195d2c;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+
+                                            if t {
+                                                break 'b_195d34;
+                                            } else {
+                                                break 'b_195d14;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[S0][0] = 0x10;
+                                if t {
+                                    break 'b_195d30;
+                                } else {
+                                    break 'b_195d1c;
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = true;
+                        c.g[S0][0] = 0x11;
+                        if t {
+                            break 'b_195d30;
+                        } else {
+                            break 'b_195d24;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S0][0] = 0x12;
+                    if t {
+                        break 'b_195d30;
+                    } else {
+                        break 'b_195d2c;
+                    }
+                }
+                c.cycles += 1;
+                c.g[S0][0] = 0x13;
+                break 'b_195d30;
+            }
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S1][0];
+            break 'b_195d34;
+        }
+        c.cycles += 7;
+        c.g[A1][0] = c.g[S0][0];
+        OC1538_FE_LOCALE_ADD_FILE.call(c, 0x00195d3c)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `obj->method(a1)` on the object in `a2`, the generated `vtable + off`
+/// pattern: `v0` = the object's vtable (`obj+8`), `a0 = obj + delta` and
+/// `v1` = the method, both read from the vtable slot at `off` (`lh` delta,
+/// `lw` method), then the call returning to `ret`.
+pub(crate) fn audio_options_vcall_a2(c: &mut Cpu, off: u32, ret: u32) -> Flow {
+    c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(8));
+    let vt = c.g[V0][0];
+    let slot = VSlot::read(c, vt, off);
+    c.g[A0][0] = slot.this(c.g[A2][0]);
+    c.g[V1][0] = slot.func;
+    call_ptr(c, slot.func as u32, ret)
+}
+
+/// `void cFEStateAudioOptions::cFEStateAudioOptions(cUIEngine* engine,
+/// char userNum, bool inStore)` (0x195FF0, `this` in a0): the base
+/// `cUIState` constructor, then the audio-options fields. The user number
+/// (sign-extended char) goes to +0x44, the controller mask to +0x15 when the
+/// player pointer at +0x10 is set, and the four words at +0x4c..+0x58 are
+/// cleared by a counted loop. Two texture-bank lookups and the group numbers
+/// (+0x5c..+0x7c) follow. Returns `this`.
+pub fn cfe_state_audio_options_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << 24);
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = sx(((c.g[A2][0] as u32) as i32 >> 24) as u32);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A3][0];
+        // cUIState(this, engine): a0 and a1 still hold the arguments.
+        call_ptr(c, 0x0039_e2a0, 0x0019_6018)?;
+        let this = r32(c, S1);
+        c.g[V0][0] = 0x10;
+        c.g[V1][0] = 0x0047_0000;
+        c.sw(this.wrapping_add(0xc), c.g[V0][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6bb8));
+        c.sw(this.wrapping_add(0x8), c.g[V1][0]);
+        c.sb(this.wrapping_add(0x44), c.g[S0][0]);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x10));
+        c.g[A0][0] = c.lw(c.g[V0][0] as u32);
+        if c.g[A0][0] == 0 {
+            c.sw(this.wrapping_add(0x48), 0u64);
+        } else {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, 0x001a_1cd0, 0x0019_6048)?;
+            c.sb(this.wrapping_add(0x15), c.g[V0][0]);
+            c.sw(this.wrapping_add(0x48), 0u64);
+        }
+        c.cycles += 6;
+        c.g[V1][0] = 3;
+        c.sw(this.wrapping_add(0x64), 0u64);
+        c.g[V0][0] = sx(this.wrapping_add(0x58));
+        c.sw(this.wrapping_add(0x68), 0u64);
+        c.sw(this.wrapping_add(0x6c), 0u64);
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[V0][0] as u32, 0u64);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0019_6068);
+            }
+        }
+        c.cycles += 48;
+        c.sw(this.wrapping_add(0x74), c.g[S2][0]);
+        c.g[A0][0] = 0x0046_0000;
+        c.g[S0][0] = c.lw(this.wrapping_add(0x10));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x25b8));
+        call_ptr(c, 0x0031_7670, 0x0019_6098)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x58));
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_8380, 0x0019_60a4)?;
+        c.g[A0][0] = 0x0046_0000;
+        c.g[S0][0] = c.lw(this.wrapping_add(0x10));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x25c8));
+        c.sw(this.wrapping_add(0x5c), c.g[V0][0]);
+        call_ptr(c, 0x0031_7670, 0x0019_60b8)?;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x58));
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_8380, 0x0019_60c4)?;
+        c.sw(this.wrapping_add(0x60), c.g[V0][0]);
+        call_ptr(c, 0x0014_dc80, 0x0019_60cc)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0x1;
+        call_ptr(c, 0x0014_dd58, 0x0019_60d8)?;
+        c.g[A1][0] = c.lb(this.wrapping_add(0x44));
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_7488, 0x0019_60e4)?;
+        c.sw(this.wrapping_add(0x70), c.g[V0][0]);
+        call_ptr(c, 0x0014_dc80, 0x0019_60ec)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xd;
+        call_ptr(c, 0x0014_dd58, 0x0019_60f8)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = c.lb(this.wrapping_add(0x44));
+        c.g[A2][0] = c.lw(this.wrapping_add(0x70));
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0015_8700, 0x0019_610c)?;
+        c.g[A1][0] = c.lb(this.wrapping_add(0x44));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.lw(this.wrapping_add(0x70));
+        c.sw(this.wrapping_add(0x78), c.g[V0][0]);
+        call_ptr(c, 0x0015_87b8, 0x0019_6120)?;
+        c.g[V0][0] = ((0u64 as i64) < (c.g[V0][0] as i64)) as u64;
+        frame.restore(c, S0, 0x30);
+        c.sw(this.wrapping_add(0x7c), c.g[V0][0]);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S2, 0x10);
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cFEStateAudioOptions::onGainFocus(cUIState* prev)` (0x196378): while
+/// the option objects are not built (+0x7c clear), each child's virtual
+/// method gets its argument (the `vtable + 0x48`, `+0xd0`, `+0x30` and
+/// `+0x58` slots), and a child at +0x74 skips the last pair. Then the base
+/// `cFEState_OnGainFocus(prev)`.
+pub fn cfe_state_audio_options_on_gain_focus(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        let this = r32(c, S1);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x7c));
+        let created = c.g[V0][0] != 0;
+        c.g[S2][0] = c.g[A1][0];
+        if created {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S1][0];
+        } else {
+            c.cycles += 82;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x68));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0x48, 0x0019_63b8)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x50));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0x48, 0x0019_63d4)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x64));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0x48, 0x0019_63f0)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x6c));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0x48, 0x0019_640c)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x58));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0x48, 0x0019_6428)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x68));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0xd0, 0x0019_6444)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x68));
+            c.g[A1][0] = 0;
+            audio_options_vcall_a2(c, 0x30, 0x0019_6460)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x50));
+            c.g[S0][0] = 0x004c_66d8;
+            c.g[A1][0] = c.g[S0][0];
+            audio_options_vcall_a2(c, 0x58, 0x0019_6484)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x6c));
+            c.g[A1][0] = 1;
+            audio_options_vcall_a2(c, 0xd0, 0x0019_64a0)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x6c));
+            c.g[A1][0] = 0;
+            audio_options_vcall_a2(c, 0x30, 0x0019_64bc)?;
+            c.g[A2][0] = c.lw(this.wrapping_add(0x58));
+            c.g[A1][0] = c.g[S0][0];
+            audio_options_vcall_a2(c, 0x58, 0x0019_64d8)?;
+            c.g[V0][0] = c.lw(this.wrapping_add(0x74));
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = c.g[S1][0];
+            } else {
+                c.cycles += 14;
+                c.g[A2][0] = c.lw(this.wrapping_add(0x64));
+                c.g[A1][0] = 1;
+                audio_options_vcall_a2(c, 0xd0, 0x0019_6500)?;
+                c.g[A2][0] = c.lw(this.wrapping_add(0x64));
+                c.g[A1][0] = 0;
+                audio_options_vcall_a2(c, 0x30, 0x0019_651c)?;
+                c.cycles += 1;
+                c.g[A0][0] = c.g[S1][0];
+            }
+        }
+        c.cycles += 8;
+        c.g[A1][0] = c.g[S2][0];
+        call_ptr(c, 0x0018_6518, 0x0019_6528)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cFEState::cFEState` variant 2 (0x1dd6a8): the base constructor with
+/// `a1 = 0` (0x39e2a0), then the cFEState vtable at `this + 8`.
+pub fn cfe_state_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x001d_d6c0)?;
+        cfe_state_ctor_tail(c, frame, 0x0046_d0d0);
+        Ok(())
+    });
+}
+
+/// `cFEState::cFEState` variant 3 (0x1dd6e0): the base constructor (0x39e2a0)
+/// then the cFEState vtable at `this + 8`.
+pub fn cfe_state_ctor_3(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e2a0, 0x001d_d6f4)?;
+        cfe_state_ctor_tail(c, frame, 0x0046_d0d0);
+        Ok(())
+    });
+}
+
+/// `cFEState::cFEState` variant 4 (0x1dd718): the base constructor (0x39e318)
+/// then the cFEState vtable at `this + 8`.
+pub fn cfe_state_ctor_4(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0039_e318, 0x001d_d72c)?;
+        cfe_state_ctor_tail(c, frame, 0x0046_d0d0);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1306,6 +2129,358 @@ pub(crate) mod tests {
             200,
             &|c, seed| {
                 oc508_setup(c, seed, 0x1dd750);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::machine_rt;
+
+    pub(crate) use crate::game::fe::feasyncfile::tests::oc1539_w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OC1539_OBJ;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::leaf_fill;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::leaf_val;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::GATE_LOADTABLE;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::MAGIC;
+    pub(crate) use crate::game::main::all_in_one_main::tests::gate_on;
+    pub(crate) use crate::game::main::all_in_one_main::tests::install_fakes;
+
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Gate word value: a test's fakes run only while their gate word holds it.
+    pub(crate) const OC1498_MAGIC: u32 = 0x1498_c0de;
+
+    pub(crate) const OC1498_FEL_GATE: u32 = DATA + 0x20_0400;
+
+    /// A gated fake of one callee's override slot. With its gate word set, it
+    /// logs the call to `target` (returning to `ra`) and returns the word at
+    /// `gate + mail` in v0; with the gate off it runs the body the slot held
+    /// before.
+    macro_rules! oc1498_gated_fake {
+        ($fake:ident, $prev:ident, $gate:expr, $mail:expr, $gen:path, $target:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32($gate) != OC1498_MAGIC {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                fakes::fake_call(c, $target);
+                c.g[V0][0] = c.bus.read32($gate + $mail) as u64;
+            }
+        };
+    }
+    pub(crate) use oc1498_gated_fake;
+
+    // FELocale_v03: callees UnloadAllTables, LoadTable, LoadFETables, LoadGameTables.
+    oc1498_gated_fake!(
+        oc1498_fel_unload,
+        OC1498_FEL_PREV_UNLOAD,
+        OC1498_FEL_GATE,
+        4,
+        ee::s02::f_00195948__generated,
+        0x0019_5948
+    );
+
+    oc1498_gated_fake!(
+        oc1498_fel_table,
+        OC1498_FEL_PREV_TABLE,
+        OC1498_FEL_GATE,
+        4,
+        ee::s02::f_001959a8__generated,
+        0x0019_59a8
+    );
+
+    oc1498_gated_fake!(
+        oc1498_fel_fe,
+        OC1498_FEL_PREV_FE,
+        OC1498_FEL_GATE,
+        4,
+        ee::s02::f_00195be0__generated,
+        0x0019_5be0
+    );
+
+    oc1498_gated_fake!(
+        oc1498_fel_game,
+        OC1498_FEL_PREV_GAME,
+        OC1498_FEL_GATE,
+        4,
+        ee::s02::f_00195de0__generated,
+        0x0019_5de0
+    );
+
+    pub(crate) fn oc1498_fel_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00195948),
+            oc1498_fel_unload,
+            &OC1498_FEL_PREV_UNLOAD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_001959A8),
+            oc1498_fel_table,
+            &OC1498_FEL_PREV_TABLE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00195BE0),
+            oc1498_fel_fe,
+            &OC1498_FEL_PREV_FE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00195DE0),
+            oc1498_fel_game,
+            &OC1498_FEL_PREV_GAME,
+        );
+    }
+
+    /// `FELocale_v03` for languages -3..=5 (every switch arm), the same and a
+    /// different current language, the flag bit set and clear, both table kinds.
+    #[test]
+    fn felocale_set_language_matches() {
+        check(
+            ee::s02::f_00195aa0__generated,
+            felocale_set_language,
+            300,
+            &|c, seed| {
+                oc1498_fel_hook();
+                let mut r = machine(c, seed, 0x19_5aa0, 2);
+                c.pc = 0x0019_5aa0;
+                c.bus.write32(OC1498_FEL_GATE, OC1498_MAGIC);
+                c.bus.write32(OC1498_FEL_GATE + 4, DATA + 0x6000);
+                let lang = (seed % 9) as i32 - 3;
+                let this = DATA + 0x1000;
+                let current = if seed % 2 == 0 {
+                    lang as u8
+                } else {
+                    r.next_u32() as u8
+                };
+                c.bus.write8(this + 1, current);
+                c.bus.write8(this + 3, (seed % 4 == 0) as u8);
+                c.bus.write8(this + 0x58, (seed % 3 == 0) as u8);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(lang as u32);
+            },
+        );
+    }
+
+    #[test]
+    fn felocale_load_game_tables_matches() {
+        install_fakes();
+        check(
+            ee::s02::f_00195de0__generated,
+            felocale_load_game_tables,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                let mut r = fakes::machine(c, seed, 0x19_5de0, 0);
+                c.bus.write32(GATE_LOADTABLE, MAGIC);
+                let this = DATA + 0x6000;
+                c.g[A0][0] = this as u64;
+                // The locale byte: each switch arm, then the out-of-range values.
+                let kind: u8 = match seed % 9 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3 => 3,
+                    4 => 4,
+                    5 => 0xff,
+                    6 => 0x80,
+                    7 => 0x7f,
+                    _ => r.next_u32() as u8,
+                };
+                c.bus.write8(this + 1, kind);
+            },
+        );
+    }
+
+    /// `FELocale_SetField1` (0x001d_cc38) against the generated body.
+    #[test]
+    fn fe_locale_set_field1_001dcc38_matches() {
+        check(
+            ee::s04::f_001dcc38__generated,
+            fe_locale_set_field1_001dcc38,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1dcc38, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `FELocale_v04_cc58` (0x001d_cc58) against the generated body.
+    #[test]
+    fn fe_locale_v04_cc58_001dcc58_matches() {
+        check(
+            ee::s04::f_001dcc58__generated,
+            fe_locale_v04_cc58_001dcc58,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1dcc58, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// The gated fake of `FELocale_LoadTable` (0x1959a8): logs the call
+    /// through the fake machinery when the gate word is set.
+    pub(crate) const LOADTABLE_GATE: u32 = DATA + 0x5_1600;
+
+    pub(crate) const LOADTABLE_MAGIC: u32 = 0x1539_7ab1;
+
+    pub(crate) static LOADTABLE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn loadtable_fake(c: &mut Cpu) {
+        if c.bus.read32(LOADTABLE_GATE) != LOADTABLE_MAGIC {
+            return fakes::fall_back(c, &LOADTABLE_PREV, ee::s02::f_001959a8__generated);
+        }
+        fakes::fake_call(c, 0x0019_59a8);
+    }
+
+    #[test]
+    fn fe_locale_load_fe_tables_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_001959A8),
+            loadtable_fake,
+            &LOADTABLE_PREV,
+        );
+        check(
+            ssx3_ee::s02::f_00195be0__generated,
+            fe_locale_load_fe_tables,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1539_0195, 0);
+                c.bus.write32(LOADTABLE_GATE, LOADTABLE_MAGIC);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                // Language byte: 0..3 select a table, the rest take the default.
+                let lang = [0u8, 1, 2, 3, 4, 0xff][(seed % 6) as usize];
+                c.bus.write8(DATA + 0x1001, lang);
+            },
+        );
+    }
+
+    /// The vtable the child objects point at.
+    pub(crate) const OC1539_VT: u32 = DATA + 0x2a_0000;
+
+    /// The `prev` state handed to the gain-focus body.
+    pub(crate) const OC1539_PREV: u32 = DATA + 0x2c_0000;
+
+    /// Vtable slots: delta 0 at `vt+off` and the fake call at `vt+off+4`.
+    pub(crate) fn oc1539_vtable(c: &mut Cpu, vt: u32, slots: &[u32]) {
+        for &off in slots {
+            c.bus.write16(vt + off, 0);
+            c.bus.write32(vt + off + 4, FAKE);
+        }
+    }
+
+    #[test]
+    fn cfe_state_audio_options_ctor_matches() {
+        check(
+            ee::s02::f_00195ff0__generated,
+            cfe_state_audio_options_ctor,
+            120,
+            &|c, seed| {
+                machine_rt(c, seed, 0x0019_5ff0, 6);
+                let this = OC1539_OBJ;
+                let player = this + 0x2000;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (this + 0x1000) as u64;
+                c.g[A2][0] = ((seed as u64) << 40) | ((seed as u64 * 37) % 256);
+                c.g[A3][0] = (seed % 2) as u64;
+                oc1539_w(c, this + 0x10, player);
+                oc1539_w(c, player, if seed % 3 == 0 { 0 } else { this + 0x3000 });
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_audio_options_on_gain_focus_matches() {
+        check(
+            ee::s02::f_00196378__generated,
+            cfe_state_audio_options_on_gain_focus,
+            160,
+            &|c, seed| {
+                machine_rt(c, seed, 0x0019_6378, 4);
+                let this = OC1539_OBJ;
+                let child = this + 0x2000;
+                oc1539_vtable(c, OC1539_VT, &[0x30, 0x48, 0x58, 0xd0]);
+                oc1539_w(c, child + 8, OC1539_VT);
+                for off in [0x50u32, 0x58, 0x64, 0x68, 0x6c] {
+                    oc1539_w(c, this + off, child);
+                }
+                oc1539_w(c, this + 0x74, if seed % 3 == 0 { 0 } else { 1 });
+                oc1539_w(c, this + 0x7c, if seed % 4 == 0 { 0 } else { 1 });
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = OC1539_PREV as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_ctor_2_matches() {
+        install_fakes();
+        check(
+            ee::s04::f_001dd6a8__generated,
+            cfe_state_ctor_2,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1dd6a8, 0);
+                gate_on(c);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x40 * (seed % 3));
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_ctor_3_matches() {
+        install_fakes();
+        check(
+            ee::s04::f_001dd6e0__generated,
+            cfe_state_ctor_3,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1dd6e0, 0);
+                gate_on(c);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x40 * (seed % 3));
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_ctor_4_matches() {
+        install_fakes();
+        check(
+            ee::s04::f_001dd718__generated,
+            cfe_state_ctor_4,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1dd718, 0);
+                gate_on(c);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x40 * (seed % 3));
+            },
+        );
+    }
+
+    /// `FELocale_LoadTable` (0x1959a8): negative language index (early
+    /// return), an existing table entry, and the allocating path.
+    #[test]
+    fn fe_locale_load_table_matches() {
+        check(
+            ee::s02::f_001959a8__generated,
+            fe_locale_load_table,
+            80,
+            &|c, seed| {
+                let _ = machine_rt(c, seed, 0x0019_59a8, 0);
+                let this = DATA + 0x100;
+                let table = DATA + 0x400;
+                // 0x80 is a negative language index (the early return).
+                let lang: u32 = [0u32, 1, 2, 3, 0x80][seed as usize % 5];
+                c.bus.write32(this + 8, table);
+                c.bus.write32(
+                    table + 4 * lang,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x2000 },
+                );
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = lang as u64;
             },
         );
     }

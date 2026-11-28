@@ -159,6 +159,27 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// The ports that held the slots before this layer took them over: the
+/// paths it does not handle (host0:, unresolvable names) run those.
+static PREVIOUS: Mutex<Vec<(u32, fn(&mut Cpu))>> = Mutex::new(Vec::new());
+
+fn remember(addr: u32) {
+    if let Some(f) = ssx3_ee::get_override(addr) {
+        PREVIOUS.lock().unwrap().push((addr, f));
+    }
+}
+
+fn previous(c: &mut Cpu, addr: u32) {
+    let f = PREVIOUS
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(a, _)| *a == addr)
+        .map(|(_, f)| *f)
+        .expect("native files: no port behind the slot");
+    f(c)
+}
+
 /// Install the native file layer if `SSX3_NATIVE_FILES` is set, and the read
 /// log if `SSX3_FILE_LOG` is. Call after [`crate::install`]. Returns whether
 /// native files are on.
@@ -167,6 +188,7 @@ pub fn install() -> bool {
         match File::create(&p) {
             Ok(f) => {
                 *LOG.lock().unwrap() = Some(f);
+                remember(COMPLETE_REQUEST);
                 assert!(ssx3_ee::set_override(
                     COMPLETE_REQUEST,
                     complete_request_logged
@@ -242,6 +264,7 @@ pub fn install() -> bool {
         (PLATFORM_GET_SIZE, platform_get_size),
         (HOST_READ_SERVICE, host_read_service),
     ] {
+        remember(addr);
         assert!(
             ssx3_ee::set_override(addr, f),
             "{addr:#x}: no override slot (overrides.txt)"
@@ -429,7 +452,7 @@ pub fn platform_open(c: &mut Cpu) {
     let resolved = resolve_path(c, &path);
     let Some((1, full)) = resolved else {
         // host0: (and unresolvable paths) as before.
-        return ssx3_ee::s14::f_003e3208__generated(c);
+        return previous(c, PLATFORM_OPEN);
     };
     let name = cd_name(&full);
     let mut g = STATE.lock().unwrap();
@@ -534,7 +557,7 @@ pub fn host_read_service(c: &mut Cpu) {
             return;
         }
     }
-    ssx3_ee::s14::f_003e33b0__generated(c)
+    previous(c, HOST_READ_SERVICE)
 }
 
 /// Copy `size` bytes at `off` of a native file into guest memory.
@@ -564,7 +587,7 @@ fn read_into(c: &mut Cpu, handle: u32, buf: u32, off: u32, size: u32) -> bool {
 /// `void EAFile_PlatformClose(u32 handle)`.
 pub fn platform_close(c: &mut Cpu) {
     let Some(idx) = native_idx(abi::arg(c, 0)) else {
-        return ssx3_ee::s14::f_003e32f8__generated(c);
+        return previous(c, PLATFORM_CLOSE);
     };
     if let Some(slot) = STATE.lock().unwrap().as_mut().unwrap().files.get_mut(idx) {
         *slot = None;
@@ -576,7 +599,7 @@ pub fn platform_close(c: &mut Cpu) {
 /// `int EAFile_PlatformGetSize(u32 handle)`.
 pub fn platform_get_size(c: &mut Cpu) {
     let Some(idx) = native_idx(abi::arg(c, 0)) else {
-        return ssx3_ee::s14::f_003e34e8__generated(c);
+        return previous(c, PLATFORM_GET_SIZE);
     };
     let size = STATE
         .lock()
@@ -613,7 +636,7 @@ pub fn complete_request_logged(c: &mut Cpu) {
             }
         }
     }
-    ssx3_ee::s14::f_003de420__generated(c)
+    previous(c, COMPLETE_REQUEST)
 }
 
 #[cfg(test)]

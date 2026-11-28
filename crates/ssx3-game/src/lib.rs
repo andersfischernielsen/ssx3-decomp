@@ -239,6 +239,27 @@ pub fn install() -> usize {
 #[cfg(test)]
 mod tests {
     #[test]
+    /// No function of the EE code is left to its generated body: every one that
+    /// has an override slot (`generated/ee-symbols.tsv`) has a registered
+    /// replacement in `overrides()`. The game runs on the hand-written code only.
+    fn every_function_has_a_port() {
+        let installed: std::collections::HashSet<u32> =
+            super::overrides().into_iter().map(|(a, _, _)| a).collect();
+        let mut missing = Vec::new();
+        for line in include_str!("../../../generated/ee-symbols.tsv").lines() {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if line.starts_with('#') || cols.len() < 5 || !cols[3].contains('o') {
+                continue;
+            }
+            let addr = u32::from_str_radix(cols[1], 16).unwrap();
+            if !installed.contains(&addr) {
+                missing.push(format!("{addr:#x} {}", cols[4]));
+            }
+        }
+        assert!(missing.is_empty(), "functions without a port: {missing:?}");
+    }
+
+    #[test]
     /// Every enabled replacement is listed in overrides.txt (the file may list
     /// more: packages not enabled in this build).
     fn overrides_txt_matches_table() {

@@ -15,6 +15,7 @@ use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::bx::ps2main::gp_below;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -183,6 +184,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_fc20, dlheap_mallinfo, "DLHeap_Mallinfo"),
     (0x0031_fe30, dlheap_mallopt, "DLHeap_Mallopt"),
     (0x0032_0038, dlheap_malloc_wrapper, "DLHeap_Malloc_Wrapper"),
+    (0x0031_d618, ccsi_cubic_spline_dtor, "cCSICubicSpline_dtor"),
+    (
+        0x0031_d738,
+        c_csi_cubic_spline_init_with_start_slope,
+        "cCSICubicSpline_InitWithStartSlope",
+    ),
+    (
+        0x0031_e0e0,
+        c_csi_cubic_spline_sample_range,
+        "cCSICubicSpline_SampleRange",
+    ),
+    (
+        0x0032_0550,
+        eacore_static_init_destroy,
+        "EACore_StaticInitDestroy",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -7218,7 +7235,7 @@ pub(crate) const MALLOPT_N_MMAPS_MAX_FIELD: u32 = 0x354;
 pub fn dlheap_mallopt(c: &mut Cpu) {
     use callee::*;
     if c.pc != 0x0031_fe30 {
-        return ee::s10::f_0031fe30__generated(c);
+        return dlheap_mallopt_resume(c);
     }
     guest(c, |c| {
         c.cycles += 14;
@@ -7318,6 +7335,213 @@ pub fn dlheap_mallopt(c: &mut Cpu) {
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
+    });
+}
+
+/// Native resume of `dlheap_mallopt` (converted from the `entries` body): any entry
+/// other than 0x0031fe30, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn dlheap_mallopt_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0031fe30 => {
+                    c.cycles += 14;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[A1][0];
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    c.g[S1][0] = c.g[A2][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S2][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[RA][0] = sx(0x0031fe58);
+                    c.g[A1][0] = c.g[S2][0];
+                    Callee {
+                        addr: 0x0031eee8,
+                        f: ee::s10::DLHeap_Consolidate,
+                    }
+                    .call(c, 0x0031fe58)?;
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x490000;
+                    if t {
+                        pc = 0x0031ff04;
+                        continue;
+                    }
+                    pc = 0x0031fe68;
+                    continue;
+                }
+                0x0031fe68 => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x24b0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                0x0031fe80 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[S1][0] < 0x51u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031fe8c;
+                    continue;
+                }
+                0x0031fe8c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                    let t = c.g[S1][0] == 0u64;
+                    c.g[A2][0] = c.g[V0][0] & 0x3;
+                    if t {
+                        pc = 0x0031febc;
+                        continue;
+                    }
+                    pc = 0x0031fe98;
+                    continue;
+                }
+                0x0031fe98 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x13));
+                    c.g[V0][0] = (c.g[V1][0] < 0x10u64) as u64;
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V0][0] = c.g[A2][0] | 0x10;
+                        pc = 0x0031fec0;
+                        continue;
+                    }
+                    pc = 0x0031fea8;
+                    continue;
+                }
+                0x0031fea8 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[V0][0] = c.g[V0][0] | 0xfff0;
+                    c.g[V0][0] = c.g[V1][0] & c.g[V0][0];
+                    let t = true;
+                    c.g[V0][0] = c.g[V0][0] | c.g[A2][0];
+                    if t {
+                        pc = 0x0031fec0;
+                        continue;
+                    }
+                    pc = 0x0031febc;
+                    continue;
+                }
+                0x0031febc => {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[A2][0] | 0x8;
+                    pc = 0x0031fec0;
+                    continue;
+                }
+                0x0031fec0 => {
+                    c.cycles += 3;
+                    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031fecc;
+                    continue;
+                }
+                0x0031fecc => {
+                    c.cycles += 3;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x344), c.g[S1][0]);
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031fed8;
+                    continue;
+                }
+                0x0031fed8 => {
+                    c.cycles += 3;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x348), c.g[S1][0]);
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031fee4;
+                    continue;
+                }
+                0x0031fee4 => {
+                    c.cycles += 3;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x34c), c.g[S1][0]);
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031fef0;
+                    continue;
+                }
+                0x0031fef0 => {
+                    c.cycles += 2;
+                    let t = c.g[S1][0] != 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031fef8;
+                    continue;
+                }
+                0x0031fef8 => {
+                    c.cycles += 3;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x354), 0u64);
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        pc = 0x0031ff08;
+                        continue;
+                    }
+                    pc = 0x0031ff04;
+                    continue;
+                }
+                0x0031ff04 => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                    pc = 0x0031ff08;
+                    continue;
+                }
+                0x0031ff08 => {
+                    c.cycles += 6;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0031fe30, 0x0031ff20);
+                    return Ok(());
+                }
+            }
+        }
     });
 }
 
@@ -7655,7 +7879,7 @@ pub(crate) fn dlheap_realloc_copy_word(c: &mut Cpu, via: usize, off: u32) {
 /// generated body, which picks the loop up from the registers.
 pub fn dlheap_ialloc(c: &mut Cpu) {
     if c.pc != 0x0031_f858 {
-        return ee::s10::f_0031f858__generated(c);
+        return dlheap_ialloc_resume(c);
     }
     use callee::*;
     guest(c, |c| {
@@ -7899,6 +8123,464 @@ pub fn dlheap_ialloc(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// Native resume of `dlheap_ialloc` (converted from the `generated` body): any entry
+/// other than 0x0031f858, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn dlheap_ialloc_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0031f858 => {
+                    c.cycles += 19;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xb0));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.g[S0][0] = c.g[T0][0];
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[S2][0] = c.g[A0][0];
+                    c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S3][0] = c.g[A1][0];
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
+                    c.g[S1][0] = c.lw(c.g[S2][0] as u32);
+                    c.sw(c.g[SP][0] as u32, c.g[A3][0]);
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[FP][0] = c.g[A2][0];
+                    if t {
+                        pc = 0x0031f8ac;
+                        continue;
+                    }
+                    pc = 0x0031f8a4;
+                    continue;
+                }
+                0x0031f8a4 => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x0031f8ac);
+                    c.g[A1][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0031eee8,
+                        f: ee::s10::DLHeap_Consolidate,
+                    }
+                    .call(c, 0x0031f8ac)?;
+                    pc = 0x0031f8ac;
+                    continue;
+                }
+                0x0031f8ac => {
+                    c.cycles += 2;
+                    let t = c.g[S0][0] == 0u64;
+
+                    if t {
+                        pc = 0x0031f8cc;
+                        continue;
+                    }
+                    pc = 0x0031f8b4;
+                    continue;
+                }
+                0x0031f8b4 => {
+                    c.cycles += 2;
+                    let t = c.g[S3][0] != 0u64;
+                    c.g[S5][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0031f8c4;
+                        continue;
+                    }
+                    pc = 0x0031f8bc;
+                    continue;
+                }
+                0x0031f8bc => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x0031fa74;
+                        continue;
+                    }
+                    pc = 0x0031f8c4;
+                    continue;
+                }
+                0x0031f8c4 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S7][0] = 0u64;
+                    if t {
+                        pc = 0x0031f90c;
+                        continue;
+                    }
+                    pc = 0x0031f8cc;
+                    continue;
+                }
+                0x0031f8cc => {
+                    c.cycles += 2;
+                    let t = c.g[S3][0] != 0u64;
+                    c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
+                    if t {
+                        pc = 0x0031f8e8;
+                        continue;
+                    }
+                    pc = 0x0031f8d4;
+                    continue;
+                }
+                0x0031f8d4 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[RA][0] = sx(0x0031f8e0);
+                    c.g[A1][0] = 0u64;
+                    Callee {
+                        addr: 0x0031e818,
+                        f: ee::s10::DLHeap_Malloc,
+                    }
+                    .call(c, 0x0031f8e0)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                    if t {
+                        pc = 0x0031fa78;
+                        continue;
+                    }
+                    pc = 0x0031f8e8;
+                    continue;
+                }
+                0x0031f8e8 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x13));
+                    c.g[V0][0] = (c.g[V1][0] < 0x10u64) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S5][0] = 0u64;
+                    if t {
+                        pc = 0x0031f908;
+                        continue;
+                    }
+                    pc = 0x0031f8f8;
+                    continue;
+                }
+                0x0031f8f8 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[V0][0] = c.g[V0][0] | 0xfff0;
+                    let t = true;
+                    c.g[S7][0] = c.g[V1][0] & c.g[V0][0];
+                    if t {
+                        pc = 0x0031f90c;
+                        continue;
+                    }
+                    pc = 0x0031f908;
+                    continue;
+                }
+                0x0031f908 => {
+                    c.cycles += 1;
+                    c.g[S7][0] = 0x10;
+                    pc = 0x0031f90c;
+                    continue;
+                }
+                0x0031f90c => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[V0][0] = c.g[V1][0] & 0x1;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S4][0] = 0u64;
+                    if t {
+                        pc = 0x0031f948;
+                        continue;
+                    }
+                    pc = 0x0031f91c;
+                    continue;
+                }
+                0x0031f91c => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(c.g[FP][0] as u32);
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13));
+                    c.g[V1][0] = (c.g[A0][0] < 0x10u64) as u64;
+                    let t = c.g[V1][0] != 0u64;
+                    c.g[S4][0] = 0x10;
+                    if t {
+                        pc = 0x0031f93c;
+                        continue;
+                    }
+                    pc = 0x0031f930;
+                    continue;
+                }
+                0x0031f930 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[V0][0] = c.g[V0][0] | 0xfff0;
+                    c.g[S4][0] = c.g[A0][0] & c.g[V0][0];
+                    pc = 0x0031f93c;
+                    continue;
+                }
+                0x0031f93c => {
+                    c.cycles += 3;
+                    c.mult(0, 16, 19, 20);
+                    let t = true;
+                    c.g[S6][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x354));
+                    if t {
+                        pc = 0x0031f990;
+                        continue;
+                    }
+                    pc = 0x0031f948;
+                    continue;
+                }
+                0x0031f948 => {
+                    c.cycles += 4;
+                    c.g[S0][0] = 0u64;
+                    c.g[A2][0] = 0u64;
+                    let t = c.g[S3][0] == 0u64;
+                    c.g[S6][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x354));
+                    if t {
+                        pc = 0x0031f990;
+                        continue;
+                    }
+                    pc = 0x0031f958;
+                    continue;
+                }
+                0x0031f958 => {
+                    c.cycles += 4;
+                    c.g[A1][0] = 0xffffffffffff0000;
+                    c.g[A0][0] = c.g[FP][0];
+                    c.g[A1][0] = c.g[A1][0] | 0xfff0;
+                    pc = 0x0031f968;
+                    continue;
+                }
+                0x0031f968 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13));
+                    c.g[V1][0] = (c.g[V0][0] < 0x10u64) as u64;
+
+                    if c.g[V1][0] != 0u64 {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                        pc = 0x0031f984;
+                        continue;
+                    }
+                    pc = 0x0031f97c;
+                    continue;
+                }
+                0x0031f97c => {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    pc = 0x0031f984;
+                    continue;
+                }
+                0x0031f984 => {
+                    c.cycles += 3;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    let t = c.g[A2][0] != c.g[S3][0];
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+                    if t {
+                        if back_edge_unwinds(c, 0x0031f968) {
+                            return Ok(());
+                        }
+                        pc = 0x0031f968;
+                        continue;
+                    }
+                    pc = 0x0031f990;
+                    continue;
+                }
+                0x0031f990 => {
+                    c.cycles += 9;
+                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x354), 0u64);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf));
+                    c.g[RA][0] = sx(0x0031f9a4);
+                    c.g[A0][0] = c.g[S2][0];
+                    Callee {
+                        addr: 0x0031e818,
+                        f: ee::s10::DLHeap_Malloc,
+                    }
+                    .call(c, 0x0031f9a4)?;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x354), c.g[S6][0]);
+                    let t = c.g[A1][0] == 0u64;
+                    c.g[V0][0] = 0u64;
+                    if t {
+                        pc = 0x0031fa74;
+                        continue;
+                    }
+                    pc = 0x0031f9b4;
+                    continue;
+                }
+                0x0031f9b4 => {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_sub(0x4));
+                    c.g[V1][0] = 0xffffffffffff0000;
+                    c.g[A2][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[V1][0] = c.g[V1][0] | 0xfffc;
+                    c.g[S2][0] = c.g[V0][0] & c.g[V1][0];
+                    c.g[A0][0] = c.g[A2][0] & 0x2;
+                    let t = c.g[A0][0] == 0u64;
+                    c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x8));
+                    if t {
+                        pc = 0x0031f9e8;
+                        continue;
+                    }
+                    pc = 0x0031f9d4;
+                    continue;
+                }
+                0x0031f9d4 => {
+                    c.cycles += 5;
+                    c.g[A2][0] = sx((c.g[S7][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = c.g[A1][0];
+                    c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                    c.g[RA][0] = sx(0x0031f9e8);
+                    c.g[A1][0] = 0u64;
+                    call_ptr(c, 0x003e6448, 0x0031f9e8)?;
+                    pc = 0x0031f9e8;
+                    continue;
+                }
+                0x0031f9e8 => {
+                    c.cycles += 2;
+                    let t = c.g[S5][0] != 0u64;
+                    c.g[A2][0] = 0u64;
+                    if t {
+                        pc = 0x0031fa08;
+                        continue;
+                    }
+                    pc = 0x0031f9f0;
+                    continue;
+                }
+                0x0031f9f0 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = c.g[V0][0] | 0x1;
+                    c.g[S2][0] = c.g[S0][0];
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[S5][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8));
+                    pc = 0x0031fa08;
+                    continue;
+                }
+                0x0031fa08 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
+                    if t {
+                        pc = 0x0031fa14;
+                        continue;
+                    }
+                    pc = 0x0031fa10;
+                    continue;
+                }
+                0x0031fa10 => {
+                    c.cycles += 1;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    pc = 0x0031fa14;
+                    continue;
+                }
+                0x0031fa14 => {
+                    c.cycles += 5;
+                    c.g[A0][0] = sx((c.g[A2][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+                    let t = c.g[A2][0] == c.g[A1][0];
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+                    if t {
+                        pc = 0x0031fa68;
+                        continue;
+                    }
+                    pc = 0x0031fa28;
+                    continue;
+                }
+                0x0031fa28 => {
+                    c.cycles += 2;
+                    let t = c.g[S4][0] != 0u64;
+                    c.g[V1][0] = c.g[S4][0];
+                    if t {
+                        pc = 0x0031fa54;
+                        continue;
+                    }
+                    pc = 0x0031fa30;
+                    continue;
+                }
+                0x0031fa30 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x13));
+                    c.g[V0][0] = (c.g[V1][0] < 0x10u64) as u64;
+
+                    if c.g[V0][0] != 0u64 {
+                        c.g[V1][0] = 0x10;
+                        pc = 0x0031fa54;
+                        continue;
+                    }
+                    pc = 0x0031fa48;
+                    continue;
+                }
+                0x0031fa48 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[V0][0] = c.g[V0][0] | 0xfff0;
+                    c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+                    pc = 0x0031fa54;
+                    continue;
+                }
+                0x0031fa54 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.g[V1][0] | 0x1;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    let t = true;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    if t {
+                        if back_edge_unwinds(c, 0x0031fa10) {
+                            return Ok(());
+                        }
+                        pc = 0x0031fa10;
+                        continue;
+                    }
+                    pc = 0x0031fa68;
+                    continue;
+                }
+                0x0031fa68 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.g[S2][0] | 0x1;
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                    c.g[V0][0] = c.g[S5][0];
+                    pc = 0x0031fa74;
+                    continue;
+                }
+                0x0031fa74 => {
+                    c.cycles += 1;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                    pc = 0x0031fa78;
+                    continue;
+                }
+                0x0031fa78 => {
+                    c.cycles += 11;
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb0));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0031f858, 0x0031faa4);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 /// `void *DLHeap_MemalignOffset(DLHeap *heap, unsigned align, unsigned
@@ -8663,6 +9345,469 @@ pub fn dlheap_free_wrapper(c: &mut Cpu) {
 pub fn dlheap_malloc_wrapper(c: &mut Cpu) {
     use callee::*;
     tail_wrapper(c, None, Target::Direct(DLHEAP_MALLOC), 0x0032_0048);
+}
+
+/// `cCSICubicSpline` destructor (0x31d618): frees the spline's storage, and
+/// when bit 0 of `flags` is set also deletes the object itself.
+pub fn ccsi_cubic_spline_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        Callee {
+            addr: 0x0031_d790,
+            f: ee::s10::f_0031d790,
+        }
+        .call(c, 0x0031_d634)?;
+        c.g[S0][0] = c.g[S0][0] & 0x1;
+        let delete_object = c.g[S0][0] != 0;
+        frame.restore(c, S0, 0x20);
+        if delete_object {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0031_7e50,
+                f: ee::s10::f_00317e50,
+            }
+            .call(c, 0x0031_d648)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void cCSICubicSpline_InitWithStartSlope(float f12, float f13, spline* s)`
+/// (0x31d738, `a0` is the spline): allocates the spline data
+/// (`cCSICubicSpline_Alloc`), sets bit 0 of the spline's first word, stores
+/// `f12` at data `+0x10` and `f13` at spline `+4`.
+pub fn c_csi_cubic_spline_init_with_start_slope(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        c.mov_s(21, 13);
+        frame.save_ra(c, 0);
+        c.mov_s(20, 12);
+        Callee {
+            addr: 0x0031_d660,
+            f: ee::s10::f_0031d660,
+        }
+        .call(c, 0x0031_d75c)?;
+        let spline = Addr(c.g[S0][0] as u32);
+        c.g[V0][0] = spline.lw(c);
+        c.g[V1][0] = spline.off(0x8).lw(c);
+        c.g[V0][0] |= 1;
+        frame.restore_ra(c, 0);
+        let flags = c.g[V0][0];
+        spline.sw(c, flags);
+        let data = c.g[V1][0];
+        c.swc1(20, (data as u32).wrapping_add(0x10));
+        c.swc1(21, spline.off(0x4).0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 0x00320550 EACore_StaticInitDestroy
+
+/// `void EACore_StaticInitDestroy(int init, int priority)` (0x320550, the
+/// compiler's `__sti__all_in_one_bx_cpp`): the translation unit's static
+/// initialisation. Only for priority 0xffff: with `init` set, construct the
+/// block manager (`BlockMan_ctor` at 0x4ff000), the two random generators
+/// (`Rand_GetDefaultState`), the constant colour, 2D/3D/4D vector, matrix,
+/// quaternion and pose globals (the flat float stores below, in the
+/// generated order with every scratch register it leaves) and the dynamic
+/// memory manager (`EACoreGlobal_ctor`); with `init` clear, destroy it
+/// (`EACoreGlobal_dtor(&the manager, 2)`). Any other priority does nothing.
+pub fn eacore_static_init_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0xffff;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        let init_priority = c.g[A1][0] == c.g[V0][0];
+        frame.save_ra(c, 0);
+        if init_priority {
+            c.cycles += 2;
+            if c.g[A0][0] != 0 {
+                // Construct: the block manager and the two random states.
+                c.cycles += 214;
+                c.g[A0][0] = 0x0050_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1000));
+                OC1567_BLOCK_MAN_CTOR.call(c, 0x0032_0598)?;
+                c.g[A0][0] = 0x0050_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xfe8));
+                OC1567_RAND_DEFAULT_STATE.call(c, 0x0032_05a4)?;
+                c.g[A0][0] = 0x0050_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xfd0));
+                OC1567_RAND_DEFAULT_STATE.call(c, 0x0032_05b0)?;
+                // The constant globals (flat stores of 0, 0.25, 0.5, 1).
+                c.g[T5][0] = 0x500000;
+                c.g[AT][0] = 0x3e800000;
+                c.mtc1(1, 2);
+                c.g[T1][0] = c.g[T5][0];
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 1);
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0xf38));
+                c.mtc1(0, 0);
+                c.swc1(2, (c.g[T1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = 0x500000;
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_sub(0xfb8));
+                c.g[S6][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xfb8));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = 0x500000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xfa8));
+                c.g[A0][0] = 0x500000;
+                c.g[FP][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xfa8));
+                c.g[V0][0] = c.g[A0][0];
+                c.swc1(1, (c.g[FP][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = 0x500000;
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_sub(0xf98));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xf98));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.g[A2][0];
+                c.swc1(1, (c.g[A2][0] as u32).wrapping_sub(0xf88));
+                c.g[A3][0] = 0x500000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xf88));
+                c.g[A2][0] = c.g[A3][0];
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xf78));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_sub(0xf78));
+                c.g[T0][0] = 0x500000;
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_sub(0xf68));
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 3);
+                c.g[T2][0] = 0x500000;
+                c.swc1(1, (c.g[T0][0] as u32).wrapping_sub(0xf68));
+                c.g[V0][0] = c.g[T2][0];
+                c.swc1(3, (c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[T3][0] = 0x500000;
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xf58));
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_sub(0xf58));
+                c.g[A0][0] = c.g[T3][0];
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xf48));
+                c.swc1(1, (c.g[T3][0] as u32).wrapping_sub(0xf48));
+                c.g[V0][0] = 0x500000;
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x8));
+                c.g[S3][0] = 0x4a0000;
+                c.g[T7][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xf08));
+                c.g[S4][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2868));
+                c.g[A0][0] = 0x500000;
+                c.g[V0][0] = c.g[S3][0];
+                c.swc1(2, (c.g[T5][0] as u32).wrapping_sub(0xf38));
+                c.g[S5][0] = 0x4a0000;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0xda4), c.g[S4][0]);
+                c.g[T6][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xef8));
+                c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x5960));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5960));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[S5][0];
+                c.swc1(1, (c.g[S5][0] as u32).wrapping_add(0x5968));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5968));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                c.g[S1][0] = 0x500000;
+                c.g[A0][0] = 0x4a0000;
+                c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_sub(0xf28));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x5970));
+                c.g[T4][0] = 0x500000;
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x500000;
+                c.g[S6][0] = 0x500000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf98));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xf88));
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[S0][0] = sx((c.g[T4][0] as u32).wrapping_sub(0xf18));
+                c.g[S6][0] = 0x500000;
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf78));
+                c.g[T1][0] = 0x500000;
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[A2][0] = sx((c.g[T1][0] as u32).wrapping_sub(0xee0));
+                c.g[S6][0] = 0x500000;
+                c.g[S7][0] = 0x500000;
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf58));
+                c.g[A3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0xec0));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[T8][0] = 0x500000;
+                c.g[S6][0] = 0x500000;
+                c.g[T0][0] = sx((c.g[T8][0] as u32).wrapping_sub(0xeb0));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf48));
+                c.g[T9][0] = 0x500000;
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[T1][0] = sx((c.g[T9][0] as u32).wrapping_sub(0xea0));
+                c.g[S6][0] = 0x500000;
+                c.g[T5][0] = 0x500000;
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf38));
+                c.g[V1][0] = sx((c.g[T5][0] as u32).wrapping_sub(0xe90));
+                c.swc1(2, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[S3][0] = 0x500000;
+                c.g[S6][0] = 0x4a0000;
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0xe60));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x5970));
+                c.g[S4][0] = 0x500000;
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0xe20));
+                c.swc1(0, (c.g[S1][0] as u32).wrapping_sub(0xf28));
+                c.g[S6][0] = 0x500000;
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                c.g[S5][0] = 0x500000;
+                c.swc1(1, (c.g[T4][0] as u32).wrapping_sub(0xf18));
+                c.g[T2][0] = sx((c.g[S5][0] as u32).wrapping_sub(0xde0));
+                c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[T4][0] = 0x500000;
+                c.swc1(0, (c.g[T4][0] as u32).wrapping_sub(0xf08));
+                c.g[T3][0] = 0x500000;
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_sub(0xef8));
+                c.g[T4][0] = 0x500000;
+                c.swc1(0, (c.g[T7][0] as u32).wrapping_add(0x8));
+                c.g[S6][0] = 0x500000;
+                c.swc1(1, (c.g[T6][0] as u32).wrapping_add(0x8));
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0xdd0));
+                c.swc1(0, (c.g[T4][0] as u32).wrapping_sub(0xee0));
+                c.g[A0][0] = 0x500000;
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xdb0));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_sub(0xed0));
+                c.swc1(1, (c.g[S7][0] as u32).wrapping_sub(0xec0));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[T8][0] as u32).wrapping_sub(0xeb0));
+                c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[T9][0] as u32).wrapping_sub(0xea0));
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[T5][0] as u32).wrapping_sub(0xe90));
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[T7][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[T6][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = c.g[S6][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xed0));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.swc1(1, (c.g[A2][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.swc1(1, (c.g[T0][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[T1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x20));
+                c.swc1(1, (c.g[S3][0] as u32).wrapping_sub(0xe60));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x3c));
+                c.swc1(0, (c.g[S4][0] as u32).wrapping_sub(0xe20));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x10));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1c));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x10));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x20));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x30));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x24));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x34));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x18));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x28));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x38));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1c));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2c));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x10));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x20));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x30));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x24));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x34));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x18));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x28));
+                c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[S5][0] as u32).wrapping_sub(0xde0));
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x4));
+                c.lq(3, c.g[A2][0] as u32);
+                c.lq(2, c.g[T2][0] as u32);
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x3c));
+                c.sq(2, (c.g[T3][0] as u32).wrapping_add(0x10));
+                c.sq(3, c.g[T3][0] as u32);
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x38));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x1c));
+                // The jal's delay slot, then `EACoreGlobal_ctor(&manager)`.
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x2c));
+                OC1567_CORE_GLOBAL_CTOR.call(c, 0x0032_08dc)?;
+                frame.restore(c, S0, 0x90);
+                oc1567_static_init_epilogue(c, frame);
+                return Ok(());
+            }
+            c.g[A0][0] = 0x0050_0000;
+            // Destroy the dynamic memory manager.
+            c.cycles += 3;
+            c.g[A1][0] = 2;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xdb0));
+            OC1567_CORE_GLOBAL_DTOR.call(c, 0x0032_08f0)?;
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x90);
+        oc1567_static_init_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+/// The common exit of [`eacore_static_init_destroy`]: restore s1..s7, fp and
+/// ra, release the frame.
+pub(crate) fn oc1567_static_init_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 11;
+    frame.restore(c, S1, 0x80);
+    frame.restore(c, S2, 0x70);
+    frame.restore(c, S3, 0x60);
+    frame.restore(c, S4, 0x50);
+    frame.restore(c, S5, 0x40);
+    frame.restore(c, S6, 0x30);
+    frame.restore(c, S7, 0x20);
+    frame.restore(c, FP, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+/// `BlockMan_ctor` (0x316a00).
+pub(crate) const OC1567_BLOCK_MAN_CTOR: Callee = Callee {
+    addr: 0x0031_6a00,
+    f: ee::s10::BlockMan_ctor,
+};
+
+/// `Rand_GetDefaultState` (0x317930).
+pub(crate) const OC1567_RAND_DEFAULT_STATE: Callee = Callee {
+    addr: 0x0031_7930,
+    f: ee::s10::Rand_GetDefaultState,
+};
+
+/// `EACoreGlobal_ctor` (0x31ff20).
+pub(crate) const OC1567_CORE_GLOBAL_CTOR: Callee = Callee {
+    addr: 0x0031_ff20,
+    f: ee::s10::EACoreGlobal_ctor,
+};
+
+/// `EACoreGlobal_dtor` (0x31ff38).
+pub(crate) const OC1567_CORE_GLOBAL_DTOR: Callee = Callee {
+    addr: 0x0031_ff38,
+    f: ee::s10::EACoreGlobal_dtor,
+};
+
+// ---------------------------------------------------------------------------
+// 0x0031e0e0 cCSICubicSpline_SampleRange
+// ---------------------------------------------------------------------------
+
+/// `void cCSICubicSpline_SampleRange(Spline* s, float t0, ...)` (0x31e0e0):
+/// steps the sample time from the spline's first knot up to its last one
+/// (`t += step`, `step = (last - first) * gp-0x2e40`), evaluating the spline
+/// with `cCSICubicSpline_Evaluate` at each sample. The first loop finds the
+/// first sample at or after the start; the second evaluates until the end.
+pub fn c_csi_cubic_spline_sample_range(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        let step_addr = gp_below(c, 0x2e40);
+        c.lwc1(0, step_addr);
+        frame.save(c, 16, 0x10);
+        frame.save_fpr(c, 22, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        let s = c.g[S0][0] as u32;
+        let knots_addr = s.wrapping_add(8);
+        c.g[V0][0] = c.lw(knots_addr);
+        c.lwc1(21, s.wrapping_add(4));
+        let knot = c.g[V0][0] as u32;
+        c.lwc1(12, knot.wrapping_add(0x10));
+        c.sub_s(1, 21, 12);
+        c.mov_s(2, 12);
+        c.c_le_s(12, 21);
+        let in_range = c.fcc();
+        c.mul_s(22, 1, 0);
+        if in_range {
+            c.cycles += 1;
+            c.add_s(2, 2, 22);
+            loop {
+                c.cycles += 5;
+                c.c_le_s(2, 21);
+                if !c.fcc() {
+                    break;
+                }
+                c.add_s(2, 2, 22);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_e128);
+                }
+            }
+        }
+
+        c.cycles += 5;
+        c.mov_s(20, 12);
+        c.c_le_s(20, 21);
+        if c.fcc() {
+            c.cycles += 2;
+            c.mov_s(12, 20);
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S0][0];
+                c.add_s(20, 20, 22);
+                call_ptr(c, 0x0031_dee0, 0x0031_e164)?; // cCSICubicSpline_Evaluate(s)
+                c.c_le_s(20, 21);
+                let more = c.fcc();
+                c.mov_s(12, 20);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_e158);
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                break;
+            }
+        }
+        frame.restore(c, 16, 0x10);
+        c.cycles += 6;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x30);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -12247,7 +13392,18 @@ pub(crate) mod tests {
             dlheap_fix_fill(c, ptrs[i], n, seed * 8 + i as u32 + 1);
         }
         let [p0, p1, pa, pb, pq, pc] = ptrs;
-        let (old, bytes): (u32, u64) = if seed < 3 * DLHEAP_REALLOC_CLASSES {
+        // Fixed gap cases for the mutation sweep (seeds 75-77); the class
+        // match (seeds < 45) and the random branch below are unchanged.
+        let (old, bytes): (u32, u64) = if seed == 75 {
+            // 0x31f060 boundary: A1 == MAX (0xFFFF...FFDF) is not
+            // "too large"; malloc of it fails into 'fail, while `<=`
+            // would take 'enomem (errno write).
+            (pa, 0xffff_ffff_ffff_ffdf)
+        } else if seed == 76 {
+            // request2size boundary: bytes+0x13 == 0x10 takes the
+            // MINSIZE arm in both, but `<` spends 3 more cycles.
+            (pa, 0x0000_0000_ffff_fffd)
+        } else if seed < 3 * DLHEAP_REALLOC_CLASSES {
             match seed % DLHEAP_REALLOC_CLASSES {
                 // realloc(0, n) is malloc (returns to 0x31f058).
                 0 => (0, 0x100),
@@ -12326,15 +13482,22 @@ pub(crate) mod tests {
     /// free next chunk, to move (memcpy, 3- and 7-word copies, malloc
     /// failure, merge with the returned next chunk).
     /// Paths: 37 class 1, 50 class 2, 61 class 3, 65 class 5 (derived);
-    /// every class total is pinned, in class order.
+    /// every class total is pinned, in class order. Seeds 75-76 are the
+    /// sweep's gap arms: the MAX boundary and the tiny boundary. (The
+    /// exact-fit grow, `A1 == S3 + 16`, is unreachable: every chunk size
+    /// is a multiple of 16 while the arena's top stays 8-mod-16, so the
+    /// two sides differ by 8 mod 16 in every heap this layout produces.)
     #[test]
     fn dlheap_realloc_matches() {
         check_paths(
             ee::s10::f_0031f018__generated,
             dlheap_realloc,
-            75,
+            78,
             &[
                 86, 37, 50, 61, 118, 65, 210, 292, 174, 186, 137, 80, 465, 171, 115,
+                // Seeds 75-76 (gap cases): 102 fail-after-huge-malloc,
+                // 118 tiny-boundary (+3 cycles).
+                102, 118,
             ],
             &|c, seed| dlheap_realloc_fixture(c, seed),
         );
@@ -12348,13 +13511,45 @@ pub(crate) mod tests {
 
     pub(crate) const DLHEAP_IALLOC_CLASSES: u32 = 11;
 
+    /// Gate and stash cell of the recording `DLHeap_Malloc` fake for the
+    /// wrapped-size class: with the gate on, the requested size lands in
+    /// `DLHEAP_IALLOC_SEEN`, then the real allocator runs (it fails the
+    /// huge request fast, returning 0 on both sides).
+    pub(crate) const DLHEAP_IALLOC_CTRL: u32 = DATA + 0x7e04;
+
+    pub(crate) const DLHEAP_IALLOC_MAGIC: u32 = 0x31f8_51a1;
+
+    pub(crate) const DLHEAP_IALLOC_SEEN: u32 = DATA + 0x7e08;
+
+    pub(crate) static DLHEAP_IALLOC_PREV_MALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn dlheap_ialloc_big_fake_malloc(c: &mut Cpu) {
+        if c.bus.read32(DLHEAP_IALLOC_CTRL) != DLHEAP_IALLOC_MAGIC {
+            return fakes::fall_back(
+                c,
+                &DLHEAP_IALLOC_PREV_MALLOC,
+                ee::s10::f_0031e818__generated,
+            );
+        }
+        // Stash the request size (the word the sweep's mutant changes),
+        // log the call, and fail fast: the wrapped request can never
+        // succeed, and the real allocator spins on it instead.
+        c.bus.write32(DLHEAP_IALLOC_SEEN, c.g[A1][0] as u32);
+        fakes::fake_call(c, 0x0031_e818);
+        c.g[V0][0] = 0;
+    }
+
     /// `ialloc(heap, n, sizes, opts, chunks)` on a real arena: fresh (the
     /// Consolidate arm) or with traffic; the caller's array prefilled.
     /// Class `seed % 11` (seeds < 33) picks the arm, later seeds random.
     pub(crate) fn dlheap_ialloc_fixture(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x0031_f858, 0);
         let heap = dlheap_fix_arena(c);
-        let class = if seed < 3 * DLHEAP_IALLOC_CLASSES {
+        // Seed 66 is the sweep's wrapped-size gap arm; the class match
+        // (seeds < 33) and the random branch are unchanged.
+        let class = if seed == 66 {
+            11
+        } else if seed < 3 * DLHEAP_IALLOC_CLASSES {
             seed % DLHEAP_IALLOC_CLASSES
         } else {
             99
@@ -12407,6 +13602,17 @@ pub(crate) mod tests {
             9 => (2, 3, chunks),
             // One element: the carve loop ends at once.
             10 => (1, 0, 0),
+            // A wrapped array-chunk request (0x31f8cc tiny arm): n low
+            // 30 bits set, so S7 is 0x10 in the original but 0 under
+            // `==`. The malloc of the wrapped size fails either way;
+            // the recording fake stashes the request size, which is
+            // the word the mutant changes.
+            11 => {
+                c.bus.write32(DLHEAP_IALLOC_SIZES, 8);
+                c.bus.write32(DLHEAP_IALLOC_CTRL, DLHEAP_IALLOC_MAGIC);
+                c.bus.write32(DLHEAP_IALLOC_SEEN, seed);
+                (0xffff_fffc, 1, 0)
+            }
             _ => {
                 for i in 0..8 {
                     let s = r.next_u32() % 0x300;
@@ -12432,14 +13638,25 @@ pub(crate) mod tests {
     /// a real arena (LO/HI compared: the one-size product is a `mult`).
     /// Not reachable: 0x31f948's `n == 0` exit (n == 0 returns earlier), and
     /// the array-size wrap 0x31f908 (unbounded, see class 9).
-    /// Paths: every class total, in class order.
+    /// Paths: every class total, in class order. Seed 66 is the sweep's
+    /// wrapped-size gap arm (0x31f8cc tiny arm, request size stashed by
+    /// the recording fake).
     #[test]
     fn dlheap_ialloc_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031E818),
+            dlheap_ialloc_big_fake_malloc,
+            &DLHEAP_IALLOC_PREV_MALLOC,
+        );
         check_paths_lohi(
             ee::s10::f_0031f858__generated,
             dlheap_ialloc,
-            66,
-            &[1122, 37, 165, 240, 672, 351, 279, 230, 483, 303, 226],
+            67,
+            &[
+                1122, 37, 165, 240, 672, 351, 279, 230, 483, 303, 226,
+                // Seed 66 (gap arm): 68 wrapped-size malloc failure.
+                68,
+            ],
             &|c, seed| dlheap_ialloc_fixture(c, seed),
         );
     }
@@ -12491,6 +13708,43 @@ pub(crate) mod tests {
                 hit.contains(&head),
                 "dispatcher head {head:#x} never unwound: {hit:#x?}"
             );
+        }
+    }
+
+    /// `IAlloc` resumed at a loop head after an unwind: the entry guard
+    /// delegates a non-entry `pc` to the generated body, which picks the
+    /// loop up from the registers (a `==` guard would re-run the body
+    /// from the top instead). The first leg runs the hand body to the
+    /// unwind with the events test's `k` grid; seeds that unwind
+    /// elsewhere restart clean at the entry so the seed still passes.
+    #[test]
+    fn dlheap_ialloc_resume_matches() {
+        use crate::difftest::events::UNWIND;
+        use std::cell::Cell;
+        let (gen, hand) = (
+            ee::s10::f_0031f858__generated as fn(&mut Cpu),
+            dlheap_ialloc as fn(&mut Cpu),
+        );
+        for (head, base, step) in [(0x0031_f968, 750u64, 15u64), (0x0031_fa10, 900u64, 10u64)] {
+            let hit = Cell::new(false);
+            let setup = |c: &mut Cpu, seed: u32| {
+                dlheap_ialloc_fixture(c, seed);
+                unwind_at(c, 0x0031_f858, base + (seed % 33) as u64 * step);
+                dlheap_ialloc(c);
+                if c.pc & !UNWIND == head {
+                    hit.set(true);
+                    c.pc &= !UNWIND;
+                } else {
+                    // Unwind missed the head: compare the plain entry
+                    // path instead. Reset the consumed schedule far into
+                    // the future (no event can fire), then a pristine
+                    // fixture.
+                    unwind_at(c, 0x0031_f858, 1 << 30);
+                    dlheap_ialloc_fixture(c, seed);
+                }
+            };
+            crate::difftest::check_lohi(gen, hand, 33, &setup);
+            assert!(hit.get(), "dispatcher head {head:#x} never resumed");
         }
     }
 
@@ -12559,7 +13813,11 @@ pub(crate) mod tests {
     pub(crate) fn dlheap_memoff_fixture(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x0031_f4e8, 0);
         let heap = dlheap_memoff_layout(c, seed);
-        let class = if seed < 3 * DLHEAP_MEMOFF_CLASSES {
+        // Seeds 78-82 are the sweep's gap arms; the class match (seeds <
+        // 39) and the random branch (seeds 39-77 and 83+) are unchanged.
+        let class = if seed >= 78 && seed < 83 {
+            13 + (seed - 78)
+        } else if seed < 3 * DLHEAP_MEMOFF_CLASSES {
             seed % DLHEAP_MEMOFF_CLASSES
         } else {
             99
@@ -12608,6 +13866,29 @@ pub(crate) mod tests {
             11 => (0x40, 0x10_0000, 0x10),
             // Power of two 0x20, misaligned by 0x10.
             12 => real(0x20, 0x20, 0x180, 0x10),
+            // align 17 (the 0x31f524 boundary): rounds to 0x20, while
+            // `<=` takes the plain-malloc arm.
+            13 => real(0x11, 0x20, 0x200, 0x10),
+            // bytes + offset of exactly 0xFFFFFFDF: not too large, the
+            // request wraps small and the malloc succeeds, while `<=`
+            // takes ENOMEM.
+            14 => (0x40, 0xffff_ffdf, 0),
+            // Lead of exactly 15 (the 0x31f648 boundary): brk + align,
+            // while `<=` takes brk.
+            15 => real(0x20, 0x20, 0x180, 0x11),
+            // Fake mmapped chunk with an odd offset (the `| 2` header
+            // bit): the offset leaves rem % 4 in {2, 3} so bit 1 of the
+            // moved size word is set, which `^` would clear.
+            16 => {
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK, 0x40);
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK + 4, 0x1000 | 2);
+                let rem0 = (DLHEAP_MEMOFF_CHUNK + 8) % 0x40;
+                let off = if rem0 % 4 == 0 || rem0 % 4 == 3 { 3 } else { 1 };
+                (0x40, 0x100, off)
+            }
+            // Real chunk with an odd offset (the `| 1` free-lead header
+            // bit): lead 0x3f is odd, which `^` would clear.
+            17 => real(0x40, 0x40, 0x200, 0x01),
             _ => {
                 let align = match r.next_u32() % 3 {
                     0 => 1 << (5 + r.next_u32() % 5),
@@ -12621,7 +13902,7 @@ pub(crate) mod tests {
                 )
             }
         };
-        if (7..=9).contains(&class) {
+        if (7..=9).contains(&class) || class == 16 {
             c.bus.write32(LOG_RESULTS, DLHEAP_MEMOFF_CHUNK + 8);
             c.bus.write32(DLHEAP_MEMOFF_CTRL, DLHEAP_MEMOFF_MAGIC);
         }
@@ -12640,7 +13921,9 @@ pub(crate) mod tests {
     /// large first) and, with real chunks, the no-split tail (the request
     /// leaves at least align + 16 over).
     /// Paths (4-cycle fake): 83 class 7, 61 class 8, 69 class 9, 43 class
-    /// 10 (derived); every class total, in class order.
+    /// 10 (derived); every class total, in class order. Seeds 78-82 are
+    /// the sweep's gap arms: align 17, the wrapped total, lead 15, and
+    /// the two odd-offset header bits.
     #[test]
     fn dlheap_memalign_offset_matches() {
         fakes::hook(
@@ -12652,8 +13935,14 @@ pub(crate) mod tests {
         check_paths_lohi(
             ee::s10::f_0031f4e8__generated,
             dlheap_memalign_offset,
-            78,
-            &[83, 361, 240, 431, 175, 465, 260, 61, 69, 43, 320, 227],
+            83,
+            &[
+                83, 361, 240, 431, 175, 465, 260, 61, 69, 43, 320, 227,
+                // Seeds 78-82 (gap arms): 231 align-17 rounding, 374
+                // wrapped-total malloc, 187 lead-15 brk+align. Seeds 81
+                // and 82 take the class-7 and class-12 paths (83, 227).
+                231, 374, 187,
+            ],
             &|c, seed| dlheap_memoff_fixture(c, seed),
         );
     }
@@ -12749,7 +14038,11 @@ pub(crate) mod tests {
             4
         };
         dlheap_mallinfo_layout(c, &mut r, class);
-        for i in 0..12 {
+        // 48 words: the epilogue writes ten words at OUT..OUT+0x28, and
+        // a mutated `sdl` address would scribble low bytes at OUT+0x38,
+        // OUT+0x70 and OUT+0xA8, which must hold nonzero bytes to catch
+        // it (the prefill used to end at OUT+0x30, meeting zero).
+        for i in 0..48 {
             c.bus
                 .write32(DLHEAP_MALLINFO_OUT + 4 * i, 0xdddd_0000 + i + seed);
         }
@@ -13334,6 +14627,256 @@ pub(crate) mod tests {
                 };
                 c.g[RA][0] = ra;
                 c.pc = 0x0032_0038;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::machine_rt;
+
+    pub(crate) use crate::game::animation::rideranimbase::tests::OC1495_MAGIC;
+
+    pub(crate) use crate::game::bx::ps2main::tests::oc1579_install;
+    pub(crate) use crate::game::bx::ps2main::tests::oc1579_machine;
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc1567_gated;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_CTRL;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_MAGIC;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_RET;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_RET_CTOR;
+
+    pub(crate) const OC1495_DTOR_CTRL: u32 = DATA + 0x20_1000;
+
+    pub(crate) static OC1495_PREV_FREE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1495_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `cCSICubicSpline_Free` and `__builtin_delete`: logged no-op calls.
+    pub(crate) fn oc1495_fake_free(c: &mut Cpu) {
+        if c.bus.read32(OC1495_DTOR_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_FREE, ee::s10::f_0031d790__generated);
+        }
+        fakes::fake_call(c, 0x0031_d790);
+    }
+
+    pub(crate) fn oc1495_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC1495_DTOR_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e50);
+    }
+
+    pub(crate) fn oc1495_install_dtor() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031D790),
+            oc1495_fake_free,
+            &OC1495_PREV_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1495_fake_delete,
+            &OC1495_PREV_DELETE,
+        );
+    }
+
+    /// `cCSICubicSpline_dtor`: the flag bit 0 both ways, with and without
+    /// the object delete.
+    #[test]
+    fn ccsi_cubic_spline_dtor_matches() {
+        check(
+            ee::s10::f_0031d618__generated,
+            ccsi_cubic_spline_dtor,
+            300,
+            &|c, seed| {
+                oc1495_install_dtor();
+                let mut r = machine(c, seed, 0x0031_d618, 0);
+                c.bus.write32(OC1495_DTOR_CTRL, OC1495_MAGIC);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                if seed % 2 == 0 {
+                    c.g[A1][0] &= !1u64;
+                } else {
+                    c.g[A1][0] |= 1;
+                }
+            },
+        );
+    }
+
+    /// Gate word of the `cCSICubicSpline_Alloc` fake (own RAM word).
+    pub(crate) const OC1497_ALLOC_GATE: u32 = DATA + 0x3f00;
+
+    pub(crate) const OC1497_ALLOC_MAGIC: u32 = 0x1497_a110;
+
+    /// The slot body the fake replaced (for its gate-off path).
+    pub(crate) static OC1497_ALLOC_PREV: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    /// `cCSICubicSpline_Alloc` with its allocator replaced: when the gate is
+    /// set, it returns a fixed data block (`DATA+0x3300`) and returns, so the
+    /// allocator walk (which spins on test data) never runs. Gate off: the
+    /// replaced body.
+    pub(crate) fn oc1497_spline_alloc_fake(c: &mut Cpu) {
+        if c.bus.read32(OC1497_ALLOC_GATE) != OC1497_ALLOC_MAGIC {
+            return fakes::fall_back(c, &OC1497_ALLOC_PREV, ee::s10::f_0031d660__generated);
+        }
+        c.g[V0][0] = (DATA + 0x3300) as u64;
+        ret(c);
+    }
+
+    /// `cCSICubicSpline_InitWithStartSlope` against the generated body: the
+    /// allocation (gated fake, same on both sides) and the two float stores,
+    /// with random float inputs.
+    #[test]
+    fn c_csi_cubic_spline_init_with_start_slope_matches() {
+        check(
+            ee::s10::f_0031d738__generated,
+            c_csi_cubic_spline_init_with_start_slope,
+            200,
+            &|c, seed| {
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031D660),
+                    oc1497_spline_alloc_fake,
+                    &OC1497_ALLOC_PREV,
+                );
+                let mut r = machine_rt(c, seed, 0x0031_d738, 4);
+                c.bus.write32(OC1497_ALLOC_GATE, OC1497_ALLOC_MAGIC);
+                let spline = DATA + 0x3200;
+                fill(c, &mut r, spline, 16);
+                c.bus.write32(spline + 8, DATA + 0x3300);
+                fill(c, &mut r, DATA + 0x3300, 8);
+                c.g[A0][0] = spline as u64;
+                c.f[12] = r.f32(1000.0);
+                c.f[13] = r.edge_f32();
+            },
+        );
+    }
+
+    // -- EACore_StaticInitDestroy -------------------------------------------
+
+    pub(crate) static OC1567_PREV_BLOCK_MAN: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1567_PREV_RAND: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1567_PREV_CORE_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1567_PREV_CORE_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1567_fake_block_man(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_6a00,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_BLOCK_MAN,
+            ee::s10::f_00316a00__generated,
+        );
+    }
+
+    pub(crate) fn oc1567_fake_rand(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_7930,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_RAND,
+            ee::s10::f_00317930__generated,
+        );
+    }
+
+    pub(crate) fn oc1567_fake_core_ctor(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_ff20,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_CORE_CTOR,
+            ee::s10::f_0031ff20__generated,
+        );
+    }
+
+    pub(crate) fn oc1567_fake_core_dtor(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_ff38,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_CORE_DTOR,
+            ee::s10::f_0031ff38__generated,
+        );
+    }
+
+    /// `EACore_StaticInitDestroy`: another priority (nothing happens), the
+    /// destroy path (`init` clear) and the construct path (the whole flat
+    /// store block); the five callees are faked.
+    #[test]
+    fn eacore_static_init_destroy_matches() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00316A00),
+            oc1567_fake_block_man,
+            &OC1567_PREV_BLOCK_MAN,
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317930),
+            oc1567_fake_rand,
+            &OC1567_PREV_RAND,
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031FF20),
+            oc1567_fake_core_ctor,
+            &OC1567_PREV_CORE_CTOR,
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031FF38),
+            oc1567_fake_core_dtor,
+            &OC1567_PREV_CORE_DTOR,
+        );
+        covered(
+            ee::s10::f_00320550__generated,
+            eacore_static_init_destroy,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_0550, 4);
+                c.pc = 0x0032_0550;
+                c.bus.write32(OC1567_CTRL, OC1567_MAGIC);
+                c.bus
+                    .write32(OC1567_RET + 4 * OC1567_RET_CTOR, r.next_u32());
+                // The globals the static init overwrites hold junk first.
+                for i in 0..0x180u32 {
+                    c.bus.write32(0x004f_f000 + 4 * i, r.next_u32());
+                }
+                let init = if seed % 4 == 0 { 0 } else { r.next_u32() | 1 };
+                c.g[A0][0] = sx(init);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0xffff,
+                    1 => 0xffff,
+                    _ => {
+                        if seed % 2 == 0 {
+                            0x1_0000 | 0xffff
+                        } else {
+                            r.next_u32() as u64
+                        }
+                    }
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn c_csi_cubic_spline_sample_range_matches() {
+        oc1579_install();
+        check(
+            ee::s10::f_0031e0e0__generated,
+            c_csi_cubic_spline_sample_range,
+            200,
+            &|c, seed| {
+                oc1579_machine(c, seed, 0x1579_0008, 4);
+                let s = DATA + 0x2000;
+                c.g[A0][0] = sx(s);
+                // Knots: first at 0 (in range) or past the last one (skipped).
+                let first = if seed % 5 == 0 { 9.0f32 } else { 0.0 };
+                c.bus.write32(s + 4, (4.0f32 + (seed % 3) as f32).to_bits());
+                c.bus.write32(s + 8, DATA + 0x2100);
+                c.bus.write32(DATA + 0x2110, first.to_bits());
+                // Step scale: a positive constant, so the loops end.
+                c.bus.write32(GAME_GP - 0x2e40, 0x3f00_0000);
             },
         );
     }

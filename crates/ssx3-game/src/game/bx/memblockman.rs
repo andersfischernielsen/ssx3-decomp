@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -32,6 +33,7 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -137,6 +139,30 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2ExecMan_ForwardSlot12",
     ),
     (0x0032_0b08, ps2_exec_man_v06, "PS2ExecMan_v06"),
+    (0x0025_6088, ssx_load_net_gui_elf, "ssx_LoadNetGuiElf"),
+    (0x0031_9610, ssx_iop_init, "ssx_IopInit"),
+    (0x0031_9790, ssx_unload_iop_module, "ssx_UnloadIopModule"),
+    (0x0031_9800, ssx_exit_msif_rpc, "ssx_ExitMsifRpc"),
+    (0x0031_9820, ssx_iop_reboot, "ssx_IopReboot"),
+    (0x0031_98a0, ssx_power_off_thread, "ssx_PowerOffThread"),
+    (
+        0x0031_9910,
+        ssx_power_off_signal_sema,
+        "ssx_PowerOffSignalSema",
+    ),
+    (0x0031_a308, vu0_save_context, "VU0_SaveContext"),
+    (0x0031_a3c0, vu0_restore_context, "VU0_RestoreContext"),
+    (
+        0x0031_ab30,
+        ps2exec_run_callback_sync,
+        "PS2ExecMan_RunCallbackSync",
+    ),
+    (0x0031_abc0, ps2_exec_man_v07_0031abc0, "PS2ExecMan_v07"),
+    (
+        0x0031_abc8,
+        ps2_exec_man_get_frame_rate_0031abc8,
+        "PS2ExecMan_GetFrameRate",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1963,6 +1989,473 @@ pub fn ps2_exec_man_v06(c: &mut Cpu) {
     tail_wrapper(c, None, Target::Table(0x0042_3c90), 0x0032_0b18);
 }
 
+/// `VU0_RestoreContext(ctx)` (0x0031a3c0): reloads VU0 from a context record
+/// (the mirror of [`vu0_save_context`]). vi22 and vi18 come from +0x208 and
+/// +0x20c, vf1..vf6 from +0x1f0 (through ACC) and +0x00..+0x50, then
+/// `VU0_SetSignedUnitVector(ctx->+0x200)` runs, then vf7..vf31 from +0x60 on,
+/// vi16 from +0x204.
+pub fn vu0_restore_context(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 51;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[T0][0] = c.g[S0][0];
+        let ctx = c.g[S0][0] as u32;
+        let slot = |vf: usize| ctx.wrapping_add(0x10 * (vf as u32 - 1));
+        c.g[T1][0] = c.lw(ctx.wrapping_add(0x208));
+        c.ctc2(9, 22);
+        c.g[T1][0] = c.lw(ctx.wrapping_add(0x20c));
+        c.ctc2(9, 18);
+        c.lqc2(1, ctx.wrapping_add(0x1f0));
+        c.vu0().adda(0b1111, 1, Src::Bc(0, X));
+        for vf in 1..=6 {
+            c.lqc2(vf, slot(vf));
+        }
+        c.g[A0][0] = c.lw(ctx.wrapping_add(0x200));
+        Callee {
+            addr: 0x0031_a268,
+            f: ee::s10::f_0031a268,
+        }
+        .call(c, 0x0031_a40c)?;
+        c.g[T0][0] = c.g[S0][0];
+        for vf in 7..=12 {
+            c.lqc2(vf, slot(vf));
+        }
+        c.g[T1][0] = c.lw(ctx.wrapping_add(0x204));
+        for vf in 13..=14 {
+            c.lqc2(vf, slot(vf));
+        }
+        c.ctc2(9, 16);
+        for vf in 15..=31 {
+            c.lqc2(vf, slot(vf));
+        }
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `VU0_SaveContext(ctx)` (0x0031a308): stores VU0 into a context record: the
+/// control words vi17 (+0x200), vi16 (+0x204), vi22 (+0x208) and vi18 (+0x20c),
+/// and vf1..vf31 at +0x00..+0x1e0 (vf1 again at +0x1f0, after the final madd).
+/// Leaves `t0 = a0`, and `t1` holds the last control word read, as the
+/// generated body does.
+pub fn vu0_save_context(c: &mut Cpu) {
+    c.cycles += 45;
+    let ctx = c.g[A0][0] as u32;
+    c.g[T0][0] = c.g[A0][0];
+    c.cfc2(9, 17);
+    c.sqc2(1, ctx);
+    c.sqc2(2, ctx.wrapping_add(0x10));
+    c.sw(ctx.wrapping_add(0x200), c.g[T1][0]);
+    c.sqc2(3, ctx.wrapping_add(0x20));
+    c.sqc2(4, ctx.wrapping_add(0x30));
+    c.cfc2(9, 16);
+    c.sqc2(5, ctx.wrapping_add(0x40));
+    c.sqc2(6, ctx.wrapping_add(0x50));
+    c.sw(ctx.wrapping_add(0x204), c.g[T1][0]);
+    c.vu0().waitq();
+    c.cfc2(9, 22);
+    c.sw(ctx.wrapping_add(0x208), c.g[T1][0]);
+    c.cfc2(9, 18);
+    c.sw(ctx.wrapping_add(0x20c), c.g[T1][0]);
+    c.sqc2(7, ctx.wrapping_add(0x60));
+    c.sqc2(8, ctx.wrapping_add(0x70));
+    c.vu0().madd(0b1111, 1, 0, Src::Bc(0, X));
+    for vf in 9..=31 {
+        c.sqc2(vf, ctx.wrapping_add(0x10 * (vf as u32 - 1)));
+    }
+    c.sqc2(1, ctx.wrapping_add(0x1f0));
+    ret(c);
+}
+
+/// `PS2ExecMan_v07` (0x0031_abc0): straight-line leaf. Mechanical port of the generated body.
+pub fn ps2_exec_man_v07_0031abc0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `PS2ExecMan_GetFrameRate` (0x0031_abc8): straight-line leaf. Mechanical port of the generated body.
+pub fn ps2_exec_man_get_frame_rate_0031abc8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x3c;
+    ret(c);
+}
+
+/// `ssx_LoadNetGuiElf()` (0x256088): `0x31b008("cdrom0:\NETGUI\NTGUI.ELF", 1,
+/// &D_004A2EC0)`, the NetGui ELF load.
+pub fn ssx_load_net_gui_elf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x0048_0000;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = sx((c.g[GP][0] as u32).wrapping_sub(0x230));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x378));
+        call_ptr(c, 0x0031_b008, 0x0025_60a4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ssx_IopInit (0x319610)
+
+/// `void ssx_IopInit(void* self)` (0x319610): starts the IOP side of the
+/// system: the SIF RPC and IOP heap, the reboot of the IOP (`ssx_IopReboot`
+/// with `self`), then the CD and file system setup. Frame 0x20; s0 = self.
+pub fn ssx_iop_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0;
+        Callee {
+            addr: 0x0042_6408,
+            f: ee::s15::f_00426408,
+        }
+        .call(c, 0x0031_9628)?;
+        Callee {
+            addr: 0x0042_ab18,
+            f: ee::s15::f_0042ab18,
+        }
+        .call(c, 0x0031_9630)?;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0031_9820,
+            f: ee::s10::f_00319820,
+        }
+        .call(c, 0x0031_9638)?;
+        c.g[A0][0] = 0;
+        Callee {
+            addr: 0x0040_1718,
+            f: ee::s15::f_00401718,
+        }
+        .call(c, 0x0031_9640)?;
+        c.g[A0][0] = 2;
+        Callee {
+            addr: 0x0040_2450,
+            f: ee::s15::f_00402450,
+        }
+        .call(c, 0x0031_9648)?;
+        Callee {
+            addr: 0x0042_7d28,
+            f: ee::s15::f_00427d28,
+        }
+        .call(c, 0x0031_9650)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ssx_UnloadIopModule (0x319790)
+
+/// `void ssx_UnloadIopModule(void* self, ...)` (0x319790): stops the IOP
+/// module (`sceSifStopModule`, with a2 = 0 and a3 = the frame's scratch
+/// word), then unloads it (`sceSifUnloadModule` with `self`). Frame 0x30;
+/// s0 = a1.
+pub fn ssx_unload_iop_module(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = c.g[SP][0];
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        Callee {
+            addr: 0x0042_b438,
+            f: ee::s15::f_0042b438,
+        }
+        .call(c, 0x0031_97b4)?;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0042_b640,
+            f: ee::s15::f_0042b640,
+        }
+        .call(c, 0x0031_97bc)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ssx_ExitMsifRpc (0x319800)
+
+/// `void ssx_ExitMsifRpc(void* self)` (0x319800): `sceSifMExitRpc`, with a0
+/// passed through. Frame 0x10.
+pub fn ssx_exit_msif_rpc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x0040_b1f8,
+            f: ee::s15::f_0040b1f8,
+        }
+        .call(c, 0x0031_9810)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ssx_IopReboot (0x319820)
+
+/// `void ssx_IopReboot(void* self)` (0x319820): resets the CD and the SIF
+/// RPC, builds the IOP module path (`ssx_BuildModulePath` into the frame's
+/// buffer, module name at `0x48d9f8`), then reboots the IOP. The reboot is
+/// retried while it answers 0; after a non-zero answer the IOP is synced
+/// (retried while 0), and the RPC is re-initialised. Frame 0x120; s0 = self.
+/// The loops check events at their back edges.
+pub fn ssx_iop_reboot(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x120);
+        frame.save(c, S0, 0x110);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x100);
+        c.g[A0][0] = 0;
+        Callee {
+            addr: 0x0042_6408,
+            f: ee::s15::f_00426408,
+        }
+        .call(c, 0x0031_9838)?;
+        c.g[A0][0] = 0;
+        Callee {
+            addr: 0x0040_1718,
+            f: ee::s15::f_00401718,
+        }
+        .call(c, 0x0031_9840)?;
+        c.g[A0][0] = 2;
+        Callee {
+            addr: 0x0040_2450,
+            f: ee::s15::f_00402450,
+        }
+        .call(c, 0x0031_9848)?;
+        c.g[A2][0] = 0x0049_0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x2608));
+        c.g[A1][0] = c.g[SP][0];
+        Callee {
+            addr: 0x0031_9690,
+            f: ee::s10::f_00319690,
+        }
+        .call(c, 0x0031_985c)?;
+        loop {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[SP][0];
+            Callee {
+                addr: 0x0042_bf68,
+                f: ee::s15::f_0042bf68,
+            }
+            .call(c, 0x0031_9868)?;
+            if c.g[V0][0] == 0 {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_9860);
+                }
+                continue;
+            }
+            loop {
+                c.cycles += 4;
+                Callee {
+                    addr: 0x0042_bf30,
+                    f: ee::s15::f_0042bf30,
+                }
+                .call(c, 0x0031_9878)?;
+                if c.g[V0][0] == 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_9870);
+                    }
+                    continue;
+                }
+                c.cycles += 8;
+                c.g[A0][0] = 0;
+                Callee {
+                    addr: 0x0042_6408,
+                    f: ee::s15::f_00426408,
+                }
+                .call(c, 0x0031_9888)?;
+                Callee {
+                    addr: 0x0042_ab18,
+                    f: ee::s15::f_0042ab18,
+                }
+                .call(c, 0x0031_9890)?;
+                frame.restore(c, S0, 0x110);
+                frame.restore_ra(c, 0x100);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003198a0 ssx_PowerOffThread
+// ---------------------------------------------------------------------------
+
+/// `void ssx_PowerOffThread(int sema)` (0x3198a0): the power-off thread.
+/// Waits on `sema`, then polls `sceDevctl` (disc tray) until it answers
+/// non-negative, clears the status word at `sp` and calls `sceCdPowerOff`
+/// until that word stays zero, then starts over. The generated tail that
+/// signals the power-off semaphore is unreachable (its condition is always
+/// true), so it is not ported. Never returns.
+pub fn ssx_power_off_thread(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = 0x4a0000;
+        frame.save_ra(c, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        'disc: loop {
+            // WaitSema(sema)
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0042_3de0, 0x0031_98c0)?;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3ea8));
+            'devctl: loop {
+                // sceDevctl(...)
+                c.cycles += 8;
+                c.g[A1][0] = 0x4402;
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                c.g[T0][0] = 0;
+                c.g[T1][0] = 0;
+                call_ptr(c, 0x0042_a538, 0x0031_98e0)?;
+                let busy = (c.g[V0][0] as i64) < 0;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3ea8));
+                if busy {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_98c8);
+                    }
+                    continue 'devctl;
+                }
+                c.cycles += 2;
+                let status = sp(c);
+                c.sw(status, 0);
+                'poweroff: loop {
+                    // sceCdPowerOff(sp)
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[SP][0];
+                    call_ptr(c, 0x0040_2398, 0x0031_98f8)?;
+                    let old_zero = c.g[V0][0] == 0;
+                    let status = sp(c);
+                    c.g[V0][0] = c.lw(status);
+                    if old_zero {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_98f0);
+                        }
+                        continue 'poweroff;
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_98f0);
+                        }
+                        continue 'poweroff;
+                    }
+                    c.cycles += 2;
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_98b8);
+                    }
+                    continue 'disc;
+                }
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x00319910 ssx_PowerOffSignalSema
+// ---------------------------------------------------------------------------
+
+/// `void ssx_PowerOffSignalSema(int sema)` (0x319910): forwards to
+/// `SignalSema` (0x423dd0) with the same argument and returns its result.
+pub fn ssx_power_off_signal_sema(c: &mut Cpu) {
+    tail_wrapper(c, None, Target::Table(0x0042_3dd0), 0x0031_9920)
+}
+
+// ---------------------------------------------------------------------------
+// 0x0031ab30 PS2ExecMan_RunCallbackSync
+// ---------------------------------------------------------------------------
+
+/// `void PS2ExecMan_RunCallbackSync(PS2ExecMan* m)` (0x31ab30). Sets the
+/// "callback pending" flag, waits for the current callback slot to
+/// reach the callback's id (`0x423c90`/`0x423d10` poll the callback
+/// semaphore), then either invokes the registered callback directly (the
+/// slot is the one we are waiting for) or calls the table callback at
+/// `*(m + 0x10000 ...)` and waits on the callback semaphore.
+pub fn ps2exec_run_callback_sync(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 1;
+        frame.save(c, 16, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 17, 0x10);
+        frame.save_ra(c, 0);
+        let pending = (c.g[S0][0] as u32).wrapping_add(0x4038);
+        let one = c.g[V0][0];
+        c.sw(pending, one);
+        call_ptr(c, 0x0042_3c90, 0x0031_ab54)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10000));
+        let entry_addr = (c.g[V0][0] as u32).wrapping_add(0x4040);
+        let entry = c.lw(entry_addr);
+        c.g[A0][0] = entry;
+        if c.g[S1][0] != c.g[A0][0] {
+            c.cycles += 3;
+            call_ptr(c, 0x0042_3d10, 0x0031_ab74)?;
+        }
+        let word = (c.g[S0][0] as u32).wrapping_add(0x10);
+        c.g[V0][0] = c.lw(word);
+        // Both branches above end with V0 = *(s0 + 0x10).
+        c.cycles += 2;
+        if c.g[S1][0] == c.g[V0][0] {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0031_74a8, 0x0031_ab8c)?; // PS2ExecMan_InvokeCallback(m, 0)
+        } else {
+            let table = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[V0][0] = table;
+            c.cycles += 7;
+            let fn_off_addr = (c.g[V0][0] as u32).wrapping_add(0x28);
+            c.g[A0][0] = c.lh(fn_off_addr);
+            let fn_addr = (c.g[V0][0] as u32).wrapping_add(0x2c);
+            c.g[V1][0] = c.lw(fn_addr);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0031_aba4)?;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_aaf0, 0x0031_abac)?; // PS2ExecMan_WaitSema(m)
+        }
+        frame.restore(c, 16, 0x20);
+        c.cycles += 4;
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3329,6 +3822,410 @@ pub(crate) mod tests {
                 install_kernel_fakes();
                 c.bus.write32(CTRL, MAGIC);
                 c.pc = 0x0032_0b08;
+            },
+        );
+    }
+
+    use crate::difftest::fill;
+
+    pub(crate) use crate::game::bx::ps2main::tests::oc1579_install;
+    pub(crate) use crate::game::bx::ps2main::tests::oc1579_machine;
+    pub(crate) use crate::game::bx::ps2main::tests::BUSY;
+
+    pub(crate) use crate::game::bx::ps2main::tests::POWER_RET;
+    pub(crate) use crate::game::bx::ps2main::tests::POWER_STATUS;
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::install_all;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::open_gates;
+
+    pub(crate) use crate::game::dirtysock::dnasauth::tests::G_LOAD_ELF;
+
+    /// Gate word of this module's fakes (own address and magic in the machine's
+    /// RAM: other tests' machines run the real bodies).
+    pub(crate) const OC1486_CTRL: u32 = DATA + 0xf_f000;
+
+    pub(crate) const OC1486_MAGIC: u32 = 0x1486_f00d;
+
+    macro_rules! oc1486_fakes {
+        ($($name:ident, $addr:expr, $slot:path, $gen:path;)*) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC1486_CTRL) != OC1486_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc1486_hook() {
+                $( fakes::hook(addr_of_mut!($slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    oc1486_fakes! {
+        oc1486_fake_service_queue, 0x003d_dfa8, ee::s14::OVERRIDE_003DDFA8, ee::s14::f_003ddfa8__generated;
+    }
+
+    #[test]
+    fn vu0_save_context_matches() {
+        check(
+            ee::s10::f_0031a308__generated,
+            vu0_save_context,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1486_3a08, 0);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[RA][0] = sx(crate::difftest::RA);
+                fill(c, &mut r, DATA + 0x1000, 0x20);
+            },
+        );
+    }
+
+    #[test]
+    fn vu0_restore_context_matches() {
+        check(
+            ee::s10::f_0031a3c0__generated,
+            vu0_restore_context,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine_rt(c, seed, 0x1486_3a3c, 0);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[RA][0] = sx(crate::difftest::RA);
+                fill(c, &mut r, DATA + 0x1000, 0x90);
+                // The unit-vector helper's argument: a small mask.
+                c.bus.write32(DATA + 0x1200, r.next_u32() & 0xffff);
+            },
+        );
+    }
+
+    /// `PS2ExecMan_v07` (0x0031_abc0) against the generated body.
+    #[test]
+    fn ps2_exec_man_v07_0031abc0_matches() {
+        check(
+            ee::s10::f_0031abc0__generated,
+            ps2_exec_man_v07_0031abc0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x31abc0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PS2ExecMan_GetFrameRate` (0x0031_abc8) against the generated body.
+    #[test]
+    fn ps2_exec_man_get_frame_rate_0031abc8_matches() {
+        check(
+            ee::s10::f_0031abc8__generated,
+            ps2_exec_man_get_frame_rate_0031abc8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x31abc8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_load_net_gui_elf_matches() {
+        install_all();
+        check(
+            ee::s06::f_00256088__generated,
+            ssx_load_net_gui_elf,
+            100,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x2560_88, 0);
+                open_gates(c, &[G_LOAD_ELF]);
+            },
+        );
+    }
+
+    /// The gated IOP fakes. Each answers through `fakes::fake` (logged, the
+    /// call index may unwind), and falls back to the body it replaced when the
+    /// gate word in the machine's RAM is not set.
+    pub(crate) const IOP_GATE: u32 = DATA + 0x2_f000;
+
+    pub(crate) const IOP_MAGIC: u32 = 0x1578_0001;
+
+    /// Calls to `sceSifRebootIop` / `sceSifSyncIop` still answering 0.
+    pub(crate) const IOP_REBOOT_LEFT: u32 = DATA + 0x2_f008;
+
+    pub(crate) const IOP_SYNC_LEFT: u32 = DATA + 0x2_f00c;
+
+    pub(crate) fn oc1578_no_prev(_c: &mut Cpu) {
+        unreachable!("oc1578 fake called before it was hooked");
+    }
+
+    macro_rules! oc1578_fake {
+        ($name:ident, $target:literal) => {
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(IOP_GATE) != IOP_MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($name), oc1578_no_prev);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $target, ra);
+            }
+        };
+    }
+
+    oc1578_fake!(oc1578_fake_426408, 0x0042_6408);
+    // sceSifInitRpc
+    oc1578_fake!(oc1578_fake_42ab18, 0x0042_ab18);
+    // sceSifInitIopHeap
+    oc1578_fake!(oc1578_fake_401718, 0x0040_1718);
+    // sceCdInit
+    oc1578_fake!(oc1578_fake_402450, 0x0040_2450);
+    // sceCdMmode
+    oc1578_fake!(oc1578_fake_427d28, 0x0042_7d28);
+    // sceFsReset
+    oc1578_fake!(oc1578_fake_40b1f8, 0x0040_b1f8);
+    // sceSifMExitRpc
+    oc1578_fake!(oc1578_fake_42b438, 0x0042_b438);
+    // sceSifStopModule
+    oc1578_fake!(oc1578_fake_42b640, 0x0042_b640);
+    // sceSifUnloadModule
+    oc1578_fake!(oc1578_fake_319690, 0x0031_9690);
+    // ssx_BuildModulePath
+
+    /// Returns 0 (not ready) while the countdown at `cell` runs, then 1.
+    pub(crate) fn oc1578_countdown(c: &mut Cpu, cell: u32) -> u64 {
+        let left = c.bus.read32(cell);
+        if left > 0 {
+            c.bus.write32(cell, left - 1);
+            0
+        } else {
+            1
+        }
+    }
+
+    pub(crate) fn oc1578_fake_reboot(c: &mut Cpu) {
+        if c.bus.read32(IOP_GATE) != IOP_MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1578_fake_reboot), oc1578_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0042_bf68, ra); // sceSifRebootIop
+        c.g[V0][0] = oc1578_countdown(c, IOP_REBOOT_LEFT);
+    }
+
+    pub(crate) fn oc1578_fake_sync(c: &mut Cpu) {
+        if c.bus.read32(IOP_GATE) != IOP_MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1578_fake_sync), oc1578_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0042_bf30, ra); // sceSifSyncIop
+        c.g[V0][0] = oc1578_countdown(c, IOP_SYNC_LEFT);
+    }
+
+    /// Hooks every gated fake into its callee's override slot (once per process).
+    pub(crate) fn oc1578_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00426408),
+            oc1578_fake_426408,
+            fakes::prev_cell(oc1578_fake_426408),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0042AB18),
+            oc1578_fake_42ab18,
+            fakes::prev_cell(oc1578_fake_42ab18),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00401718),
+            oc1578_fake_401718,
+            fakes::prev_cell(oc1578_fake_401718),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402450),
+            oc1578_fake_402450,
+            fakes::prev_cell(oc1578_fake_402450),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00427D28),
+            oc1578_fake_427d28,
+            fakes::prev_cell(oc1578_fake_427d28),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0040B1F8),
+            oc1578_fake_40b1f8,
+            fakes::prev_cell(oc1578_fake_40b1f8),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0042B438),
+            oc1578_fake_42b438,
+            fakes::prev_cell(oc1578_fake_42b438),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0042B640),
+            oc1578_fake_42b640,
+            fakes::prev_cell(oc1578_fake_42b640),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00319690),
+            oc1578_fake_319690,
+            fakes::prev_cell(oc1578_fake_319690),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0042BF68),
+            oc1578_fake_reboot,
+            fakes::prev_cell(oc1578_fake_reboot),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0042BF30),
+            oc1578_fake_sync,
+            fakes::prev_cell(oc1578_fake_sync),
+        );
+    }
+
+    /// A machine with the gate set and the RPC countdowns: `reboot` calls
+    /// answer 0 first, then the sync calls.
+    pub(crate) fn oc1578_iop_machine(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        calls: u32,
+        reboot: u32,
+        sync: u32,
+    ) -> Rng {
+        let r = machine(c, seed, salt, calls);
+        c.bus.write32(IOP_GATE, IOP_MAGIC);
+        c.bus.write32(IOP_REBOOT_LEFT, reboot);
+        c.bus.write32(IOP_SYNC_LEFT, sync);
+        r
+    }
+
+    #[test]
+    fn ssx_iop_init_matches() {
+        oc1578_hook();
+        check(
+            ee::s10::f_00319610__generated,
+            ssx_iop_init,
+            200,
+            &|c, seed| {
+                let _r = oc1578_iop_machine(c, seed, 0x319610, 6, seed % 3, (seed / 3) % 3);
+                c.pc = 0x0031_9610;
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_unload_iop_module_matches() {
+        oc1578_hook();
+        check(
+            ee::s10::f_00319790__generated,
+            ssx_unload_iop_module,
+            200,
+            &|c, seed| {
+                let _r = oc1578_iop_machine(c, seed, 0x319790, 6, 0, 0);
+                c.pc = 0x0031_9790;
+                c.g[A1][0] = (DATA + 0x200 + 0x10 * (seed % 4)) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_exit_msif_rpc_matches() {
+        oc1578_hook();
+        check(
+            ee::s10::f_00319800__generated,
+            ssx_exit_msif_rpc,
+            200,
+            &|c, seed| {
+                let _r = oc1578_iop_machine(c, seed, 0x319800, 6, 0, 0);
+                c.pc = 0x0031_9800;
+                c.g[A0][0] = (DATA + 0x300 + 0x10 * (seed % 4)) as u64;
+            },
+        );
+    }
+
+    /// The reboot loops: the reboot answers 0 for `seed % 3` calls, the sync
+    /// for `(seed / 3) % 3`, with unwinding fakes at random call indices.
+    #[test]
+    fn ssx_iop_reboot_matches() {
+        oc1578_hook();
+        check(
+            ee::s10::f_00319820__generated,
+            ssx_iop_reboot,
+            200,
+            &|c, seed| {
+                let _r = oc1578_iop_machine(c, seed, 0x319820, 6, seed % 3, (seed / 3) % 3);
+                c.pc = 0x0031_9820;
+                c.g[A0][0] = (DATA + 0x400) as u64;
+            },
+        );
+    }
+
+    /// Events delivered at the reboot loops' back edges (every seed retries the
+    /// reboot at least once, so the event checks run).
+    #[test]
+    fn ssx_iop_reboot_events() {
+        oc1578_hook();
+        check_events(
+            ee::s10::f_00319820__generated,
+            ssx_iop_reboot,
+            120,
+            &|c, seed| {
+                let mut r = oc1578_iop_machine(c, seed, 0x319820, 0, 1 + seed % 3, (seed / 3) % 3);
+                c.pc = 0x0031_9820;
+                c.g[A0][0] = (DATA + 0x400) as u64;
+                schedule(c, &mut r, seed, 0x0031_9820)
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_power_off_thread_matches() {
+        oc1579_install();
+        check(
+            ee::s10::f_003198a0__generated,
+            ssx_power_off_thread,
+            200,
+            &|c, seed| {
+                oc1579_machine(c, seed, 0x1579_0001, 8);
+                c.g[A0][0] = sx(DATA + 0x100);
+                // Unwind within the first calls: the poll loops never end otherwise.
+                c.bus.write32(fakes::LOG_UNWIND_AT, seed % 8);
+                c.bus.write32(BUSY, (seed / 8 % 3 == 0) as u32);
+                c.bus.write32(POWER_STATUS, seed / 3 % 2);
+                c.bus.write32(POWER_RET, seed / 5 % 2);
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_power_off_signal_sema_matches() {
+        oc1579_install();
+        check(
+            ee::s10::f_00319910__generated,
+            ssx_power_off_signal_sema,
+            100,
+            &|c, seed| {
+                oc1579_machine(c, seed, 0x1579_0002, 2);
+                c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    #[test]
+    fn ps2exec_run_callback_sync_matches() {
+        oc1579_install();
+        check(
+            ee::s10::f_0031ab30__generated,
+            ps2exec_run_callback_sync,
+            200,
+            &|c, seed| {
+                oc1579_machine(c, seed, 0x1579_0003, 0);
+                let m = DATA + 0x1000;
+                c.g[A0][0] = sx(m);
+                let v = 0x0080_1000;
+                // The first call (0x423c90) returns v.
+                c.bus.write32(fakes::LOG_RESULTS, v);
+                c.bus
+                    .write32(m + 0x1_4040, if seed % 2 == 0 { v } else { v + 0x1000 });
+                c.bus.write32(m + 0x10, if seed % 3 == 0 { v } else { 0 });
+                // The table entry the tail path calls through (not in the table: a miss).
+                c.bus.write32(m + 8, DATA + 0x2000);
+                c.bus.write16(DATA + 0x2028, 0x40);
+                c.bus.write32(DATA + 0x202c, fakes::FAKE + 0x80);
             },
         );
     }

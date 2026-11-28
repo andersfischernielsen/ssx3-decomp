@@ -164,6 +164,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_base_dtor_power_up_trail,
         "RiderBase_DtorPowerUpTrail",
     ),
+    (
+        0x002e_bd88,
+        transition_effect_ctor_random,
+        "TransitionEffect_ctorRandom",
+    ),
+    (0x002e_c060, ccircle_tobj_draw, "cCircle_TObj_Draw"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5596,6 +5602,351 @@ pub fn rider_base_dtor_power_up_trail(c: &mut Cpu) {
     guest(c, |c| object_tables_body(c, &FAMILY_POWER_UP_TRAIL))
 }
 
+// ---------------------------------------------------------------------------
+// 0x002ec060 cCircle_TObj_Draw
+
+/// `TransitionEffect_DrawRect` (0x2eb938): fills a rectangle of the screen.
+pub(crate) const OC1567_DRAW_RECT: Callee = Callee {
+    addr: 0x002e_b938,
+    f: ee::s09::TransitionEffect_DrawRect,
+};
+
+/// The vertex packer the circle wipe calls through the function table
+/// (0x2ebf48; `x`, `y` in f12/f13, vertex out in a0, colour source in a1).
+pub(crate) const OC1567_PACK_VERTEX: u32 = 0x002e_bf48;
+
+/// `void cCircle_TObj_Draw(CircleTransition* self, float t)` (0x2ec060, the
+/// reference's `func_002EC060`; `t` is the wipe's progress in f12): the iris
+/// wipe of a screen transition. `r = (1 - t) * 800` is the radius of the
+/// open circle around the centre `self[0x14]` (the circle's y is `self[0x18]`).
+/// The two side rectangles outside the circle are drawn with
+/// `TransitionEffect_DrawRect` (the texture window `{gp+0xa40..}` scaled
+/// across `640 - x`), then the arc is built into two 40-entry tables from the
+/// sine table at 0x504fb8 (an x offset and a y offset per step), and two
+/// triangle strips of 80 vertices (the area above and below the arc) are
+/// packed with the vertex packer and submitted through the draw object's
+/// vtable (`gp+0x2a90`, entry 71, command 0x50). The y values are clamped to
+/// 0..480.
+pub fn ccircle_tobj_draw(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 94;
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 0);
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x2040));
+        c.g[AT][0] = 0x44480000;
+        c.mtc1(1, 3);
+        c.sub_s(0, 0, 12);
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x2000));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x1ff0));
+        c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x1f90));
+        c.g[A1][0] = c.g[S0][0];
+        c.swc1(25, (c.g[SP][0] as u32).wrapping_add(0x2038));
+        c.g[S7][0] = c.g[A0][0];
+        c.swc1(24, (c.g[SP][0] as u32).wrapping_add(0x2030));
+        c.mul_s(25, 0, 3);
+        c.swc1(23, (c.g[SP][0] as u32).wrapping_add(0x2028));
+        c.g[S1][0] = sx((c.g[S7][0] as u32).wrapping_add(0x4));
+        c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x2020));
+        c.g[A0][0] = c.g[SP][0];
+        c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x2018));
+        c.g[A2][0] = c.g[S1][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x1fe0));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x1fd0));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x1fc0));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x1fb0));
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x1fa0));
+        c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x1f80));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x1f70), c.g[RA][0]);
+        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x2010));
+        c.lwc1(20, (c.g[S7][0] as u32).wrapping_add(0x14));
+        c.lwc1(22, (c.g[GP][0] as u32).wrapping_sub(0x3984));
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0xa48));
+        c.sub_s(4, 20, 25);
+        c.lwc1(2, (c.g[GP][0] as u32).wrapping_add(0xa40));
+        c.add_s(20, 20, 25);
+        c.mul_s(1, 1, 22);
+        c.sw(c.g[SP][0] as u32, 0u64);
+        c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.lwc1(21, c.g[SP][0] as u32);
+        c.mul_s(1, 1, 4);
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_add(0xa4c));
+        c.lwc1(3, (c.g[GP][0] as u32).wrapping_add(0xa54));
+        c.mov_s(12, 21);
+        c.g[AT][0] = 0x43f00000;
+        c.mtc1(1, 24);
+        c.add_s(2, 2, 1);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x14));
+        c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x1c));
+        c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x8));
+        c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
+        c.g[AT][0] = 0x44200000;
+        c.mtc1(1, 23);
+        c.swc1(24, (c.g[SP][0] as u32).wrapping_add(0xc));
+        OC1567_DRAW_RECT.call(c, 0x002ec13c)?;
+        c.lwc1(1, (c.g[GP][0] as u32).wrapping_add(0xa48));
+        c.g[A1][0] = c.g[S0][0];
+        c.sub_s(5, 23, 20);
+        c.lwc1(2, (c.g[GP][0] as u32).wrapping_add(0xa40));
+        c.mul_s(0, 1, 22);
+        c.lwc1(3, (c.g[GP][0] as u32).wrapping_add(0xa4c));
+        c.lwc1(4, (c.g[GP][0] as u32).wrapping_add(0xa54));
+        c.g[A2][0] = c.g[S1][0];
+        c.mul_s(1, 1, 5);
+        c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x14));
+        c.mul_s(0, 0, 20);
+        c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x1c));
+        c.g[A0][0] = c.g[SP][0];
+        c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x8));
+        c.mul_s(1, 1, 22);
+        c.swc1(24, (c.g[SP][0] as u32).wrapping_add(0xc));
+        c.add_s(0, 2, 0);
+        c.swc1(20, c.g[SP][0] as u32);
+        c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x4));
+        c.mov_s(12, 21);
+        c.add_s(2, 2, 1);
+        c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+        OC1567_DRAW_RECT.call(c, 0x002ec19c)?;
+        c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x160));
+        c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x1060));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x1f60), c.g[V0][0]);
+        c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sw((c.g[SP][0] as u32).wrapping_add(0x1f64), c.g[V1][0]);
+        c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xc0));
+        c.g[V0][0] = 0x500000;
+        c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x3980));
+        c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x397c));
+        c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4fb8));
+        c.lwc1(4, (c.g[S7][0] as u32).wrapping_add(0x14));
+        c.mov_s(3, 21);
+        c.g[A2][0] = c.g[T1][0];
+        c.g[A1][0] = c.g[T0][0];
+        c.g[A0][0] = 0x27;
+        // The arc: 40 steps of an angle (f21) through the sine table.
+        loop {
+            c.cycles += 19;
+            c.mul_s(0, 21, 5);
+            c.cvt_w_s(1, 0);
+            c.mfc1(2, 1);
+            c.g[V0][0] = c.g[V0][0] & 0x1ff;
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x80));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            c.lwc1(0, c.g[V0][0] as u32);
+            c.lwc1(1, c.g[V1][0] as u32);
+            c.mul_s(0, 25, 0);
+            c.mul_s(1, 25, 1);
+            c.swc1(0, c.g[A1][0] as u32);
+            c.add_s(0, 4, 1);
+            c.c_le_s(3, 0);
+            let keep_low = !c.fcc();
+            c.mov_s(2, 3);
+            if !keep_low {
+                c.cycles += 1;
+                c.min_s(2, 0, 23);
+            }
+            c.cycles += 6;
+            c.swc1(2, c.g[A2][0] as u32);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(4));
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+            let more = (c.g[A0][0] as i64) >= 0;
+            c.add_s(21, 21, 6);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002e_c1d8);
+            }
+        }
+        c.cycles += 6;
+        c.g[V0][0] = 0x4f;
+        c.g[S2][0] = sx((c.g[S7][0] as u32).wrapping_add(4));
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        c.g[V0][0] = 0x4f;
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+        // An empty countdown of 80 steps (the compiler's leftover loop).
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            let more = c.g[V0][0] != c.g[V1][0];
+            c.g[S1][0] = c.g[T0][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002e_c258);
+            }
+        }
+        c.cycles += 11;
+        c.g[V0][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x1f64)).lw(c);
+        c.g[V1][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x1f60)).lw(c);
+        c.g[S0][0] = c.g[T1][0];
+        c.mtc1(0, 20);
+        c.g[S6][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30));
+        c.g[AT][0] = 0x43f0_0000;
+        c.mtc1(AT, 21);
+        c.g[S5][0] = c.g[V0][0];
+        c.g[S4][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+        c.g[S3][0] = c.g[V1][0];
+        c.g[FP][0] = 0x27;
+        // Per step, four vertices (top strip: 0 and the clamped upper edge;
+        // bottom strip: the clamped lower edge and 480).
+        loop {
+            c.cycles += 12;
+            c.lwc1(12, c.g[S0][0] as u32);
+            c.mov_s(13, 20);
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, OC1567_PACK_VERTEX, 0x002e_c2b4)?;
+            c.lwc1(1, (c.g[S7][0] as u32).wrapping_add(0x18));
+            c.lwc1(0, c.g[S1][0] as u32);
+            c.sub_s(1, 1, 0);
+            c.c_le_s(20, 1);
+            let keep_low = !c.fcc();
+            c.mov_s(13, 20);
+            if !keep_low {
+                c.cycles += 1;
+                c.min_s(13, 1, 21);
+            }
+            c.cycles += 11;
+            c.lwc1(12, c.g[S0][0] as u32);
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, OC1567_PACK_VERTEX, 0x002e_c2e4)?;
+            c.lwc1(1, (c.g[S7][0] as u32).wrapping_add(0x18));
+            c.lwc1(0, c.g[S1][0] as u32);
+            c.add_s(1, 1, 0);
+            c.c_le_s(20, 1);
+            let keep_low = !c.fcc();
+            c.mov_s(13, 20);
+            if !keep_low {
+                c.cycles += 1;
+                c.min_s(13, 1, 21);
+            }
+            c.cycles += 18;
+            c.lwc1(12, c.g[S0][0] as u32);
+            c.g[A0][0] = c.g[S5][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x60));
+            call_ptr(c, OC1567_PACK_VERTEX, 0x002e_c318)?;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+            c.lwc1(12, c.g[S0][0] as u32);
+            c.g[A0][0] = c.g[S6][0];
+            c.g[AT][0] = 0x43f0_0000;
+            c.mtc1(AT, 13);
+            c.g[A1][0] = c.g[S2][0];
+            c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x60));
+            c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x60));
+            call_ptr(c, OC1567_PACK_VERTEX, 0x002e_c33c)?;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+            c.g[FP][0] = sx((c.g[FP][0] as u32).wrapping_sub(1));
+            let more = (c.g[FP][0] as i64) >= 0;
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x60));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002e_c2a0);
+            }
+        }
+        // Submit both strips: `entry71.fn(obj + delta, 0x50, strip, 0)`.
+        c.cycles += 36;
+        for (strip, ret) in [(0x1f60u32, 0x002e_c370u32), (0x1f64, 0x002e_c394)] {
+            c.g[T0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x2a90)).lw(c);
+            c.g[A1][0] = 0x50;
+            c.g[A2][0] = Addr((c.g[SP][0] as u32).wrapping_add(strip)).lw(c);
+            c.g[A3][0] = 0;
+            c.g[V0][0] = Addr((c.g[T0][0] as u32).wrapping_add(0x10d8)).lw(c);
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x238)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x23c)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, ret)?;
+        }
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x2000));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x1ff0));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x1fe0));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x1fd0));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x1fc0));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x1fb0));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x1fa0));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x1f90));
+        c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x1f80));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x1f70));
+        c.lwc1(25, (c.g[SP][0] as u32).wrapping_add(0x2038));
+        c.lwc1(24, (c.g[SP][0] as u32).wrapping_add(0x2030));
+        c.lwc1(23, (c.g[SP][0] as u32).wrapping_add(0x2028));
+        c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0x2020));
+        c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x2018));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x2010));
+        let target = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x2040));
+        c.pc = target;
+        Ok(())
+    })
+}
+
+/// `TransitionEffect_ctorRandom` (0x2ebd88, `this, const tARGB& rect, float
+/// x (f12), float y (f13)`): copies the 16-byte rect at `a1` to `this+4`,
+/// runs the base constructor `TransitionEffect_ctor` (0x2e4d70), then stores
+/// the vtable at `this` and the two floats at `+0x14` and `+0x18`.
+pub fn transition_effect_ctor_random(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(21, 13);
+        let src = c.g[A1][0] as u32;
+        c.ldl(V0, src.wrapping_add(0x7));
+        c.ldr(V0, src);
+        c.ldl(V1, src.wrapping_add(0xf));
+        c.ldr(V1, src.wrapping_add(0x8));
+        let at = frame.at(c, 0);
+        c.sdl(V0, at.wrapping_add(0x7));
+        c.sdr(V0, at);
+        c.sdl(V1, at.wrapping_add(0xf));
+        c.mov_s(20, 12);
+        c.sdr(V1, at.wrapping_add(0x8));
+        Callee {
+            addr: 0x002e_4d70,
+            f: ee::s09::f_002e4d70,
+        }
+        .call(c, 0x002e_bdcc)?;
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = 0x490000;
+        c.g[V0][0] = c.g[S0][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7f80));
+        frame.restore_ra(c, 0x10);
+        let vtable = c.g[V1][0];
+        Addr(this).sw(c, vtable);
+        let at = frame.at(c, 0);
+        c.ldl(V1, at.wrapping_add(0x7));
+        c.ldr(V1, at);
+        c.ldl(A0, at.wrapping_add(0xf));
+        c.ldr(A0, at.wrapping_add(0x8));
+        c.sdl(V1, this.wrapping_add(0xb));
+        c.sdr(V1, this.wrapping_add(0x4));
+        c.sdl(A0, this.wrapping_add(0x13));
+        c.sdr(A0, this.wrapping_add(0xc));
+        c.swc1(20, this.wrapping_add(0x14));
+        c.swc1(21, this.wrapping_add(0x18));
+        frame.restore(c, S0, 0x20);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6774,6 +7125,113 @@ pub(crate) mod tests {
             rider_base_dtor_power_up_trail,
             300,
             &|c, seed| object_fixture(c, seed, &FAMILY_POWER_UP_TRAIL),
+        );
+    }
+
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::machine_rt;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc1567_gated;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_CTRL;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_MAGIC;
+
+    use std::sync::atomic::AtomicUsize;
+
+    // -- cCircle_TObj_Draw --------------------------------------------------
+
+    pub(crate) const OC1567_RET_DRAW: u32 = 10;
+
+    pub(crate) static OC1567_PREV_DRAW_RECT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1567_fake_draw_rect(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x002e_b938,
+            OC1567_RET_DRAW,
+            &OC1567_PREV_DRAW_RECT,
+            ee::s09::f_002eb938__generated,
+        );
+    }
+
+    /// `cCircle_TObj_Draw`: wipe progress `t` from 0 (a radius that clamps
+    /// every vertex) to beyond 1 (negative radius), centres inside and
+    /// outside the screen; `TransitionEffect_DrawRect` is a gated fake, the
+    /// vertex packer (no generated function) and the two vtable submits are
+    /// logged by the machine's miss hook.
+    #[test]
+    fn ccircle_tobj_draw_matches() {
+        use crate::difftest::fakes::FAKE;
+        const SELF: u32 = DATA + 0x1000;
+        const DRAW_OBJ: u32 = DATA + 0x2000;
+        const TABLE: u32 = DATA + 0x2400;
+        const SINE: u32 = 0x0050_4fb8;
+        hook(
+            std::ptr::addr_of_mut!(ee::s09::OVERRIDE_002EB938),
+            oc1567_fake_draw_rect,
+            &OC1567_PREV_DRAW_RECT,
+        );
+        covered(
+            ee::s09::f_002ec060__generated,
+            ccircle_tobj_draw,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e_c060, 164);
+                c.pc = 0x002e_c060;
+                c.bus.write32(OC1567_CTRL, OC1567_MAGIC);
+                let gp = GAME_GP;
+                // `.lit4`: 1 / 640, the arc step (pi / 39), 512 / (2 pi).
+                c.bus
+                    .write32(gp.wrapping_sub(0x3984), 0.0015625f32.to_bits());
+                c.bus
+                    .write32(gp.wrapping_sub(0x3980), 0.080_553_66f32.to_bits());
+                c.bus
+                    .write32(gp.wrapping_sub(0x397c), 81.487_25f32.to_bits());
+                // The texture window (floats at gp + 0xa40..0xa54).
+                for i in 0..6u32 {
+                    c.bus.write32(gp + 0xa40 + 4 * i, r.f32(2.0));
+                }
+                // The 640-entry sine table.
+                for i in 0..640u32 {
+                    let a = (i as f32) * (std::f32::consts::TAU / 512.0);
+                    c.bus.write32(SINE + 4 * i, a.sin().to_bits());
+                }
+                // The transition: centre, colour block.
+                let cx = [320.0f32, -40.0, 700.0, 100.0][(seed % 4) as usize];
+                let cy = [240.0f32, 20.0, 500.0, 240.0][((seed / 4) % 4) as usize];
+                c.bus.write32(SELF + 0x14, cx.to_bits());
+                c.bus.write32(SELF + 0x18, cy.to_bits());
+                for i in 0..3u32 {
+                    c.bus.write32(SELF + 4 + 4 * i, r.next_u32());
+                }
+                // The draw object: `obj[0x10d8] -> table`, whose entry
+                // (+0x238 delta, +0x23c function) is a call the machine fakes.
+                c.bus.write32(gp + 0x2a90, DRAW_OBJ);
+                c.bus.write32(DRAW_OBJ + 0x10d8, TABLE);
+                c.bus.write16(TABLE + 0x238, (r.next_u32() % 0x40) as u16);
+                c.bus.write32(TABLE + 0x23c, FAKE + 0x80);
+                // Progress 0..1.2 (negative radius beyond 1).
+                let t = [0.0f32, 0.25, 0.5, 0.9, 1.0, 1.2][((seed / 16) % 6) as usize];
+                c.f[12] = t.to_bits();
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    #[test]
+    fn transition_effect_ctor_random_matches() {
+        check(
+            ee::s09::f_002ebd88__generated,
+            transition_effect_ctor_random,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002e_bd88, 0);
+                let this = DATA + 0x1000;
+                let rect = DATA + 0x2000;
+                fill(c, &mut r, rect, 4);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(rect);
+                c.f[12] = r.next_u32();
+                c.f[13] = r.next_u32();
+            },
         );
     }
 }

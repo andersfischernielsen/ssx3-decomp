@@ -4,6 +4,7 @@
 use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::call::Unwound;
@@ -13,6 +14,7 @@ use crate::events::event_due;
 use crate::game::lib::kernel::do_syscall;
 use crate::game::lib::kernel::event_if_due;
 use crate::game::lib::kernel::DINTR;
+use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -64,6 +66,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_4950, disable_dmac_wrapper, "DisableDmac"),
     (0x0042_49b8, enable_dmac_wrapper, "EnableDmac"),
     (0x0042_4c50, i_wakeup_thread_signal, "iWakeupThread"),
+    (0x0042_4a20, i_enable_intc_wrapper, "iEnableIntc"),
+    (0x0042_4a40, i_disable_intc_wrapper, "iDisableIntc"),
+    (0x0042_4a60, i_enable_dmac_wrapper, "iEnableDmac"),
+    (0x0042_4a80, i_disable_dmac_wrapper, "iDisableDmac"),
+    (
+        0x0042_4ce8,
+        i_rotate_thread_ready_queue,
+        "iRotateThreadReadyQueue",
+    ),
+    (0x0042_4d68, i_suspend_thread_checked, "iSuspendThread"),
 ];
 
 /// Direct-call targets of this module (address, generated function).
@@ -2081,7 +2093,7 @@ pub fn i_wakeup_thread_signal(c: &mut Cpu) {
 /// generated body (at install: its `__generated` alias).
 pub fn sce_fs_init(c: &mut Cpu) {
     if c.pc != 0x00427a90 {
-        return ee::s15::f_00427a90__generated(c);
+        return sce_fs_init_resume(c);
     }
     guest(c, |c| {
         let mut pc: u32 = 0x00427a90;
@@ -2395,6 +2407,556 @@ pub fn sce_fs_init(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// Native resume of `sce_fs_init` (converted from the `generated` body): any entry
+/// other than 0x00427a90, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn sce_fs_init_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00427a90 => {
+                    c.cycles += 30;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+                    c.g[A0][0] = 0u64;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+                    c.g[S0][0] = 0x530000;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1180));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+                    c.g[RA][0] = sx(0x00427abc);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+                    Callee {
+                        addr: 0x00426408,
+                        f: ee::s15::sceSifInitRpc,
+                    }
+                    .call(c, 0x00427abc)?;
+                    c.sw((c.g[S0][0] as u32).wrapping_sub(0x1180), 0u64);
+                    c.g[RA][0] = sx(0x00427ac8);
+                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
+                    Callee {
+                        addr: 0x0042c078,
+                        f: ee::s15::DIntr,
+                    }
+                    .call(c, 0x00427ac8)?;
+                    c.g[A1][0] = 0x420000;
+                    c.g[A2][0] = 0x530000;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7590));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x11c0));
+                    c.g[RA][0] = sx(0x00427ae8);
+                    c.g[A0][0] = c.g[A0][0] | 0x11;
+                    Callee {
+                        addr: 0x00426020,
+                        f: ee::s15::sceSifAddCmdHandler,
+                    }
+                    .call(c, 0x00427ae8)?;
+                    c.g[A1][0] = 0x420000;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7a60));
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x00427b00);
+                    c.g[A0][0] = c.g[A0][0] | 0x13;
+                    Callee {
+                        addr: 0x00426020,
+                        f: ee::s15::sceSifAddCmdHandler,
+                    }
+                    .call(c, 0x00427b00)?;
+                    let t = c.g[S0][0] == 0u64;
+                    c.g[S3][0] = 0x530000;
+                    if t {
+                        pc = 0x00427b3c;
+                        continue;
+                    }
+                    pc = 0x00427b08;
+                    continue;
+                }
+                0x00427b08 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427b10);
+                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
+                    Callee {
+                        addr: 0x0042c0c0,
+                        f: ee::s15::EIntr,
+                    }
+                    .call(c, 0x00427b10)?;
+                    let t = true;
+
+                    if t {
+                        pc = 0x00427b40;
+                        continue;
+                    }
+                    pc = 0x00427b18;
+                    continue;
+                }
+                0x00427b18 => {
+                    c.cycles += 2;
+                    c.g[V1][0] = 0xffffffffffffffff;
+                    pc = 0x00427b20;
+                    continue;
+                }
+                0x00427b20 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[V0][0] != c.g[V1][0];
+
+                    if t {
+                        if back_edge_unwinds(c, 0x00427b20) {
+                            return Ok(());
+                        }
+                        pc = 0x00427b20;
+                        continue;
+                    }
+                    pc = 0x00427b3c;
+                    continue;
+                }
+                0x00427b3c => {
+                    c.cycles += 1;
+                    c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
+                    pc = 0x00427b40;
+                    continue;
+                }
+                0x00427b40 => {
+                    c.cycles += 7;
+                    c.g[A1][0] = 0xffffffff80000000;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[A1][0] | 0x1;
+                    c.g[RA][0] = sx(0x00427b54);
+                    c.g[A2][0] = 0u64;
+                    Callee {
+                        addr: 0x00426b48,
+                        f: ee::s15::sceSifBindRpc,
+                    }
+                    .call(c, 0x00427b54)?;
+                    let t = (c.g[V0][0] as i64) < 0;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    if t {
+                        pc = 0x00427c74;
+                        continue;
+                    }
+                    pc = 0x00427b5c;
+                    continue;
+                }
+                0x00427b5c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x24));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x100000;
+                    if t {
+                        if back_edge_unwinds(c, 0x00427b18) {
+                            return Ok(());
+                        }
+                        pc = 0x00427b18;
+                        continue;
+                    }
+                    pc = 0x00427b68;
+                    continue;
+                }
+                0x00427b68 => {
+                    c.cycles += 10;
+                    c.g[RA][0] = sx(0x00427b70);
+                    c.g[S4][0] = 0x450000;
+                    Callee {
+                        addr: 0x00427438,
+                        f: ee::s15::sceFs_FdSemaInit,
+                    }
+                    .call(c, 0x00427b70)?;
+                    c.g[RA][0] = sx(0x00427b78);
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
+                    Callee {
+                        addr: 0x00423de0,
+                        f: ee::s15::WaitSema,
+                    }
+                    .call(c, 0x00427b78)?;
+                    c.g[V1][0] = 0x530000;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1400));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x200));
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S2][0] = 0x530000;
+                    if t {
+                        pc = 0x00427bbc;
+                        continue;
+                    }
+                    pc = 0x00427b90;
+                    continue;
+                }
+                0x00427b90 => {
+                    c.cycles += 2;
+                    c.g[S1][0] = 0x530000;
+                    c.g[S0][0] = 0x530000;
+                    pc = 0x00427b98;
+                    continue;
+                }
+                0x00427b98 => {
+                    c.cycles += 7;
+                    c.sw((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.g[V0][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x00427b98) {
+                            return Ok(());
+                        }
+                        pc = 0x00427b98;
+                        continue;
+                    }
+                    pc = 0x00427bb4;
+                    continue;
+                }
+                0x00427bb4 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
+                    if t {
+                        pc = 0x00427bc8;
+                        continue;
+                    }
+                    pc = 0x00427bbc;
+                    continue;
+                }
+                0x00427bbc => {
+                    c.cycles += 3;
+                    c.g[S1][0] = 0x530000;
+                    c.g[S0][0] = 0x530000;
+                    c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x5218));
+                    pc = 0x00427bc8;
+                    continue;
+                }
+                0x00427bc8 => {
+                    c.cycles += 18;
+                    c.g[RA][0] = sx(0x00427bd0);
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1cc0));
+                    Callee {
+                        addr: 0x00423dc0,
+                        f: ee::s15::SignalSema,
+                    }
+                    .call(c, 0x00427bd0)?;
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1c80));
+                    c.g[A3][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x2940));
+                    c.sw((c.g[S2][0] as u32).wrapping_sub(0x2940), c.g[V1][0]);
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1200));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x440));
+                    c.g[A1][0] = 0xff;
+                    c.sw((c.g[A3][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    c.g[A2][0] = 0u64;
+                    c.sw(c.g[SP][0] as u32, 0u64);
+                    c.g[T0][0] = 0x8;
+                    c.g[T1][0] = c.g[S0][0];
+                    c.g[T2][0] = 0x8;
+                    c.g[RA][0] = sx(0x00427c08);
+                    c.g[T3][0] = 0u64;
+                    Callee {
+                        addr: 0x00426d18,
+                        f: ee::s15::sceSifCallRpc,
+                    }
+                    .call(c, 0x00427c08)?;
+                    let t = (c.g[V0][0] as i64) >= 0;
+                    c.g[A0][0] = 0x20000000;
+                    if t {
+                        pc = 0x00427c1c;
+                        continue;
+                    }
+                    pc = 0x00427c10;
+                    continue;
+                }
+                0x00427c10 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xfffffffffffe0000;
+                    let t = true;
+                    c.g[V0][0] = c.g[V0][0] | 0xffff;
+                    if t {
+                        pc = 0x00427c74;
+                        continue;
+                    }
+                    pc = 0x00427c1c;
+                    continue;
+                }
+                0x00427c1c => {
+                    c.cycles += 22;
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.g[S0][0] | c.g[A0][0];
+                    c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
+                    c.g[A1][0] = 0x530000;
+                    c.g[T0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x11d8));
+                    c.lwl(4, (c.g[V1][0] as u32).wrapping_add(0x3));
+                    c.lwr(4, c.g[V1][0] as u32);
+                    c.swl(4, (c.g[T0][0] as u32).wrapping_add(0x3));
+                    c.swr(4, c.g[T0][0] as u32);
+                    c.lwl(3, (c.g[V0][0] as u32).wrapping_add(0x3));
+                    c.lwr(3, c.g[V0][0] as u32);
+                    c.swl(3, (c.g[SP][0] as u32).wrapping_add(0x13));
+                    c.swr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A2][0] = 0x450000;
+                    c.g[A1][0] = 0x450000;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = 0x1;
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x520c), c.g[A0][0]);
+                    c.g[V0][0] = 0u64;
+                    c.g[V1][0] = c.g[V1][0] ^ 0x2;
+                    c.g[V1][0] = (c.g[V1][0] < 0x1u64) as u64;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x5210), c.g[V1][0]);
+                    pc = 0x00427c74;
+                    continue;
+                }
+                0x00427c74 => {
+                    c.cycles += 8;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00427a90, 0x00427c94);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `_iEnableIntc` (0x423b40): the callee of `iEnableIntc`.
+pub(crate) const I_ENABLE_INTC: Callee = Callee {
+    addr: 0x0042_3b40,
+    f: ee::s15::f_00423b40,
+};
+
+/// `_iDisableIntc` (0x423b50): the callee of `iDisableIntc`.
+pub(crate) const I_DISABLE_INTC: Callee = Callee {
+    addr: 0x0042_3b50,
+    f: ee::s15::f_00423b50,
+};
+
+/// The shared shape of `iEnableIntc` and `iDisableIntc`: 8 cycles, a 16-byte
+/// frame holding `ra`, one call to the `_i*Intc` wrapper returning to `ret`,
+/// then the frame is popped and `ra` returned to. The callee unwinding leaves
+/// the frame as it is.
+pub(crate) fn forward_to_intc(c: &mut Cpu, callee: Callee, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        callee.call(c, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void iEnableIntc(void)` (0x424a20): forwards to `_iEnableIntc`, returning
+/// to 0x424a30.
+pub fn i_enable_intc_wrapper(c: &mut Cpu) {
+    forward_to_intc(c, I_ENABLE_INTC, 0x0042_4a30);
+}
+
+/// `void iDisableIntc(void)` (0x424a40): forwards to `_iDisableIntc`,
+/// returning to 0x424a50.
+pub fn i_disable_intc_wrapper(c: &mut Cpu) {
+    forward_to_intc(c, I_DISABLE_INTC, 0x0042_4a50);
+}
+
+/// `_iEnableDmac` (0x423b60), `_iDisableDmac` (0x423b70), `iSignalSema`
+/// (0x423dd0) and `_iSuspendThread` (0x423d20): the calls these bodies make.
+pub(crate) const KERNL_I_ENABLE_DMAC: Callee = Callee {
+    addr: 0x0042_3b60,
+    f: ee::s15::f_00423b60,
+};
+
+pub(crate) const KERNL_I_DISABLE_DMAC: Callee = Callee {
+    addr: 0x0042_3b70,
+    f: ee::s15::f_00423b70,
+};
+
+pub(crate) const KERNL_I_SIGNAL_SEMA: Callee = Callee {
+    addr: 0x0042_3dd0,
+    f: ee::s15::f_00423dd0,
+};
+
+pub(crate) const KERNL_I_SUSPEND_THREAD: Callee = Callee {
+    addr: 0x0042_3d20,
+    f: ee::s15::f_00423d20,
+};
+
+/// `iEnableDmac(void)` (0x424a60): `_iEnableDmac()` in a 0x10-byte frame.
+pub fn i_enable_dmac_wrapper(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        KERNL_I_ENABLE_DMAC.call(c, 0x0042_4a70)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `iDisableDmac(void)` (0x424a80): `_iDisableDmac()` in a 0x10-byte frame.
+pub fn i_disable_dmac_wrapper(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        KERNL_I_DISABLE_DMAC.call(c, 0x0042_4a90)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int iRotateThreadReadyQueue(int priority)` (0x424ce8): queues a rotate
+/// request (kind 1) for `priority` in the interrupt helper's wake queue (header
+/// at `D_0052B3A8`: index word at +4, 2-byte entries from +8) and signals its
+/// semaphore (`D_0052B3A0`). Returns `priority`, or -1 when `priority >= 0x80`
+/// or the queue is not set up (`D_00455170 == 0`).
+pub fn i_rotate_thread_ready_queue(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        c.g[SP][0] = sx(sp(c).wrapping_sub(0x20));
+        let saved_s0 = c.g[S0][0];
+        Addr(sp(c)).sd(c, saved_s0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = (c.g[S0][0] < 0x80) as u64;
+        let saved_ra = c.g[RA][0];
+        Addr(sp(c).wrapping_add(0x10)).sd(c, saved_ra);
+        let ready = if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x0045_0000;
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x5170)).lw(c);
+            let set = c.g[V1][0] != 0;
+            c.g[V1][0] = 0x0053_0000;
+            set
+        } else {
+            false
+        };
+        'done: {
+            if !ready {
+                c.cycles += 2;
+                c.g[V0][0] = u64::MAX;
+                break 'done;
+            }
+            c.cycles += 15;
+            c.g[A1][0] = 0x0053_0000;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x4c58));
+            c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_sub(0x4c60)).lw(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4)).lw(c);
+            c.g[A3][0] = 1;
+            c.g[V0][0] &= 0x1ff;
+            c.g[A2][0] = sx((c.g[V0][0] as u32) << 1);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            let index = c.g[V0][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, index);
+            let kind = c.g[A3][0];
+            Addr((c.g[A1][0] as u32).wrapping_add(0x8)).sb(c, kind);
+            c.g[V1][0] = c.g[A1][0];
+            let priority = c.g[S0][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x9)).sb(c, priority);
+            KERNL_I_SIGNAL_SEMA.call(c, 0x0042_4d50)?;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 4;
+        c.g[RA][0] = Addr(sp(c).wrapping_add(0x10)).ld(c);
+        c.g[S0][0] = Addr(sp(c)).ld(c);
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = ra;
+        Ok(())
+    })
+}
+
+/// `int iSuspendThread(int threadId)` (0x424d68): asks the kernel for the
+/// calling thread's id (GetThreadId, syscall -47). When it is `threadId`, queues
+/// a suspend request (kind 2) for it in the helper's wake queue, signals the
+/// semaphore and returns the id; -1 when the id is 0x100 or more or the queue
+/// is not set up. Any other thread goes to `_iSuspendThread(threadId)`.
+pub fn i_suspend_thread_checked(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        c.g[SP][0] = sx(sp(c).wrapping_sub(0x20));
+        let saved_ra = c.g[RA][0];
+        Addr(sp(c).wrapping_add(0x10)).sd(c, saved_ra);
+        let saved_s0 = c.g[S0][0];
+        Addr(sp(c)).sd(c, saved_s0);
+        c.g[V1][0] = 0xffff_ffff_ffff_ffd1;
+        if !do_syscall(c, 0x0042_4d78, 0x0042_4d7c) {
+            return Ok(());
+        }
+        event_if_due(c);
+        c.g[S0][0] = c.g[V0][0];
+        let same = c.g[S0][0] == c.g[A0][0];
+        c.g[V0][0] = (c.g[S0][0] < 0x100) as u64;
+        {
+            if !same {
+                c.cycles += 4;
+                KERNL_I_SUSPEND_THREAD.call(c, 0x0042_4d90)?;
+            } else {
+                'df0: {
+                    c.cycles += 2;
+                    let in_range = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x0045_0000;
+                    let ready = if in_range {
+                        c.cycles += 3;
+                        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x5170)).lw(c);
+                        let set = c.g[V1][0] != 0;
+                        c.g[V1][0] = 0x0053_0000;
+                        set
+                    } else {
+                        false
+                    };
+                    if !ready {
+                        c.cycles += 2;
+                        c.g[V0][0] = u64::MAX;
+                        break 'df0;
+                    }
+                    c.cycles += 15;
+                    c.g[A1][0] = 0x0053_0000;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x4c58));
+                    c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_sub(0x4c60)).lw(c);
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4)).lw(c);
+                    c.g[A3][0] = 2;
+                    c.g[V0][0] &= 0x1ff;
+                    c.g[A2][0] = sx((c.g[V0][0] as u32) << 1);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    let index = c.g[V0][0];
+                    Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, index);
+                    let kind = c.g[A3][0];
+                    Addr((c.g[A1][0] as u32).wrapping_add(0x8)).sb(c, kind);
+                    c.g[V1][0] = c.g[A1][0];
+                    let thread = c.g[S0][0];
+                    Addr((c.g[V1][0] as u32).wrapping_add(0x9)).sb(c, thread);
+                    KERNL_I_SIGNAL_SEMA.call(c, 0x0042_4dec)?;
+                    c.g[V0][0] = c.g[S0][0];
+                }
+                c.cycles += 1;
+            }
+            c.g[RA][0] = Addr(sp(c).wrapping_add(0x10)).ld(c);
+        }
+        c.cycles += 3;
+        c.g[S0][0] = Addr(sp(c)).ld(c);
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+        c.pc = ra;
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -3919,6 +4481,114 @@ pub(crate) mod tests {
             seen.len() >= 6,
             "only {} distinct paths: {seen:?}",
             seen.len()
+        );
+    }
+
+    /// The forwarding wrappers: the callee's trap is the one fake call; it
+    /// may unwind, in which case the wrapper returns without popping its frame.
+    #[test]
+    fn i_enable_intc_wrapper_matches() {
+        covered(
+            ee::s15::f_00424a20__generated,
+            i_enable_intc_wrapper,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                machine(c, seed, 7, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn i_disable_intc_wrapper_matches() {
+        covered(
+            ee::s15::f_00424a40__generated,
+            i_disable_intc_wrapper,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                machine(c, seed, 8, 1);
+            },
+        );
+    }
+
+    pub(crate) const SEEDS_2: u32 = 200;
+
+    /// `D_00455170`: the helper queue is set up when it is non-zero.
+    pub(crate) const QUEUE_READY: u32 = 0x0045_0000 + 0x5170;
+
+    /// `D_0052B3A8` (the wake queue header) and its index word.
+    pub(crate) const QUEUE: u32 = 0x0053_0000 - 0x4c58;
+
+    pub(crate) const QUEUE_INDEX: u32 = QUEUE + 4;
+
+    /// `D_0052B3A0`: the helper semaphore id.
+    pub(crate) const QUEUE_SEMA: u32 = 0x0053_0000 - 0x4c60;
+
+    #[test]
+    fn i_enable_dmac_wrapper_matches() {
+        covered(
+            ee::s15::f_00424a60__generated,
+            i_enable_dmac_wrapper,
+            SEEDS_2,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1596_0001, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn i_disable_dmac_wrapper_matches() {
+        covered(
+            ee::s15::f_00424a80__generated,
+            i_disable_dmac_wrapper,
+            SEEDS_2,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1596_0002, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn i_rotate_thread_ready_queue_matches() {
+        covered(
+            ee::s15::f_00424ce8__generated,
+            i_rotate_thread_ready_queue,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1596_0005, 1);
+                c.bus
+                    .write32(QUEUE_READY, if seed % 5 == 0 { 0 } else { 1 });
+                c.bus.write32(QUEUE_SEMA, r.next_u32());
+                c.bus.write32(QUEUE_INDEX, r.next_u32());
+                c.g[A0][0] = match seed % 4 {
+                    0 => 0x80,
+                    1 => u64::MAX,
+                    _ => (r.next_u32() % 0x80) as u64,
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn i_suspend_thread_checked_matches() {
+        covered(
+            ee::s15::f_00424d68__generated,
+            i_suspend_thread_checked,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1596_0006, 3);
+                // The GetThreadId result (the first call the body makes).
+                let id: u32 = [0x42, 0x07, 0x100, 0x1ff][(seed % 4) as usize];
+                c.bus.write32(LOG_RESULTS, id);
+                c.g[A0][0] = if seed % 3 == 0 {
+                    id as u64
+                } else {
+                    (r.next_u32() | 0x1000) as u64
+                };
+                c.bus
+                    .write32(QUEUE_READY, if seed % 5 == 0 { 0 } else { 1 });
+                c.bus.write32(QUEUE_SEMA, r.next_u32());
+                c.bus.write32(QUEUE_INDEX, r.next_u32());
+            },
         );
     }
 }

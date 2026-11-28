@@ -66,6 +66,7 @@ pub(crate) fn install_renderer(
     // The light visibility queries from the native depth (unless a debug
     // switch already forces them).
     if native && ssx3_core::config::var_os("SSX3_DEBUG_LENSFX_VIS").is_none() {
+        let _ = LENSFX_PREVIOUS.set(ssx3_ee::get_override(LENSFX_QUERY).expect("LensFX_v04 slot"));
         assert!(ssx3_ee::set_override(LENSFX_QUERY, lensfx_query_native));
     }
     ssx3_ps2::frame_sink::set_native(native);
@@ -102,10 +103,13 @@ pub(crate) fn install_renderer(
 /// at 9), a2 where the visibility goes. Returns 1.
 const LENSFX_QUERY: u32 = 0x002e_c478;
 
+/// The port of `LensFX_v04` the native query falls back to.
+static LENSFX_PREVIOUS: std::sync::OnceLock<fn(&mut ssx3_ee_rt::Cpu)> = std::sync::OnceLock::new();
+
 fn lensfx_query_native(c: &mut Cpu) {
     use ssx3_ee_rt::cpu::reg::*;
     if !ssx3_ps2::frame_sink::native() {
-        ssx3_ee::s09::f_002ec478__generated(c);
+        LENSFX_PREVIOUS.get().expect("render install")(c);
         return;
     }
     let (rec, out) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
@@ -120,12 +124,12 @@ fn lensfx_query_native(c: &mut Cpu) {
         if LOGGED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5 {
             eprintln!("[lensfx] unusual query record {f:?}: generated path");
         }
-        ssx3_ee::s09::f_002ec478__generated(c);
+        LENSFX_PREVIOUS.get().expect("render install")(c);
         return;
     }
     let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z))
     else {
-        ssx3_ee::s09::f_002ec478__generated(c);
+        LENSFX_PREVIOUS.get().expect("render install")(c);
         return;
     };
     c.bus.write32(out, v.to_bits());

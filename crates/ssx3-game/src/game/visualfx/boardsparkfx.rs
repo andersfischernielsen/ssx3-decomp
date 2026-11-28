@@ -993,9 +993,8 @@ pub fn board_spark_fx_render(c: &mut Cpu) {
 /// Converted from the generated body (every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee) runs the generated body.
 pub fn board_spark_fx_ctor(c: &mut Cpu) {
-    if c.pc != 0x002da390 {
-        return ee::s09::f_002da390__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2da3d8: {
             c.cycles += 14;

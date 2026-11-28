@@ -398,7 +398,7 @@ pub fn be_copy_profile_characters(c: &mut Cpu) {
 /// generated body (at install: its `__generated` alias).
 pub fn be_post_race_get_interface(c: &mut Cpu) {
     if c.pc != 0x00156390 {
-        return ee::s01::f_00156390__generated(c);
+        return be_post_race_get_interface_resume(c);
     }
     guest(c, |c| 'l_156390: loop {
         'b_1564a4: {
@@ -713,6 +713,306 @@ pub fn be_post_race_get_interface(c: &mut Cpu) {
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
         c.pc = t;
         return Ok(());
+    });
+}
+
+/// Native resume of `be_post_race_get_interface` (converted from the `entries` body): any entry
+/// other than 0x00156390, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn be_post_race_get_interface_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00156390 => {
+                    c.cycles += 4;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                    c.g[V0][0] = (c.g[A1][0] < 0xeu64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    if t {
+                        pc = 0x0015649c;
+                        continue;
+                    }
+                    pc = 0x001563a0;
+                    continue;
+                }
+                0x001563a0 => {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x460000;
+                    c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5740));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                0x001563bc => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001563c4);
+                    Callee {
+                        addr: 0x001448d8,
+                        f: ee::s01::BENewRaceInt_GetInstance,
+                    }
+                    .call(c, 0x001563c4)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x001563cc;
+                    continue;
+                }
+                0x001563cc => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001563d4);
+                    Callee {
+                        addr: 0x00145970,
+                        f: ee::s01::BENewPlayerInt_GetInstance,
+                    }
+                    .call(c, 0x001563d4)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x001563dc;
+                    continue;
+                }
+                0x001563dc => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001563e4);
+                    Callee {
+                        addr: 0x0014edd8,
+                        f: ee::s01::BE_GetCharDBInterface,
+                    }
+                    .call(c, 0x001563e4)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x001563ec;
+                    continue;
+                }
+                0x001563ec => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001563f4);
+                    Callee {
+                        addr: 0x00147f78,
+                        f: ee::s01::BECharInt_GetInstance,
+                    }
+                    .call(c, 0x001563f4)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x001563fc;
+                    continue;
+                }
+                0x001563fc => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156404);
+                    Callee {
+                        addr: 0x0014f250,
+                        f: ee::s01::BEOptionInt_GetInstance,
+                    }
+                    .call(c, 0x00156404)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015640c;
+                    continue;
+                }
+                0x0015640c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156414);
+                    Callee {
+                        addr: 0x00152638,
+                        f: ee::s01::BESaveInt_GetInstance,
+                    }
+                    .call(c, 0x00156414)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015641c;
+                    continue;
+                }
+                0x0015641c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156424);
+                    Callee {
+                        addr: 0x0014e0e0,
+                        f: ee::s01::BENetworkInt_GetInstance,
+                    }
+                    .call(c, 0x00156424)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015642c;
+                    continue;
+                }
+                0x0015642c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156434);
+                    Callee {
+                        addr: 0x00154948,
+                        f: ee::s01::BEScoreInt_GetInstance,
+                    }
+                    .call(c, 0x00156434)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015643c;
+                    continue;
+                }
+                0x0015643c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156444);
+                    Callee {
+                        addr: 0x0014abe0,
+                        f: ee::s01::BEBoltInt_GetInstance,
+                    }
+                    .call(c, 0x00156444)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015644c;
+                    continue;
+                }
+                0x0015644c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156454);
+                    Callee {
+                        addr: 0x0014f900,
+                        f: ee::s01::BEBAGTInt_GetInstance,
+                    }
+                    .call(c, 0x00156454)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015645c;
+                    continue;
+                }
+                0x0015645c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156464);
+                    Callee {
+                        addr: 0x001508d8,
+                        f: ee::s01::BEEconInt_GetInstance,
+                    }
+                    .call(c, 0x00156464)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015646c;
+                    continue;
+                }
+                0x0015646c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156474);
+                    Callee {
+                        addr: 0x001532a0,
+                        f: ee::s01::BEMissionInt_GetInstance,
+                    }
+                    .call(c, 0x00156474)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015647c;
+                    continue;
+                }
+                0x0015647c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156484);
+                    Callee {
+                        addr: 0x00155a50,
+                        f: ee::s01::BEAggressionInt_GetInstance,
+                    }
+                    .call(c, 0x00156484)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015648c;
+                    continue;
+                }
+                0x0015648c => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00156494);
+                    Callee {
+                        addr: 0x001569c0,
+                        f: ee::s01::BERewardInt_GetInstance,
+                    }
+                    .call(c, 0x00156494)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    if t {
+                        pc = 0x001564a4;
+                        continue;
+                    }
+                    pc = 0x0015649c;
+                    continue;
+                }
+                0x0015649c => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0u64;
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    pc = 0x001564a4;
+                    continue;
+                }
+                0x001564a4 => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00156390, 0x001564ac);
+                    return Ok(());
+                }
+            }
+        }
     });
 }
 

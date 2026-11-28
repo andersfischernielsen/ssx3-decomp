@@ -1,6 +1,7 @@
 //! `src/ealib/seg_2b4578.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -34,6 +35,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_9e48, snd_midi_set_volume, "SNDMIDI_SetVolume"),
     (0x003b_9f38, snd_midi_fade_volume, "SNDMIDI_FadeVolume"),
     (0x003b_9fc8, snd_midi_get_status, "SNDMIDI_GetStatus"),
+    (0x003d_2068, path_copy_event, "PATHI_copyevent"),
+    (0x003d_2138, pending_item_flag, "PendingItem_Bit26"),
 ];
 
 /// `RefPack_Unpack` (0x3b4740).
@@ -60,9 +63,8 @@ pub fn eac_unpack(c: &mut Cpu) {
 /// of the slot whose key matches, the fade value is advanced and `SND_SetVolume` is called.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_update_fade(c: &mut Cpu) {
-    if c.pc != 0x003b8de8 {
-        return ee::s13::f_003b8de8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_3b8e40: {
             'b_3b8e38: {
@@ -212,10 +214,141 @@ pub fn sndmidi_update_fade(c: &mut Cpu) {
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_notes_finished(c: &mut Cpu) {
     if c.pc != 0x003b8ee8 {
-        return ee::s13::f_003b8ee8__generated(c);
+        return sndmidi_notes_finished_resume(c);
     }
     guest(c, |c| {
         let mut pc: u32 = 0x003b8ee8;
+        loop {
+            match pc {
+                0x003b8ee8 => {
+                    c.cycles += 12;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                    c.g[V0][0] = 0x510000;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x57e0));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S1][0] = 0u64;
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S2][0] = 0x1;
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+                    let t = true;
+                    c.g[S3][0] = c.g[A0][0];
+                    if t {
+                        pc = 0x003b8f1c;
+                        continue;
+                    }
+                    pc = 0x003b8f18;
+                    continue;
+                }
+                0x003b8f18 => {
+                    c.cycles += 1;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    pc = 0x003b8f1c;
+                    continue;
+                }
+                0x003b8f1c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < 24i64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[S2][0];
+                    if t {
+                        pc = 0x003b8f58;
+                        continue;
+                    }
+                    pc = 0x003b8f28;
+                    continue;
+                }
+                0x003b8f28 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x4));
+
+                    if c.g[V0][0] != c.g[S3][0] {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                        if back_edge_unwinds(c, 0x003b8f18) {
+                            return Ok(());
+                        }
+                        pc = 0x003b8f18;
+                        continue;
+                    }
+                    pc = 0x003b8f34;
+                    continue;
+                }
+                0x003b8f34 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                    let t = (c.g[A0][0] as i64) < 0;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                    if t {
+                        if back_edge_unwinds(c, 0x003b8f18) {
+                            return Ok(());
+                        }
+                        pc = 0x003b8f18;
+                        continue;
+                    }
+                    pc = 0x003b8f40;
+                    continue;
+                }
+                0x003b8f40 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003b8f48);
+                    Callee {
+                        addr: 0x003ba6e8,
+                        f: ee::s13::SND_HandleToChannel,
+                    }
+                    .call(c, 0x003b8f48)?;
+                    let t = (c.g[V0][0] as i64) < 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x003b8f1c) {
+                            return Ok(());
+                        }
+                        pc = 0x003b8f1c;
+                        continue;
+                    }
+                    pc = 0x003b8f50;
+                    continue;
+                }
+                0x003b8f50 => {
+                    c.cycles += 2;
+                    c.g[S2][0] = 0u64;
+                    c.g[V0][0] = c.g[S2][0];
+                    pc = 0x003b8f58;
+                    continue;
+                }
+                0x003b8f58 => {
+                    c.cycles += 7;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003b8ee8, 0x003b8f74);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// Native resume of `sndmidi_notes_finished` (converted from the `generated` body): any entry
+/// other than 0x003b8ee8, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn sndmidi_notes_finished_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
         loop {
             match pc {
                 0x003b8ee8 => {
@@ -340,9 +473,8 @@ pub fn sndmidi_notes_finished(c: &mut Cpu) {
 /// handle.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_note_on(c: &mut Cpu) {
-    if c.pc != 0x003b8f78 {
-        return ee::s13::f_003b8f78__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 30;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xd0));
@@ -551,9 +683,8 @@ pub fn sndmidi_note_on(c: &mut Cpu) {
 /// every matching record is keyed off with `SND_ChannelKeyOff`.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_note_off(c: &mut Cpu) {
-    if c.pc != 0x003b9140 {
-        return ee::s13::f_003b9140__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 16;
         c.g[T0][0] = c.g[A0][0];
@@ -656,9 +787,8 @@ pub fn sndmidi_note_off(c: &mut Cpu) {
 /// `SND_SetPan`; the other controllers update the channel record.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_control_change(c: &mut Cpu) {
-    if c.pc != 0x003b91e0 {
-        return ee::s13::f_003b91e0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_3b93a8: {
             'b_3b93a4: {
@@ -950,9 +1080,8 @@ pub fn sndmidi_control_change(c: &mut Cpu) {
 /// record `a1`): the channel's voices get `SND_SetPitchBend`.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_pitch_bend(c: &mut Cpu) {
-    if c.pc != 0x003b93c8 {
-        return ee::s13::f_003b93c8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 36;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
@@ -1718,6 +1847,195 @@ pub fn snd_midi_get_status(c: &mut Cpu) {
     })
 }
 
+/// `PATHI_copyevent(event)` (0x3d2068): walks the 16 path-event slots of the
+/// game record (at `0x44f420`), adds up the sizes of the ones that fit before
+/// `limit`, and copies the event's record onto the end of them (calling
+/// `0x41605c`), or reports it through `PATH_DebugPrintf` when the flags say so.
+/// Returns the new end offset, or 0 when nothing was copied.
+pub fn path_copy_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = 0x450000;
+        frame.save_ra(c, 0);
+        c.g[T0][0] = 0;
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0xbe0));
+        c.g[V1][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0xe));
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x91c));
+        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0xdc));
+        c.g[V1][0] = c.g[V1][0] & 0x3f;
+        c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x11c));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
+        c.g[T1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+        loop {
+            'scan: {
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(c.g[A3][0] as u32);
+                c.g[V0][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+                let before_end = c.g[V0][0] != 0;
+                c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+                if before_end {
+                    break 'scan;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[V1][0] < c.g[A2][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    break 'scan;
+                }
+                c.cycles += 5;
+                c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0xe));
+                c.g[V0][0] = c.g[V0][0] & 0x3f;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[T0][0] < 0x10) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_20a0);
+            }
+        }
+        'fill: {
+            'copy: {
+                c.cycles += 4;
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T1][0] as u32));
+                c.g[V0][0] = (c.g[V0][0] < c.g[A2][0]) as u64;
+                let fits = c.g[V0][0] != 0;
+                c.g[V1][0] = 0x450000;
+                if !fits {
+                    break 'copy;
+                }
+                c.cycles += 5;
+                c.g[A2][0] = c.g[T1][0];
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0041_605c, 0x003d_20f8)?;
+                c.g[V0][0] = c.g[S0][0];
+                break 'fill;
+            }
+            'report: {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0xbc4));
+                c.g[V0][0] = c.g[V0][0] & 0x120;
+                let quiet = c.g[V0][0] == 0;
+                c.g[A0][0] = 0x490000;
+                if quiet {
+                    break 'report;
+                }
+                c.cycles += 4;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5b48));
+                c.g[A1][0] = c.g[T1][0];
+                Callee {
+                    addr: 0x003d_1658,
+                    f: ee::s14::f_003d1658,
+                }
+                .call(c, 0x003d_2120)?;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int PendingItem_Bit26(event, itemType)` (0x3d2138): looks through the
+/// sixteen pending-item lists (the table at `*(0x44f420) + 0xdc`) for one
+/// whose key byte (+0xc) equals the event's byte at +0xc and whose items
+/// (count `h & 0x3f` at +0xe, 0x10-byte items from +0x10) hold `itemType` at
+/// +9. Returns bit 26 of that item's word at +8, or 0 when none matches.
+pub fn pending_item_flag(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = 0x0045_0000;
+    c.g[T2][0] = 0;
+    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_sub(0xbe0)).lw(c);
+    c.g[T1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xdc));
+    'l_3d2148: loop {
+        'b_3d21ac: {
+            c.cycles += 3;
+            c.g[A3][0] = Addr(c.g[T1][0] as u32).lw(c);
+            if c.g[A3][0] == 0 {
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+                break 'b_3d21ac;
+            }
+            c.cycles += 4;
+            c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0xc)).lbu(c);
+            c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0xc)).lbu(c);
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+                break 'b_3d21ac;
+            }
+            'b_3d21a8: {
+                c.cycles += 4;
+                c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0xe)).lhu(c);
+                c.g[V0][0] &= 0x3f;
+                let empty = c.g[V0][0] == 0;
+                c.g[A2][0] = 0;
+                if empty {
+                    break 'b_3d21a8;
+                }
+                c.cycles += 3;
+                c.g[T0][0] = c.g[V0][0];
+                c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+                'l_3d2180: loop {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x9)).lbu(c);
+                    let other_type = c.g[V0][0] != c.g[A1][0];
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                    if other_type {
+                        c.cycles += 3;
+                        c.g[V0][0] = (c.g[A2][0] < c.g[T0][0]) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+                        if more {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x003d_2180);
+                            }
+                            continue 'l_3d2180;
+                        } else {
+                            break 'b_3d21a8;
+                        }
+                    } else {
+                        c.cycles += 4;
+                        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 26);
+                        c.g[V0][0] &= 0x1;
+                        ret(c);
+                        return;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[T2][0] as i64) < 16i64) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x4));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_2148);
+            }
+            continue 'l_3d2148;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            ret(c);
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2348,6 +2666,108 @@ pub(crate) mod tests {
                         .write8(entry + 0x28, [3, 4][((seed / 4) % 2) as usize]);
                     c.bus
                         .write32(entry + 0x18, if seed % 3 == 0 { 0 } else { 7 });
+                }
+            },
+        );
+    }
+
+    use crate::difftest::scramble;
+
+    pub(crate) use crate::game::animation::rideranimbase::tests::OC1495_MAGIC;
+
+    pub(crate) const OC1495_PATH_CTRL: u32 = DATA + 0x20_3000;
+
+    pub(crate) static OC1495_PREV_COPY_CALLEE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1495_PREV_DEBUG: AtomicUsize = AtomicUsize::new(0);
+
+    /// The `call_indirect` target `0x41605c` and `PATH_DebugPrintf`: logged.
+    pub(crate) fn oc1495_fake_copy_callee(c: &mut Cpu) {
+        if c.bus.read32(OC1495_PATH_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_COPY_CALLEE, ee::s15::f_0041605c__generated);
+        }
+        fakes::fake_call(c, 0x0041_605c);
+    }
+
+    pub(crate) fn oc1495_fake_debug(c: &mut Cpu) {
+        if c.bus.read32(OC1495_PATH_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_DEBUG, ee::s14::f_003d1658__generated);
+        }
+        fakes::fake_call(c, 0x003d_1658);
+    }
+
+    pub(crate) fn oc1495_install_path() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_0041605C),
+            oc1495_fake_copy_callee,
+            &OC1495_PREV_COPY_CALLEE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003D1658),
+            oc1495_fake_debug,
+            &OC1495_PREV_DEBUG,
+        );
+    }
+
+    /// `PATHI_copyevent`: the scan over entries before, inside and past the
+    /// limit; the copy (`0x41605c`) with and without room; the report path
+    /// with its flags set or clear.
+    #[test]
+    fn path_copy_event_matches() {
+        check(
+            ee::s14::f_003d2068__generated,
+            path_copy_event,
+            300,
+            &|c, seed| {
+                oc1495_install_path();
+                let mut r = machine(c, seed, 0x003d_2068, 2);
+                c.bus.write32(OC1495_PATH_CTRL, OC1495_MAGIC);
+                let base = DATA + 0x1000;
+                c.bus.write32(0x0044_F420, base);
+                for k in 0..16u32 {
+                    let p = base + ((r.next_u32() % 0xe00) & !3);
+                    c.bus.write32(base + 0xdc + 4 * k, p);
+                    c.bus.write16(p + 0xe, r.next_u32() as u16);
+                }
+                c.bus.write16(DATA + 0x10e, r.next_u32() as u16);
+                c.bus
+                    .write32(0x0044_F43C, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                c.g[A0][0] = (DATA + 0x100) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn pending_item_flag_matches() {
+        check(
+            ee::s14::f_003d2138__generated,
+            pending_item_flag,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1586_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                let event = DATA + 0x1000;
+                c.bus.write8(event + 0xc, (seed % 4) as u8);
+                c.g[A0][0] = sx(event);
+                c.g[A1][0] = (seed % 6) as u64;
+                // The table pointer at 0x44f420; its lists start at +0xdc.
+                let table = DATA + 0x2000;
+                c.bus.write32(0x0044_f420, table);
+                for i in 0..16u32 {
+                    let list = DATA + 0x3000 + i * 0x100;
+                    if (seed + i) % 3 == 0 {
+                        c.bus.write32(table + 0xdc + i * 4, 0);
+                        continue;
+                    }
+                    c.bus.write32(table + 0xdc + i * 4, list);
+                    c.bus.write8(list + 0xc, ((seed + i) % 4) as u8);
+                    c.bus.write16(list + 0xe, (r.next_u32() % 6) as u16);
+                    for j in 0..6u32 {
+                        let item = list + 0x10 + j * 0x10;
+                        c.bus.write8(item + 9, (r.next_u32() % 6) as u8);
+                        let flag = if (seed + j) % 2 == 0 { 0x0400_0000 } else { 0 };
+                        c.bus.write32(item + 8, flag | (r.next_u32() & 0x00ff_ffff));
+                    }
                 }
             },
         );

@@ -26,6 +26,7 @@ pub mod object;
 pub mod path;
 pub mod render;
 pub mod replay;
+pub mod sce;
 pub mod scripter;
 pub mod seg;
 pub mod sound;
@@ -58,6 +59,7 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend(path::overrides());
     v.extend(render::overrides());
     v.extend(replay::overrides());
+    v.extend(sce::overrides());
     v.extend(scripter::overrides());
     v.extend(seg::overrides());
     v.extend(sound::overrides());

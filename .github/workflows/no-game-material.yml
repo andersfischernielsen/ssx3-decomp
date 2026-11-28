@@ -1,7 +1,9 @@
 name: No game material present
 
 on:
+  # Pushes to a pull request's branch run through `pull_request`, not twice.
   push:
+    branches: [main]
   pull_request:
 
 concurrency:

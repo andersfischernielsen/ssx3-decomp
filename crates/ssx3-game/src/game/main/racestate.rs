@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::ret;
 use crate::call;
 use crate::call::Callee;
 use crate::call::Frame;
@@ -27,6 +28,36 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0011_3d48,
         race_state_countdown_update,
         "RaceStateCountdown_Update",
+    ),
+    (
+        0x0011_3cb8,
+        race_state_game_init_enter_00113cb8,
+        "RaceStateGameInit_Enter",
+    ),
+    (
+        0x0011_3ce0,
+        race_state_game_init_exit_00113ce0,
+        "RaceStateGameInit_Exit",
+    ),
+    (
+        0x0011_3ce8,
+        race_state_freeride_enter_00113ce8,
+        "RaceStateFreeride_Enter",
+    ),
+    (
+        0x0011_3d10,
+        race_state_freeride_exit_00113d10,
+        "RaceStateFreeride_Exit",
+    ),
+    (
+        0x0011_3d38,
+        race_state_countdown_enter_00113d38,
+        "RaceStateCountdown_Enter",
+    ),
+    (
+        0x0011_3d80,
+        race_state_countdown_exit_00113d80,
+        "RaceStateCountdown_Exit",
     ),
 ];
 
@@ -123,10 +154,51 @@ fn race_state_countdown_step(c: &mut Cpu) {
     })
 }
 
+/// `RaceStateGameInit_Enter` (0x0011_3cb8): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_game_init_enter_00113cb8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateGameInit_Exit` (0x0011_3ce0): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_game_init_exit_00113ce0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateFreeride_Enter` (0x0011_3ce8): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn race_state_freeride_enter_00113ce8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A1][0] as u32).wrapping_add(0x14), 0u64);
+    ret(c);
+}
+
+/// `RaceStateFreeride_Exit` (0x0011_3d10): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_freeride_exit_00113d10(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateCountdown_Enter` (0x0011_3d38): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn race_state_countdown_enter_00113d38(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0xb4;
+    c.sw((c.g[A1][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+    ret(c);
+}
+
+/// `RaceStateCountdown_Exit` (0x0011_3d80): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn race_state_countdown_exit_00113d80(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A1][0] as u32).wrapping_add(0x1c), 0u64);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use ssx3_ee as ee;
 
     use crate::difftest::scramble;
     use crate::difftest::Rng;
@@ -249,5 +321,98 @@ pub(crate) mod tests {
                 }
             }
         }
+    }
+
+    use crate::difftest::fakes::machine;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::leaf_fill;
+
+    /// `RaceStateGameInit_Enter` (0x0011_3cb8) against the generated body.
+    #[test]
+    fn race_state_game_init_enter_00113cb8_matches() {
+        check(
+            ee::s00::f_00113cb8__generated,
+            race_state_game_init_enter_00113cb8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113cb8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateGameInit_Exit` (0x0011_3ce0) against the generated body.
+    #[test]
+    fn race_state_game_init_exit_00113ce0_matches() {
+        check(
+            ee::s00::f_00113ce0__generated,
+            race_state_game_init_exit_00113ce0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113ce0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateFreeride_Enter` (0x0011_3ce8) against the generated body.
+    #[test]
+    fn race_state_freeride_enter_00113ce8_matches() {
+        check(
+            ee::s00::f_00113ce8__generated,
+            race_state_freeride_enter_00113ce8,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x113ce8, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A1][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateFreeride_Exit` (0x0011_3d10) against the generated body.
+    #[test]
+    fn race_state_freeride_exit_00113d10_matches() {
+        check(
+            ee::s00::f_00113d10__generated,
+            race_state_freeride_exit_00113d10,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113d10, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateCountdown_Enter` (0x0011_3d38) against the generated body.
+    #[test]
+    fn race_state_countdown_enter_00113d38_matches() {
+        check(
+            ee::s00::f_00113d38__generated,
+            race_state_countdown_enter_00113d38,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x113d38, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A1][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateCountdown_Exit` (0x0011_3d80) against the generated body.
+    #[test]
+    fn race_state_countdown_exit_00113d80_matches() {
+        check(
+            ee::s00::f_00113d80__generated,
+            race_state_countdown_exit_00113d80,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x113d80, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A1][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
     }
 }

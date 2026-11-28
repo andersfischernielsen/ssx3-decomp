@@ -360,6 +360,55 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         attached_emitter_type_data_global_ctors2,
         "AttachedEmitterTypeData_GlobalCtors2",
     ),
+    (
+        0x002f_0e88,
+        rider_base_ctor_attack_fx,
+        "RiderBase_CtorAttackFX",
+    ),
+    (
+        0x002f_0fe8,
+        rider_base_dtor_attack_fx,
+        "RiderBase_DtorAttackFX",
+    ),
+    (
+        0x002f_1148,
+        rider_base_reset_attack_fx,
+        "RiderBase_ResetAttackFX",
+    ),
+    (0x002f_5180, world_light_man_ctor, "WorldLightMan_ctor"),
+    (0x002f_5230, world_light_man_dtor, "WorldLightMan_dtor"),
+    (
+        0x002f_6b48,
+        world_light_man_debug_printf,
+        "WorldLightMan_DebugPrintf",
+    ),
+    (
+        0x002f_7c20,
+        vfx_component_update_002f7c20,
+        "VfxComponent_Update",
+    ),
+    (
+        0x002f_7c28,
+        vfx_component_render_002f7c28,
+        "VfxComponent_Render",
+    ),
+    (0x002f_7c30, vfx_component_v04_002f7c30, "VfxComponent_v04"),
+    (
+        0x002f_7ff0,
+        c_transition_man_script_v09_002f7ff0,
+        "cTransitionMan_Script_v09",
+    ),
+    (0x002f_8168, snow_fall_save_002f8168, "SnowFall_Save"),
+    (
+        0x002f_9000,
+        attached_emitter_fx_debug_printf,
+        "AttachedEmitterFX_DebugPrintf",
+    ),
+    (
+        0x002f_a600,
+        attached_emitter_fx_debug_printf_2,
+        "AttachedEmitterFX_DebugPrintf_2",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6315,9 +6364,8 @@ pub fn oc817_attached_emitter_type_data_free_part1(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn visual_effects_man_static_init_destroy(c: &mut Cpu) {
-    if c.pc != 0x002f6b88 {
-        return ee::s09::f_002f6b88__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2f7a20: {
             'b_2f7a1c: {
@@ -9450,6 +9498,546 @@ pub fn attached_emitter_type_data_global_ctors2(c: &mut Cpu) {
     );
 }
 
+/// `RiderBase_CtorAttackFX` (0x2f0e88; the dossier calls it `cPunchFX_cPunchFX`):
+/// sets up the attack-FX object at `this` (a0). When `arg` (a1) is nonzero the
+/// sub-object at `this + 0xb0` is built by `0x11b698` and its pointer is stored at
+/// `*this`. Then the object's pointers at +0x6c0, +0x6d0 and +0x6e8 are set from
+/// the game's constant tables (for a zero `arg` two 0x20-byte tables are also
+/// copied to the stack), and `RiderBase_ResetAttackFX` clears the attack state.
+pub fn rider_base_ctor_attack_fx(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x130);
+        frame.save(c, S0, 0x120);
+        frame.save(c, S1, 0x110);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x100);
+        if c.g[S1][0] != 0 {
+            c.cycles += 4;
+            let sub = sx((c.g[S0][0] as u32).wrapping_add(0xb0));
+            c.g[V0][0] = sub;
+            c.g[A0][0] = sub;
+            c.g[RA][0] = sx(0x002f_0eb4);
+            Addr(c.g[S0][0] as u32).sw(c, sub);
+            call_ptr(c, 0x0011_b698, 0x002f_0eb4)?;
+        }
+
+        c.cycles += 15;
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[V0][0] = 0x490000;
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7828));
+        c.g[A0][0] = 0x460000;
+        let table_a = c.g[A2][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(0x6e8)).sw(c, table_a);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6470));
+        c.g[V1][0] = 0x490000;
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[T2][0] = c.g[V1][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x77e0));
+        let fn_ptr = c.g[A0][0];
+        Addr((c.g[A1][0] as u32).wrapping_add(0x6d0)).sw(c, fn_ptr);
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        let t = c.g[S1][0] != 0;
+        let table_b = c.g[V1][0];
+        Addr((c.g[V0][0] as u32).wrapping_add(0x6c0)).sw(c, table_b);
+
+        if !t {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[V1][0] = c.g[SP][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+            c.g[T0][0] = sx(sp(c).wrapping_add(0x50));
+            // Copy the first 0x40-byte table to the stack (two 0x20-byte rows).
+            loop {
+                c.cycles += 11;
+                let src = c.g[A1][0] as u32;
+                c.g[A0][0] = Addr(src).ld(c);
+                c.g[A2][0] = Addr(src.wrapping_add(8)).ld(c);
+                c.g[T1][0] = Addr(src.wrapping_add(0x10)).ld(c);
+                c.g[T3][0] = Addr(src.wrapping_add(0x18)).ld(c);
+                let dst = c.g[V1][0] as u32;
+                let (w0, w1, w2, w3) = (c.g[A0][0], c.g[A2][0], c.g[T1][0], c.g[T3][0]);
+                Addr(dst).sd(c, w0);
+                Addr(dst.wrapping_add(8)).sd(c, w1);
+                Addr(dst.wrapping_add(0x10)).sd(c, w2);
+                Addr(dst.wrapping_add(0x18)).sd(c, w3);
+                c.g[A1][0] = sx(src.wrapping_add(0x20));
+                let t = c.g[A1][0] != c.g[V0][0];
+                c.g[V1][0] = sx(dst.wrapping_add(0x20));
+                if !t {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_0f00);
+                }
+            }
+            c.cycles += 14;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7828));
+            c.g[A2][0] = Addr(c.g[A1][0] as u32).ld(c);
+            let w = c.g[A2][0];
+            Addr(c.g[V1][0] as u32).sd(c, w);
+            let sp_word = c.g[SP][0];
+            Addr((c.g[V0][0] as u32).wrapping_add(0x6e8)).sw(c, sp_word);
+            c.g[A2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x77e0));
+            c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(8)).lhu(c);
+            c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[A1][0] = c.g[T0][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb0));
+            c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            let hw = c.g[V1][0];
+            Addr(sp(c).wrapping_add(8)).sh(c, hw);
+            // Copy the second table (0x488820..0x4888c0) to the stack.
+            loop {
+                c.cycles += 11;
+                let src = c.g[A2][0] as u32;
+                c.g[V0][0] = Addr(src).ld(c);
+                c.g[V1][0] = Addr(src.wrapping_add(8)).ld(c);
+                c.g[A0][0] = Addr(src.wrapping_add(0x10)).ld(c);
+                c.g[T3][0] = Addr(src.wrapping_add(0x18)).ld(c);
+                let dst = c.g[A1][0] as u32;
+                let (w0, w1, w2, w3) = (c.g[V0][0], c.g[V1][0], c.g[A0][0], c.g[T3][0]);
+                Addr(dst).sd(c, w0);
+                Addr(dst.wrapping_add(8)).sd(c, w1);
+                Addr(dst.wrapping_add(0x10)).sd(c, w2);
+                Addr(dst.wrapping_add(0x18)).sd(c, w3);
+                c.g[A2][0] = sx(src.wrapping_add(0x20));
+                let t = c.g[A2][0] != c.g[T1][0];
+                c.g[A1][0] = sx(dst.wrapping_add(0x20));
+                if !t {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_0f64);
+                }
+            }
+            c.cycles += 10;
+            c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x77e0));
+            c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(8)).lhu(c);
+            c.g[V0][0] = Addr(c.g[A2][0] as u32).ld(c);
+            c.g[T1][0] = Addr((c.g[A2][0] as u32).wrapping_add(8)).ld(c);
+            let w0 = c.g[V0][0];
+            let w1 = c.g[T1][0];
+            Addr(c.g[A1][0] as u32).sd(c, w0);
+            Addr((c.g[A1][0] as u32).wrapping_add(8)).sd(c, w1);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+            let t0 = c.g[T0][0];
+            Addr((c.g[A0][0] as u32).wrapping_add(0x6c0)).sw(c, t0);
+            let hw = c.g[V1][0];
+            Addr(sp(c).wrapping_add(0x58)).sh(c, hw);
+        }
+
+        c.cycles += 12;
+        c.g[V0][0] = 3;
+        c.g[V1][0] = u64::MAX;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x002f_1148,
+            f: ee::s09::f_002f1148,
+        }
+        .call(c, 0x002f_0fd0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x110);
+        frame.restore(c, S0, 0x120);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cWorldLightMan::cWorldLightMan(cBXNash* pNash)` (0x2f5180), `WorldLightMan_ctor`:
+/// marks the 8 overlap-list nodes (stride 0x40) and the 32 light-cache entries
+/// (stride 0x180) as empty (-1), stores `pNash`, builds the light cache and
+/// takes the lighting query from the world's painter manager.
+pub fn world_light_man_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, S0, 0x10);
+        c.g[V1][0] = c.g[V1][0] | 0xffff;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = 0x7;
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            let more = c.g[A0][0] != c.g[A2][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x40));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_51a8);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 5;
+        c.g[V1][0] = 0xffff_ffff_ffff_0000;
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x210));
+        c.g[A0][0] = 0x1f;
+        c.g[V1][0] = c.g[V1][0] | 0xffff;
+        c.g[A2][0] = 0xffff_ffff_ffff_ffff;
+        loop {
+            c.cycles += 7;
+            c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            let more = c.g[A0][0] != c.g[A2][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x180));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_51d8);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 15;
+        c.sw(c.g[S0][0] as u32, c.g[A1][0]);
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x002f_5298,
+            f: ee::s09::f_002f5298,
+        }
+        .call(c, 0x002f_5200)?;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[A1][0] = sx((c.g[GP][0] as u32).wrapping_add(0x24a8));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+        c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[A0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
+        call_ptr(c, 0x002c_0a58, 0x002f_5218)?;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `RiderBase_ResetAttackFX` (0x002f_1148): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn rider_base_reset_attack_fx(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0xa0), 0u64);
+    ret(c);
+}
+
+/// `WorldLightMan_DebugPrintf` (0x002f_6b48): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn world_light_man_debug_printf(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `VfxComponent_Update` (0x002f_7c20): straight-line leaf. Mechanical port of the generated body.
+pub fn vfx_component_update_002f7c20(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `VfxComponent_Render` (0x002f_7c28): straight-line leaf. Mechanical port of the generated body.
+pub fn vfx_component_render_002f7c28(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `VfxComponent_v04` (0x002f_7c30): straight-line leaf. Mechanical port of the generated body.
+pub fn vfx_component_v04_002f7c30(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cTransitionMan_Script_v09` (0x002f_7ff0): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn c_transition_man_script_v09_002f7ff0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x74));
+    ret(c);
+}
+
+/// `SnowFall_Save` (0x002f_8168): straight-line leaf. Mechanical port of the generated body.
+pub fn snow_fall_save_002f8168(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `AttachedEmitterFX_DebugPrintf` (0x002f_9000): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn attached_emitter_fx_debug_printf(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `AttachedEmitterFX_DebugPrintf_2` (0x002f_a600): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn attached_emitter_fx_debug_printf_2(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// Gate word for the wave's test fakes (in the machine's RAM).
+#[cfg(test)]
+pub(crate) const OC1575_CTRL: u32 = crate::difftest::DATA + 0x20_0000;
+
+#[cfg(test)]
+pub(crate) const OC1575_MAGIC: u32 = 0x1575_1575;
+
+/// `RiderBase_DtorAttackFX(RiderBase* this, int flags)` (0x2f0fe8): the
+/// attack-FX part of the rider destructor. With `flags == 0` it copies the
+/// two static tables at 0x4887d8 and 0x488820 onto the stack, points the
+/// object's `+0x6e8` and `+0x6c0` words at them and sets two shorts from the
+/// object's `+0xb0` offset; then bit 1 of `flags` runs `Rider_dtor`
+/// (0x11b978) and bit 0 deletes the object (0x317e50).
+pub fn rider_base_dtor_attack_fx(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x130);
+        c.g[V0][0] = 0x490000;
+        frame.save(c, S0, 0x120);
+        c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7828));
+        frame.save(c, S1, 0x110);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x100);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[A0][0] = 0x460000;
+        c.g[A3][0] = c.g[V0][0];
+        let this = c.g[S0][0] as u32;
+        c.g[V1][0] = Addr(this).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x6470));
+        let v = c.g[A2][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(0x6e8)).sw(c, v);
+        c.g[V1][0] = 0x490000;
+        c.g[A1][0] = Addr(this).lw(c);
+        c.g[T2][0] = c.g[V1][0];
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x77e0));
+        let v = c.g[A0][0];
+        Addr((c.g[A1][0] as u32).wrapping_add(0x6d0)).sw(c, v);
+        c.g[V0][0] = Addr(this).lw(c);
+        let v = c.g[V1][0];
+        Addr((c.g[V0][0] as u32).wrapping_add(0x6c0)).sw(c, v);
+
+        // Copy block (only when flags == 0).
+        'copy: {
+            if c.g[S1][0] != 0 {
+                break 'copy;
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[A2][0];
+            c.g[V1][0] = c.g[SP][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+            c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+            loop {
+                // Copy 0x20 bytes of the first table per pass.
+                c.cycles += 11;
+                c.g[A0][0] = Addr(c.g[A1][0] as u32).ld(c);
+                c.g[A2][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x8)).ld(c);
+                c.g[T1][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x10)).ld(c);
+                c.g[T3][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x18)).ld(c);
+                let dst = c.g[V1][0] as u32;
+                let v = c.g[A0][0];
+                Addr(dst).sd(c, v);
+                let v = c.g[A2][0];
+                Addr(dst.wrapping_add(0x8)).sd(c, v);
+                let v = c.g[T1][0];
+                Addr(dst.wrapping_add(0x10)).sd(c, v);
+                let v = c.g[T3][0];
+                Addr(dst.wrapping_add(0x18)).sd(c, v);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                let more = c.g[A1][0] != c.g[V0][0];
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002f_104c);
+                    }
+                    continue;
+                }
+                c.cycles += 14;
+                c.g[V0][0] = Addr(this).lw(c);
+                c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7828));
+                c.g[A2][0] = Addr(c.g[A1][0] as u32).ld(c);
+                let dst = c.g[V1][0] as u32;
+                let v = c.g[A2][0];
+                Addr(dst).sd(c, v);
+                let v = c.g[SP][0];
+                Addr((c.g[V0][0] as u32).wrapping_add(0x6e8)).sw(c, v);
+                c.g[A2][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x77e0));
+                c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x8)).lhu(c);
+                c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
+                c.g[V0][0] = Addr(this).lw(c);
+                c.g[A1][0] = c.g[T0][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb0));
+                c.g[A3][0] = sx(this.wrapping_sub(c.g[V0][0] as u32));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                let v = c.g[V1][0];
+                Addr((c.g[SP][0] as u32).wrapping_add(0x8)).sh(c, v);
+                // Copy the second table up to 0x4888c0.
+                loop {
+                    c.cycles += 11;
+                    c.g[V0][0] = Addr(c.g[A2][0] as u32).ld(c);
+                    c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x8)).ld(c);
+                    c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x10)).ld(c);
+                    c.g[T3][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x18)).ld(c);
+                    let dst = c.g[A1][0] as u32;
+                    let v = c.g[V0][0];
+                    Addr(dst).sd(c, v);
+                    let v = c.g[V1][0];
+                    Addr(dst.wrapping_add(0x8)).sd(c, v);
+                    let v = c.g[A0][0];
+                    Addr(dst.wrapping_add(0x10)).sd(c, v);
+                    let v = c.g[T3][0];
+                    Addr(dst.wrapping_add(0x18)).sd(c, v);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                    let more = c.g[A2][0] != c.g[T1][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002f_10b0);
+                        }
+                        continue;
+                    }
+                    c.cycles += 10;
+                    c.g[V0][0] = Addr(c.g[A2][0] as u32).ld(c);
+                    c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x8)).ld(c);
+                    let dst = c.g[A1][0] as u32;
+                    let v = c.g[V0][0];
+                    Addr(dst).sd(c, v);
+                    let v = c.g[V1][0];
+                    Addr(dst.wrapping_add(0x8)).sd(c, v);
+                    c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x77e0));
+                    c.g[A0][0] = Addr(this).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lhu(c);
+                    let v = c.g[T0][0];
+                    Addr((c.g[A0][0] as u32).wrapping_add(0x6c0)).sw(c, v);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    let v = c.g[V1][0];
+                    Addr((c.g[SP][0] as u32).wrapping_add(0x58)).sh(c, v);
+                    break 'copy;
+                }
+            }
+        }
+
+        // Flags: bit 1 runs Rider_dtor, bit 0 deletes the object.
+        c.cycles += 3;
+        let no_dtor = (c.g[S1][0] & 0x2) == 0;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if !no_dtor {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(this).lw(c);
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0011_b978, 0x002f_111c)?;
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+        }
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            frame.restore(c, S0, 0x120);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_7e50, 0x002f_1130)?;
+            frame.restore(c, S0, 0x120);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WorldLightMan::~WorldLightMan(this, flags)` (0x2f5230): when the
+/// owner at `+4` is set, calls its virtual slot 3 (`+0xc` of its vtable);
+/// then `FreeOverlapLists` (0x2f53b0), and bit 0 of `flags` deletes the
+/// object through 0x317e50.
+pub fn world_light_man_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = c.g[S0][0] as u32;
+        c.g[A2][0] = Addr(this.wrapping_add(0x4)).lw(c);
+        let owner_null = c.g[A2][0] == 0;
+        c.g[S1][0] = c.g[A1][0];
+        if !owner_null {
+            c.cycles += 6;
+            c.g[V0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x4)).lw(c);
+            c.g[A1][0] = 0x3;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x8)).lh(c);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0xc)).lw(c);
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x002f_5268)?;
+        }
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S0][0];
+        Callee {
+            addr: 0x002f_53b0,
+            f: ee::s09::f_002f53b0,
+        }
+        .call(c, 0x002f_5270)?;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_7e50, 0x002f_5284)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11804,6 +12392,387 @@ pub(crate) mod tests {
             8,
             &|c, seed| {
                 fakes::machine_rt(c, seed, 0x2fae, 0);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::fake;
+    use crate::difftest::fakes::fall_back;
+    use crate::difftest::fakes::machine_rt;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::OC1494_MAGIC;
+    pub(crate) use crate::game::util::locale::tests::oc1498_gated_fake;
+    pub(crate) use crate::game::util::locale::tests::OC1498_MAGIC;
+    pub(crate) use crate::game::util::menu::tests::leaf_fill;
+    pub(crate) use crate::game::util::menu::tests::leaf_val;
+
+    pub(crate) const OC1494_FX_GATE: u32 = DATA + 0x2010;
+
+    pub(crate) static OC1494_PREV_FX_CALL: AtomicUsize = AtomicUsize::new(0);
+
+    /// `0x11b698`, the sub-object constructor called by `RiderBase_CtorAttackFX`:
+    /// logged and returned to, its result is not used.
+    pub(crate) fn oc1494_fake_fx_call(c: &mut Cpu) {
+        if c.bus.read32(OC1494_FX_GATE) != OC1494_MAGIC {
+            return fakes::fall_back(c, &OC1494_PREV_FX_CALL, ee::s00::f_0011b698__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0011_b698, ra);
+    }
+
+    #[test]
+    fn rider_base_ctor_attack_fx_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011B698),
+            oc1494_fake_fx_call,
+            &OC1494_PREV_FX_CALL,
+        );
+        check(
+            ee::s09::f_002f0e88__generated,
+            rider_base_ctor_attack_fx,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002f_0e88, 2);
+                c.bus.write32(OC1494_FX_GATE, OC1494_MAGIC);
+                let this = DATA + 0x4000;
+                // `this` (a0) and `arg` (a1): only its zero test matters.
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    sx(r.next_u32() | 1)
+                };
+                fill(c, &mut r, this + 4, 0x100);
+                fill(c, &mut r, DATA + 0x6000, 0x200);
+                // The two constant tables the copy loops read (0x487828.., 0x488820..).
+                fill(c, &mut r, 0x0048_7800, 0x80);
+                fill(c, &mut r, 0x0048_8800, 0x80);
+                // `*this` is the pointer the stores go through.
+                c.bus.write32(this, DATA + 0x6000);
+            },
+        );
+    }
+
+    pub(crate) const OC1498_WLM_GATE: u32 = DATA + 0x20_0300;
+
+    // WorldLightMan_ctor: callees AllocOverlapList and the lighting query.
+    oc1498_gated_fake!(
+        oc1498_wlm_overlap,
+        OC1498_WLM_PREV_OVERLAP,
+        OC1498_WLM_GATE,
+        4,
+        ee::s09::f_002f5298__generated,
+        0x002f_5298
+    );
+
+    oc1498_gated_fake!(
+        oc1498_wlm_query,
+        OC1498_WLM_PREV_QUERY,
+        OC1498_WLM_GATE,
+        4,
+        ee::s08::f_002c0a58__generated,
+        0x002c_0a58
+    );
+
+    pub(crate) fn oc1498_wlm_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002F5298),
+            oc1498_wlm_overlap,
+            &OC1498_WLM_PREV_OVERLAP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C0A58),
+            oc1498_wlm_query,
+            &OC1498_WLM_PREV_QUERY,
+        );
+    }
+
+    /// `WorldLightMan_ctor` on a random record, with the world, painter manager
+    /// and query chain in RAM.
+    #[test]
+    fn world_light_man_ctor_matches() {
+        check(
+            ee::s09::f_002f5180__generated,
+            world_light_man_ctor,
+            300,
+            &|c, seed| {
+                oc1498_wlm_hook();
+                let mut r = machine(c, seed, 0x2f_5180, 2);
+                c.pc = 0x002f_5180;
+                c.bus.write32(OC1498_WLM_GATE, OC1498_MAGIC);
+                c.bus.write32(OC1498_WLM_GATE + 4, DATA + 0x6400);
+                let world = DATA + 0x6000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, DATA + 0x6100);
+                c.bus.write32(DATA + 0x6100 + 0x10, DATA + 0x6200);
+                c.bus.write32(DATA + 0x6200 + 0x8, DATA + 0x6300);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// `RiderBase_ResetAttackFX` (0x002f_1148) against the generated body.
+    #[test]
+    fn rider_base_reset_attack_fx_matches() {
+        check(
+            ee::s09::f_002f1148__generated,
+            rider_base_reset_attack_fx,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f1148, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `WorldLightMan_DebugPrintf` (0x002f_6b48) against the generated body.
+    #[test]
+    fn world_light_man_debug_printf_matches() {
+        check(
+            ee::s09::f_002f6b48__generated,
+            world_light_man_debug_printf,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f6b48, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `VfxComponent_Update` (0x002f_7c20) against the generated body.
+    #[test]
+    fn vfx_component_update_002f7c20_matches() {
+        check(
+            ee::s09::f_002f7c20__generated,
+            vfx_component_update_002f7c20,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2f7c20, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `VfxComponent_Render` (0x002f_7c28) against the generated body.
+    #[test]
+    fn vfx_component_render_002f7c28_matches() {
+        check(
+            ee::s09::f_002f7c28__generated,
+            vfx_component_render_002f7c28,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2f7c28, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `VfxComponent_v04` (0x002f_7c30) against the generated body.
+    #[test]
+    fn vfx_component_v04_002f7c30_matches() {
+        check(
+            ee::s09::f_002f7c30__generated,
+            vfx_component_v04_002f7c30,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2f7c30, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cTransitionMan_Script_v09` (0x002f_7ff0) against the generated body.
+    #[test]
+    fn c_transition_man_script_v09_002f7ff0_matches() {
+        check(
+            ee::s09::f_002f7ff0__generated,
+            c_transition_man_script_v09_002f7ff0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f7ff0, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `SnowFall_Save` (0x002f_8168) against the generated body.
+    #[test]
+    fn snow_fall_save_002f8168_matches() {
+        check(
+            ee::s09::f_002f8168__generated,
+            snow_fall_save_002f8168,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2f8168, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `AttachedEmitterFX_DebugPrintf` (0x002f_9000) against the generated body.
+    #[test]
+    fn attached_emitter_fx_debug_printf_matches() {
+        check(
+            ee::s09::f_002f9000__generated,
+            attached_emitter_fx_debug_printf,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f9000, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `AttachedEmitterFX_DebugPrintf_2` (0x002f_a600) against the generated body.
+    #[test]
+    fn attached_emitter_fx_debug_printf_2_matches() {
+        check(
+            ee::s10::f_002fa600__generated,
+            attached_emitter_fx_debug_printf_2,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2fa600, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    macro_rules! gated_fake {
+        ($fake:ident, $prev:ident, $target:expr, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(OC1575_CTRL) != OC1575_MAGIC {
+                    return fall_back(c, &$prev, $generated);
+                }
+                let ra = c.g[RA][0] as u32;
+                fake(c, $target, ra);
+            }
+        };
+    }
+
+    gated_fake!(
+        oc1575_fake_rider_dtor,
+        OC1575_PREV_RIDER_DTOR,
+        0x0011_b978,
+        ee::s00::f_0011b978__generated
+    );
+
+    gated_fake!(
+        oc1575_fake_delete,
+        OC1575_PREV_DELETE,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    gated_fake!(
+        oc1575_fake_free_overlap,
+        OC1575_PREV_FREE_OVERLAP,
+        0x002f_53b0,
+        ee::s09::f_002f53b0__generated
+    );
+
+    /// Install the gated fakes (once per process; gate off they fall back).
+    pub(crate) fn oc1575_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0011B978),
+            oc1575_fake_rider_dtor,
+            &OC1575_PREV_RIDER_DTOR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1575_fake_delete,
+            &OC1575_PREV_DELETE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002F53B0),
+            oc1575_fake_free_overlap,
+            &OC1575_PREV_FREE_OVERLAP,
+        );
+    }
+
+    #[test]
+    fn rider_base_dtor_attack_fx_matches() {
+        oc1575_hook();
+        check(
+            ee::s09::f_002f0fe8__generated,
+            rider_base_dtor_attack_fx,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002f_0fe8, 0);
+                c.bus.write32(OC1575_CTRL, OC1575_MAGIC);
+                let this = DATA + 0x1000;
+                let obj = DATA + 0x2000;
+                c.bus.write32(this, obj);
+                fill(c, &mut r, obj, 0x400);
+                c.g[A0][0] = sx(this);
+                // Bit 0 deletes, bit 1 runs Rider_dtor; 0 copies the tables.
+                c.g[A1][0] = (seed % 4) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn world_light_man_dtor_matches() {
+        oc1575_hook();
+        check(
+            ee::s09::f_002f5230__generated,
+            world_light_man_dtor,
+            200,
+            &|c, seed| {
+                let _r = machine_rt(c, seed, 0x002f_5230, 0);
+                c.bus.write32(OC1575_CTRL, OC1575_MAGIC);
+                let this = DATA + 0x1000;
+                let owner = DATA + 0x2000;
+                let vtable = DATA + 0x3000;
+                // Owner null on every third seed; otherwise a virtual call
+                // to an address that is not a function (the miss fake).
+                c.bus
+                    .write32(this + 0x4, if seed % 3 == 0 { 0 } else { owner });
+                c.bus.write32(owner + 0x4, vtable);
+                c.bus.write16(vtable + 0x8, (seed % 5) as u16);
+                c.bus.write32(vtable + 0xc, 0x00c0_ffe0);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 2) as u64;
             },
         );
     }

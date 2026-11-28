@@ -198,6 +198,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         algorithmic_script_camera_algo_reset_for_rider,
         "AlgorithmicScriptCameraAlgo_ResetForRider",
     ),
+    (0x0016_bda0, math_wrap_angle_deg, "Math_WrapAngleDeg"),
+    (
+        0x0016_bde8,
+        math_wrap_angle_clamp_deg,
+        "Math_WrapAngleClampDeg",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -3410,6 +3416,74 @@ pub fn algorithmic_script_camera_algo_reset_for_rider(c: &mut Cpu) {
     });
 }
 
+/// `Math_WrapAnglePi` (0x16bce0): wraps the angle in `*a0` to [-pi, pi].
+pub(crate) const OC1538_WRAP_ANGLE_PI: Callee = Callee {
+    addr: 0x0016_bce0,
+    f: ee::s02::f_0016bce0,
+};
+
+/// `Math_WrapAngleClampHalfPi` (0x16bd30): clamps the angle in `*a0` to [-pi/2, pi/2].
+pub(crate) const OC1538_WRAP_ANGLE_CLAMP_HALF_PI: Callee = Callee {
+    addr: 0x0016_bd30,
+    f: ee::s02::f_0016bd30,
+};
+
+/// Shared body of `Math_WrapAngleDeg` and `Math_WrapAngleClampDeg`: converts
+/// the float at `*a0` with the gp constant at `gp - in_gp`, passes it to
+/// `wrap` through a stack slot (`a0 = sp`), and converts the result back with
+/// the constant at `gp - out_gp`, storing it through `a0` (saved in s0).
+pub(crate) fn wrap_angle_scaled(
+    c: &mut Cpu,
+    in_gp: u32,
+    out_gp: u32,
+    wrap: Callee,
+    ret_addr: u32,
+) -> Flow {
+    c.cycles += 18;
+    let frame = Frame::open(c, 0x30);
+    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(in_gp));
+    frame.save(c, S0, 0x20);
+    frame.save_ra(c, 0x10);
+    c.g[S0][0] = c.g[A0][0];
+    c.g[A0][0] = c.g[SP][0];
+    c.lwc1(0, c.g[S0][0] as u32);
+    c.mul_s(0, 0, 1);
+    let slot = frame.at(c, 0);
+    c.swc1(0, slot);
+    wrap.call(c, ret_addr)?;
+    c.lwc1(0, slot);
+    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(out_gp));
+    frame.restore_ra(c, 0x10);
+    c.mul_s(0, 0, 1);
+    c.swc1(0, c.g[S0][0] as u32);
+    frame.restore(c, S0, 0x20);
+    frame.close(c);
+    Ok(())
+}
+
+/// `Math_WrapAngleDeg` (0x16bda0): the float at `*a0`, scaled by `gp-0x6460`,
+/// wrapped to [-pi, pi] by `Math_WrapAnglePi`, scaled back by `gp-0x645c`.
+pub fn math_wrap_angle_deg(c: &mut Cpu) {
+    guest(c, |c| {
+        wrap_angle_scaled(c, 0x6460, 0x645c, OC1538_WRAP_ANGLE_PI, 0x0016_bdc8)
+    })
+}
+
+/// `Math_WrapAngleClampDeg` (0x16bde8): the float at `*a0`, scaled by
+/// `gp-0x6458`, clamped to [-pi/2, pi/2] by `Math_WrapAngleClampHalfPi`,
+/// scaled back by `gp-0x6454`.
+pub fn math_wrap_angle_clamp_deg(c: &mut Cpu) {
+    guest(c, |c| {
+        wrap_angle_scaled(
+            c,
+            0x6458,
+            0x6454,
+            OC1538_WRAP_ANGLE_CLAMP_HALF_PI,
+            0x0016_be10,
+        )
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4458,6 +4532,46 @@ pub(crate) mod tests {
             algorithmic_script_camera_algo_reset_for_rider,
             200,
             &|c, seed| oc637_reset_fixture(c, seed),
+        );
+    }
+
+    /// Scramble, gp, the wrap-angle constants (`gp - 0x6454 .. gp - 0x6478`)
+    /// and the float at `DATA` that `a0` points at.
+    pub(crate) fn wrap_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = Rng(salt ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        for off in [
+            0x6454u32, 0x6458, 0x645c, 0x6460, 0x6464, 0x6468, 0x646c, 0x6470, 0x6474, 0x6478,
+        ] {
+            c.bus.write32(GAME_GP.wrapping_sub(off), r.f32(4.0));
+        }
+        c.g[A0][0] = DATA as u64;
+        let v = if seed % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(1000.0)
+        };
+        c.bus.write32(DATA, v);
+    }
+
+    #[test]
+    fn math_wrap_angle_deg_matches() {
+        check(
+            ssx3_ee::s02::f_0016bda0__generated,
+            math_wrap_angle_deg,
+            200,
+            &|c, seed| wrap_fixture(c, seed, 0x1538_0bda),
+        );
+    }
+
+    #[test]
+    fn math_wrap_angle_clamp_deg_matches() {
+        check(
+            ssx3_ee::s02::f_0016bde8__generated,
+            math_wrap_angle_clamp_deg,
+            200,
+            &|c, seed| wrap_fixture(c, seed, 0x1538_0bde),
         );
     }
 }

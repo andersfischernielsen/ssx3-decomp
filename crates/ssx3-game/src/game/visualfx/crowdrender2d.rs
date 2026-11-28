@@ -609,9 +609,8 @@ pub fn ccrowd_anim2d_create(c: &mut Cpu) {
 /// `cCrowdRender2D* cCrowdRender2D_ctor(cCrowdRender2D* this)` (0x2db6d8):
 /// runs `cCrowdRender2D_LoadTextures(this)` and returns `this`.
 pub fn crowd_render_2d_ctor(c: &mut Cpu) {
-    if c.pc != 0x002d_b6d8 {
-        return ee::s09::f_002db6d8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 10;
         let frame = Frame::open(c, 0x20);

@@ -20,7 +20,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EE = os.path.join(ROOT, "generated", "ee")
+EE = os.environ.get("SSX3_EE_DIR") or os.path.join(ROOT, "generated", "ee")
 TSV = os.path.join(ROOT, "generated", "ee-symbols.tsv")
 SKELETON_MARKER = "//! Skeleton of the generated EE code"
 

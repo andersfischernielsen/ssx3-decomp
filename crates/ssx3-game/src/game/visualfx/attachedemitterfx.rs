@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -76,6 +77,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_2088,
         attached_emitter_fx_render,
         "AttachedEmitterFX_Render",
+    ),
+    (
+        0x002f_17d0,
+        attached_emitter_fx_load_type_data,
+        "AttachedEmitterFX_LoadTypeData",
+    ),
+    (
+        0x002f_1a00,
+        attached_emitter_fx_reset,
+        "AttachedEmitterFX_Reset",
+    ),
+    (
+        0x002f_22c8,
+        attached_emitter_fx_find_bones,
+        "AttachedEmitterFX_FindBones",
     ),
 ];
 
@@ -1097,6 +1113,142 @@ pub fn attached_emitter_fx_render(c: &mut Cpu) {
     })
 }
 
+/// The bone-name table of `AttachedEmitterFX_FindBones`: for each of the 26
+/// handles (`h[0]` at +4 ... `h[25]` at +0x68): the return address of the
+/// lookup call, the skeleton (0: rider, 1: board), and the name string.
+pub(crate) const ATTACHEDEMITTER_BONES: [(u32, u32, u32); 26] = [
+    (0x002f_22f0, 0, 0x004a_3bb8),
+    (0x002f_2308, 0, 0x004a_3b08),
+    (0x002f_2320, 0, 0x0048_7a58),
+    (0x002f_2338, 0, 0x0048_7a48),
+    (0x002f_2350, 0, 0x0048_7a38),
+    (0x002f_2368, 0, 0x004a_3b00),
+    (0x002f_2380, 0, 0x0048_7a68),
+    (0x002f_2398, 0, 0x0048_7a88),
+    (0x002f_23b0, 0, 0x0048_7a98),
+    (0x002f_23c8, 0, 0x0048_7aa8),
+    (0x002f_23e0, 0, 0x0048_7ab8),
+    (0x002f_23f8, 0, 0x0048_7ac8),
+    (0x002f_2410, 0, 0x0048_7ad8),
+    (0x002f_2428, 0, 0x0048_7ae8),
+    (0x002f_2440, 0, 0x0048_7af8),
+    (0x002f_2458, 0, 0x0048_7a78),
+    (0x002f_2470, 0, 0x0048_7a18),
+    (0x002f_2488, 0, 0x0048_79d8),
+    (0x002f_24a0, 0, 0x0048_79e8),
+    (0x002f_24b8, 0, 0x0048_7a28),
+    (0x002f_24d0, 0, 0x0048_79f8),
+    (0x002f_24e8, 0, 0x0048_7a08),
+    (0x002f_2504, 1, 0x0048_7cc8),
+    (0x002f_2518, 1, 0x0048_7cc8),
+    (0x002f_252c, 1, 0x0048_7cc8),
+    (0x002f_2540, 1, 0x0048_7cc8),
+];
+
+/// The attached emitter's anim model pointer.
+pub(crate) const ATTACHEDEMITTER_MODEL: u32 = 0x94;
+
+/// `void AttachedEmitterFX_FindBones(AttachedEmitterFX* self)` (0x2f22c8):
+/// looks up the 26 bone handles the emitter follows (head, neck, spine,
+/// arms, legs, then four times the board's child bone) with
+/// `cAnimModel_getBoneSkelIndex(model, skeleton, name)` (0x310c48), stores
+/// them in `self->h[0..26]` (+4..+0x6c) and marks the emitter ready (+0).
+/// The retail loop after the lookups (a compiled-out per-handle assert) is
+/// empty but keeps its 26 iterations of event checks and cycles.
+pub fn attached_emitter_fx_find_bones(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 162;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        for (i, &(ret_addr, skeleton, name)) in ATTACHEDEMITTER_BONES.iter().enumerate() {
+            let s1 = c.g[S1][0] as u32;
+            if i == 22 {
+                // the first four board bones share the name in s0
+                c.g[S0][0] = sx(0x0048_7cc8);
+            }
+            c.g[A0][0] = c.lw(s1.wrapping_add(ATTACHEDEMITTER_MODEL));
+            c.g[A1][0] = skeleton as u64;
+            c.g[A2][0] = sx(name);
+            if i > 0 {
+                // the previous lookup's handle (v0 still holds it)
+                let v0 = c.g[V0][0];
+                c.sw(s1.wrapping_add(4 * i as u32), v0);
+            }
+            call_ptr(c, 0x0031_0c48, ret_addr)?;
+        }
+        let s1 = c.g[S1][0] as u32;
+        let v0 = c.g[V0][0];
+        c.sw(s1.wrapping_add(0x68), v0);
+        c.g[V0][0] = 0x19;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+        loop {
+            c.cycles += 7;
+            let more = (c.g[V0][0] as i64) >= 0;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_2550);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 7;
+        c.g[V0][0] = 0x1;
+        frame.restore(c, S0, 0x20);
+        let s1 = c.g[S1][0] as u32;
+        let ready = c.g[V0][0];
+        c.sw(s1, ready);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `AttachedEmitterFX_LoadTypeData` (0x002f17d0): allocates the 5440-byte
+/// emitter type array (`cAttachedEmitterFX_mEmitterDataArray`, gp+0xac0) and
+/// fills it in two steps: `AttachedEmitterTypeData_InitPart1`, then
+/// `InitPart2`.
+pub fn attached_emitter_fx_load_type_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = 0x0048_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x1540;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7c98));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0031_7e30, 0x002f_17f0)?;
+        let data = c.g[V0][0];
+        Addr((c.g[GP][0] as u32).wrapping_add(0xac0)).sw(c, data);
+        Callee {
+            addr: 0x002f_83b0,
+            f: ee::s09::f_002f83b0,
+        }
+        .call(c, 0x002f_17f8)?;
+        Callee {
+            addr: 0x002f_9838,
+            f: ee::s09::f_002f9838,
+        }
+        .call(c, 0x002f_1800)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `AttachedEmitterFX_Reset` (0x002f_1a00): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn attached_emitter_fx_reset(c: &mut Cpu) {
+    c.cycles += 2;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0xa0), 0u64);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1404,6 +1556,77 @@ pub(crate) mod tests {
                 };
                 c.bus.write32(info + attached_fx::INFO_LEVEL, level);
                 c.g[A0][0] = sx(fx);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::check_reaching;
+
+    pub(crate) use crate::game::ai::rider::tests::oc1490_machine;
+
+    use crate::game::fe::ovstatereplay::tests::oc1499_install_fakes;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::GATE_INIT1;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::GATE_INIT2;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::GATE_NEW;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::MAGIC;
+    pub(crate) use crate::game::util::menu::tests::leaf_fill;
+
+    /// `AttachedEmitterFX_FindBones`: 26 faked bone lookups (distinct
+    /// results, so every handle store is checked) with unwinds at random
+    /// lookups.
+    #[test]
+    fn attached_emitter_fx_find_bones_matches() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let _r = oc1490_machine(c, seed, 0x22c8, 26);
+            let emitter = DATA + 0x1000;
+            c.bus
+                .write32(emitter + ATTACHEDEMITTER_MODEL, DATA + 0x3000);
+            c.g[A0][0] = emitter as u64;
+        };
+        covered(
+            ssx3_ee::s09::f_002f22c8__generated,
+            attached_emitter_fx_find_bones,
+            100,
+            &setup,
+        );
+        check_reaching(
+            ssx3_ee::s09::f_002f22c8__generated,
+            attached_emitter_fx_find_bones,
+            100,
+            &[0x002f_22f0, 0x002f_2540],
+            &setup,
+        );
+    }
+
+    #[test]
+    fn attached_emitter_fx_load_type_data_matches() {
+        oc1499_install_fakes();
+        check(
+            ee::s09::f_002f17d0__generated,
+            attached_emitter_fx_load_type_data,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                let _r = fakes::machine(c, seed, 0x2f_17d0, 0);
+                c.bus.write32(GATE_NEW, MAGIC);
+                c.bus.write32(GATE_INIT1, MAGIC);
+                c.bus.write32(GATE_INIT2, MAGIC);
+            },
+        );
+    }
+
+    /// `AttachedEmitterFX_Reset` (0x002f_1a00) against the generated body.
+    #[test]
+    fn attached_emitter_fx_reset_matches() {
+        check(
+            ee::s09::f_002f1a00__generated,
+            attached_emitter_fx_reset,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f1a00, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }
