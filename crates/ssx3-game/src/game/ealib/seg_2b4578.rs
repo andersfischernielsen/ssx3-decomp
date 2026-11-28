@@ -60,9 +60,8 @@ pub fn eac_unpack(c: &mut Cpu) {
 /// of the slot whose key matches, the fade value is advanced and `SND_SetVolume` is called.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_update_fade(c: &mut Cpu) {
-    if c.pc != 0x003b8de8 {
-        return ee::s13::f_003b8de8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_3b8e40: {
             'b_3b8e38: {
@@ -212,7 +211,7 @@ pub fn sndmidi_update_fade(c: &mut Cpu) {
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_notes_finished(c: &mut Cpu) {
     if c.pc != 0x003b8ee8 {
-        return ee::s13::f_003b8ee8__generated(c);
+        return sndmidi_notes_finished_resume(c);
     }
     guest(c, |c| {
         let mut pc: u32 = 0x003b8ee8;
@@ -335,14 +334,144 @@ pub fn sndmidi_notes_finished(c: &mut Cpu) {
     });
 }
 
+/// Native resume of `sndmidi_notes_finished` (converted from the `generated` body): any entry
+/// other than 0x003b8ee8, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn sndmidi_notes_finished_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x003b8ee8 => {
+                    c.cycles += 12;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                    c.g[V0][0] = 0x510000;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x57e0));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S1][0] = 0u64;
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S2][0] = 0x1;
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    let t = true;
+                    c.g[S3][0] = c.g[A0][0];
+                    if t {
+                        pc = 0x003b8f1c;
+                        continue;
+                    }
+                    pc = 0x003b8f18;
+                    continue;
+                }
+                0x003b8f18 => {
+                    c.cycles += 1;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    pc = 0x003b8f1c;
+                    continue;
+                }
+                0x003b8f1c => {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < 24i64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = c.g[S2][0];
+                    if t {
+                        pc = 0x003b8f58;
+                        continue;
+                    }
+                    pc = 0x003b8f28;
+                    continue;
+                }
+                0x003b8f28 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x4));
+
+                    if c.g[V0][0] != c.g[S3][0] {
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                        if back_edge_unwinds(c, 0x003b8f18) {
+                            return Ok(());
+                        }
+                        pc = 0x003b8f18;
+                        continue;
+                    }
+                    pc = 0x003b8f34;
+                    continue;
+                }
+                0x003b8f34 => {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                    let t = (c.g[A0][0] as i64) < 0;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8));
+                    if t {
+                        if back_edge_unwinds(c, 0x003b8f18) {
+                            return Ok(());
+                        }
+                        pc = 0x003b8f18;
+                        continue;
+                    }
+                    pc = 0x003b8f40;
+                    continue;
+                }
+                0x003b8f40 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x003b8f48);
+                    Callee {
+                        addr: 0x003ba6e8,
+                        f: ee::s13::SND_HandleToChannel,
+                    }
+                    .call(c, 0x003b8f48)?;
+                    let t = (c.g[V0][0] as i64) < 0;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if back_edge_unwinds(c, 0x003b8f1c) {
+                            return Ok(());
+                        }
+                        pc = 0x003b8f1c;
+                        continue;
+                    }
+                    pc = 0x003b8f50;
+                    continue;
+                }
+                0x003b8f50 => {
+                    c.cycles += 2;
+                    c.g[S2][0] = 0u64;
+                    c.g[V0][0] = c.g[S2][0];
+                    pc = 0x003b8f58;
+                    continue;
+                }
+                0x003b8f58 => {
+                    c.cycles += 7;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x003b8ee8, 0x003b8f74);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 /// `SNDMIDI_NoteOn` (0x003b8f78): SNDI_midiparsenoteon: note-on for MIDI channel `a0` (note `a2`, velocity `a3`, song
 /// record `a1`): takes a free note record, plays the patch (`SND_Play`) and stores the
 /// handle.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_note_on(c: &mut Cpu) {
-    if c.pc != 0x003b8f78 {
-        return ee::s13::f_003b8f78__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 30;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xd0));
@@ -551,9 +680,8 @@ pub fn sndmidi_note_on(c: &mut Cpu) {
 /// every matching record is keyed off with `SND_ChannelKeyOff`.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_note_off(c: &mut Cpu) {
-    if c.pc != 0x003b9140 {
-        return ee::s13::f_003b9140__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 16;
         c.g[T0][0] = c.g[A0][0];
@@ -656,9 +784,8 @@ pub fn sndmidi_note_off(c: &mut Cpu) {
 /// `SND_SetPan`; the other controllers update the channel record.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_control_change(c: &mut Cpu) {
-    if c.pc != 0x003b91e0 {
-        return ee::s13::f_003b91e0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_3b93a8: {
             'b_3b93a4: {
@@ -950,9 +1077,8 @@ pub fn sndmidi_control_change(c: &mut Cpu) {
 /// record `a1`): the channel's voices get `SND_SetPitchBend`.
 #[allow(unreachable_code, unused_assignments, unused_labels)]
 pub fn sndmidi_pitch_bend(c: &mut Cpu) {
-    if c.pc != 0x003b93c8 {
-        return ee::s13::f_003b93c8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 36;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));

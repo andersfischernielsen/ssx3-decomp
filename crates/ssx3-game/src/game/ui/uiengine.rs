@@ -3194,7 +3194,7 @@ pub fn uilistbox_ctor_w244(c: &mut Cpu) {
 /// generated body (at install: its `__generated` alias).
 pub fn ui_ascii_to_wide(c: &mut Cpu) {
     if c.pc != 0x00397ad8 {
-        return ee::s13::f_00397ad8__generated(c);
+        return ui_ascii_to_wide_resume(c);
     }
     guest(c, |c| {
         c.cycles += 2;
@@ -3228,6 +3228,72 @@ pub fn ui_ascii_to_wide(c: &mut Cpu) {
     });
 }
 
+/// Native resume of `ui_ascii_to_wide` (converted from the `generated` body): any entry
+/// other than 0x00397ad8, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn ui_ascii_to_wide_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00397ad8 => {
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[V0][0] = c.lb((c.g[A1][0] as u32));
+                    if t {
+                        pc = 0x00397af8;
+                        continue;
+                    }
+                    pc = 0x00397ae0;
+                    continue;
+                }
+                0x00397ae0 => {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
+                    c.sh((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
+                    c.g[V0][0] = c.lb((c.g[A1][0] as u32));
+                    pc = 0x00397af8;
+                    continue;
+                }
+                0x00397af8 => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V1][0] = c.lbu((c.g[A1][0] as u32));
+                    if t {
+                        if back_edge_unwinds(c, 0x00397ae0) {
+                            return Ok(());
+                        }
+                        pc = 0x00397ae0;
+                        continue;
+                    }
+                    pc = 0x00397b00;
+                    continue;
+                }
+                0x00397b00 => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.sh((c.g[A0][0] as u32), 0u64);
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00397ad8, 0x00397b08);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 /// `UIFontSet_LoadFonts(self)` (0x00398568): for each of the signed byte count
 /// (`+0x34`) font entries (12 bytes from `+4`, name pointer at `+4` of the entry)
 /// create a font object (`EA_MemAllocNamed`, 0x84 bytes), construct it from the
@@ -3237,9 +3303,8 @@ pub fn ui_ascii_to_wide(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn ui_font_set_load_fonts_811(c: &mut Cpu) {
-    if c.pc != 0x00398568 {
-        return ee::s13::f_00398568__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_3985f4: {
             c.cycles += 12;

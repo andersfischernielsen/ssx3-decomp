@@ -2275,9 +2275,8 @@ pub(crate) fn oc943_vcall(c: &mut Cpu, x: usize, off: u32, ret: u32) -> crate::c
 /// Reproduces every register, cycle and call of the generated body; `pc != entry`
 /// (a resume after an unwound callee) runs the generated body.
 pub fn c_fe_state_trophy_room_on_widget_created(c: &mut Cpu) {
-    if c.pc != 0x001d43f0 {
-        return ee::s04::f_001d43f0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_1d463c: {
             'b_1d4448: {
@@ -2654,9 +2653,8 @@ pub fn c_fe_state_trophy_room_on_widget_created(c: &mut Cpu) {
 /// Reproduces every register, cycle and call of the generated body; `pc != entry`
 /// (a resume after an unwound callee) runs the generated body.
 pub fn mem_card_ui_write_save_data(c: &mut Cpu) {
-    if c.pc != 0x001d59a0 {
-        return ee::s04::f_001d59a0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_1d5b68: {
             'b_1d59f8: {

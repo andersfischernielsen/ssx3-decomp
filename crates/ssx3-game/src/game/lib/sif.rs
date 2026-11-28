@@ -4394,7 +4394,7 @@ pub fn sce_sif_rpc_get_fpacket2(c: &mut Cpu) {
 /// generated twin.
 pub fn sce_sif_rpc_loop(c: &mut Cpu) {
     if c.pc != 0x004273f8 {
-        return ee::s15::f_004273f8__generated(c);
+        return sce_sif_rpc_loop_resume(c);
     }
     guest(c, |c| {
         use callee::*;
@@ -4449,6 +4449,101 @@ pub fn sce_sif_rpc_loop(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x00427430);
                     SLEEP_THREAD.call(c, 0x00427430)?;
+                    let t = true;
+
+                    if t {
+                        if back_edge_unwinds(c, 0x00427418) {
+                            return Ok(());
+                        }
+                        pc = 0x00427418;
+                        continue;
+                    }
+                    c.pc = 0x00427438;
+                    ee::s15::sceFs_FdSemaInit(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x004273f8, 0x00427438);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// Native resume of `sce_sif_rpc_loop` (converted from the `generated` body): any entry
+/// other than 0x004273f8, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn sce_sif_rpc_loop_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x004273f8 => {
+                    c.cycles += 5;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                    let t = true;
+                    c.g[S0][0] = c.g[A0][0];
+                    if t {
+                        pc = 0x00427418;
+                        continue;
+                    }
+                    pc = 0x0042740c;
+                    continue;
+                }
+                0x0042740c => {
+                    c.cycles += 1;
+                    pc = 0x00427410;
+                    continue;
+                }
+                0x00427410 => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x00427418);
+                    Callee {
+                        addr: 0x00427230,
+                        f: ee::s15::sceSifExecRequest,
+                    }
+                    .call(c, 0x00427418)?;
+                    pc = 0x00427418;
+                    continue;
+                }
+                0x00427418 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427420);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x004271d8,
+                        f: ee::s15::sceSifGetNextRequest,
+                    }
+                    .call(c, 0x00427420)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = c.g[V0][0];
+                    if t {
+                        if back_edge_unwinds(c, 0x00427410) {
+                            return Ok(());
+                        }
+                        pc = 0x00427410;
+                        continue;
+                    }
+                    pc = 0x00427428;
+                    continue;
+                }
+                0x00427428 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00427430);
+                    Callee {
+                        addr: 0x00423cc0,
+                        f: ee::s15::SleepThread,
+                    }
+                    .call(c, 0x00427430)?;
                     let t = true;
 
                     if t {

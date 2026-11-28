@@ -10595,6 +10595,10 @@
 # Phase 2 wave: oc1139, oc1158
 # Phase 2 wave: oc1139, oc1158
 # Phase 2 wave: oc1138, oc1139, oc1140, oc1141, oc1142, oc1143, oc1144, oc1145, oc1146, oc1147, oc1148, oc1149, oc1150, oc1151, oc1152, oc1153, oc1154, oc1155, oc1156, oc1157, oc1158, oc1159, oc1160, oc1161, oc1162, oc1163
+# Phase 2 wave: oc1501, oc1502, oc1503, oc1504, oc1505, oc1506, oc1507, oc1508, oc1509, oc1510, oc1511, oc1512, oc1513, oc1514, oc1515, oc1516, oc1517, oc1518, oc1519, oc1520
+# Phase 2 wave: oc1460, oc1461, oc1462, oc1463, oc1464, oc1465, oc1466, oc1467, oc1468, oc1469, oc1470, oc1471, oc1472, oc1473, oc1474, oc1475, oc1476, oc1477, oc1478, oc1479, oc1480, oc1481, oc1482, oc1483, oc1484, oc1485, oc1486, oc1487, oc1488, oc1489, oc1490, oc1491, oc1492, oc1493, oc1494, oc1495, oc1496, oc1497, oc1498, oc1499, oc1500
+# Phase 2 wave: oc1460, oc1461, oc1462, oc1463, oc1464, oc1465, oc1466, oc1467, oc1468, oc1469, oc1470, oc1471, oc1472, oc1473, oc1474, oc1475, oc1476, oc1477, oc1478, oc1479, oc1480, oc1481, oc1482, oc1483, oc1484, oc1485, oc1486, oc1487, oc1488, oc1489, oc1490, oc1491, oc1492, oc1493, oc1494, oc1495, oc1496, oc1497, oc1498, oc1499, oc1500
+# Phase 2 wave: oc1460, oc1461, oc1462, oc1463, oc1464, oc1465, oc1466, oc1467, oc1468, oc1469, oc1470, oc1471, oc1472, oc1473, oc1474, oc1475, oc1476, oc1477, oc1478, oc1479, oc1480, oc1481, oc1482, oc1483, oc1484, oc1485, oc1486, oc1487, oc1488, oc1489, oc1490, oc1491, oc1492, oc1493, oc1494, oc1495, oc1496, oc1497, oc1498, oc1499, oc1500
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
@@ -12229,3 +12233,1406 @@
 0x00320038    DLHeap_Malloc_Wrapper
 0x00320b08    PS2ExecMan_v06
 0x00254400    VD_TextureSink_SetFrameRate
+0x0032e9a0        # wave-slot
+0x0022b008        # wave-slot
+0x002bdee0        # wave-slot
+0x00316f00    App_RunModuleLoop    # wave-slot
+0x002bdd38        # wave-slot
+0x002bdb38        # wave-slot
+0x002bdc78        # wave-slot
+0x002bdbd0        # wave-slot
+0x003a3808        # wave-slot
+0x003a0158        # wave-slot
+0x002bdb10        # wave-slot
+0x002bde08        # wave-slot
+0x003a0274        # wave-slot
+0x003a39e0        # wave-slot
+0x002bdd10        # wave-slot
+0x003a3904        # wave-slot
+0x00115ab0    Rider_GetGateChargeAngle    # wave-slot
+0x00108c28        # wave-slot
+0x001170a8    cHUDFX_ShowNumber    # wave-slot
+0x003a38c8        # wave-slot
+0x003a38dc        # wave-slot
+0x003a01fc        # wave-slot
+0x0031a3c0    VU0_RestoreContext    # wave-slot
+0x003a38f0        # wave-slot
+0x002fe840    WorldObjFactory_AddParticleData    # wave-slot
+0x0031a308    VU0_SaveContext    # wave-slot
+0x003a3898        # wave-slot
+0x003a38a8        # wave-slot
+0x003a01ac        # wave-slot
+0x003a01bc        # wave-slot
+0x003a01cc        # wave-slot
+0x003a01dc        # wave-slot
+0x003a01ec        # wave-slot
+0x003a0228        # wave-slot
+0x003a0238        # wave-slot
+0x003a0248        # wave-slot
+0x003a0258        # wave-slot
+0x0016c518    CameraTriggerMan_ReadTriggerAction    # wave-slot
+0x003a3968        # wave-slot
+0x003175a0    App_LoadProgressUpdate    # wave-slot
+0x003a019c        # wave-slot
+0x003a01a4        # wave-slot
+0x003a0268        # wave-slot
+0x0016c428    CameraTriggerMan_ReadTrigger    # wave-slot
+0x00115358    Rider_AlignStanceToRail    # wave-slot
+0x0032e398        # wave-slot
+0x003a0270        # wave-slot
+0x002f22c8    AttachedEmitterFX_FindBones    # wave-slot
+0x003a3948        # wave-slot
+0x003a3958        # wave-slot
+0x002baf08    WPData_Relocate    # wave-slot
+0x002fe0c0    WScriptFn_AddMultiSplineModifier    # wave-slot
+0x003a3938        # wave-slot
+0x003a3940        # wave-slot
+0x003a39d4        # wave-slot
+0x002f0e88    RiderBase_CtorAttackFX    # wave-slot
+0x0016c4c8    CameraTriggerMan_ReadTriggerVolume    # wave-slot
+0x0040a440        # wave-slot
+0x0017fdf0        # wave-slot
+0x002f41a8    cSplashManager_ResetForCamera    # wave-slot
+0x002f43e0    LensFX_SetDefaultFlares    # wave-slot
+0x0016c4f0    CameraTriggerMan_ReadBoundObjAction    # wave-slot
+0x0031d618    cCSICubicSpline_dtor    # wave-slot
+0x003a39dc        # wave-slot
+0x002be258        # wave-slot
+0x003db9d8    LocStringTable_GetInfo    # wave-slot
+0x003d2068    PATHI_copyevent    # wave-slot
+0x002bb5f0    WPFile_Relocate    # wave-slot
+0x002be1f8        # wave-slot
+0x002dbd10    FXLoader_ctor    # wave-slot
+0x00302048    WScriptFn_StartEvent    # wave-slot
+0x001959a8    FELocale_LoadTable    # wave-slot
+0x0017fe64        # wave-slot
+0x00306a90    WScriptFn_SpawnMultiParticle    # wave-slot
+0x0040a000        # wave-slot
+0x00117248    RiderMetrix_ctor    # wave-slot
+0x00316d60    App_Run_MainLoop    # wave-slot
+0x002f3550    cSplashManager_ctor    # wave-slot
+0x00195be0    FELocale_LoadFETables    # wave-slot
+0x0031d738    cCSICubicSpline_InitWithStartSlope    # wave-slot
+0x002bb570    WPFile_SetData    # wave-slot
+0x002bb1d0    cWorldPainterMan_AllocFiles    # wave-slot
+0x00195aa0    FELocale_v03    # wave-slot
+0x002bb348    cWorldPainterMan_SetFileData    # wave-slot
+0x002f4380    LensFX_InitFlareSet    # wave-slot
+0x002f5180    WorldLightMan_ctor    # wave-slot
+0x002dbee0    FXLoader_dtor    # wave-slot
+0x00153258        # wave-slot
+0x002f17d0    AttachedEmitterFX_LoadTypeData    # wave-slot
+0x00195de0    FELocale_LoadGameTables    # wave-slot
+0x0040c928        # wave-slot
+0x00153200        # wave-slot
+0x0017fe2c        # wave-slot
+0x0017fe34        # wave-slot
+0x0017fe3c        # wave-slot
+0x0017fe44        # wave-slot
+0x0026af98    PathData_FindNearAIPaths_Thunk    # wave-slot
+0x002cc018    MenuSys_ctor    # wave-slot
+0x00113d88    RaceStateRace_Enter    # wave-slot
+0x0040c8b0        # wave-slot
+0x002f1148    RiderBase_ResetAttackFX    # wave-slot
+0x002bb390    WPFile_dtor    # wave-slot
+0x00113cb8    RaceStateGameInit_Enter    # wave-slot
+0x00113ce0    RaceStateGameInit_Exit    # wave-slot
+0x00113ce8    RaceStateFreeride_Enter    # wave-slot
+0x00113d10    RaceStateFreeride_Exit    # wave-slot
+0x00113d18    RaceStatePreRace_Enter    # wave-slot
+0x00113d28    RaceStatePreRace_Update    # wave-slot
+0x00113d30    RaceStatePreRace_Exit    # wave-slot
+0x00113d38    RaceStateCountdown_Enter    # wave-slot
+0x00113d80    RaceStateCountdown_Exit    # wave-slot
+0x00113e40    RaceStateEndRace_Update    # wave-slot
+0x00113e48    RaceStateEndRace_Exit    # wave-slot
+0x00113e70    RaceStateShutdown_Update    # wave-slot
+0x00113e78    RaceStateShutdown_Exit    # wave-slot
+0x001278c0    Player_ResetRumble    # wave-slot
+0x001278e0    Player_SetRumbleLevel    # wave-slot
+0x0013f8b8    DebugPrintf_Stub_f8b8    # wave-slot
+0x001406b0    RiderIface_GetVelocity    # wave-slot
+0x001406c0    RiderIface_HasVisited    # wave-slot
+0x001406c8    RiderIface_AddVelocity    # wave-slot
+0x001406d0    RiderIface_GetPosition    # wave-slot
+0x001406e0    Rider_GetDefaultVector    # wave-slot
+0x001406f0    RiderIface_GetIndex    # wave-slot
+0x001406f8    RiderIface_IsHuman    # wave-slot
+0x00140700    RiderIface_IsComputer    # wave-slot
+0x00140708    RiderIface_ResetAtMatrix    # wave-slot
+0x00140710    Rider_v11_Empty    # wave-slot
+0x00140718    RiderIface_PlaceAtMatrix    # wave-slot
+0x00140720    RiderIface_AddPowerUpBoost    # wave-slot
+0x00140728    RiderIface_AddPowerUpTrick    # wave-slot
+0x00140730    RiderIface_AddTrickMultiplier    # wave-slot
+0x001408f0    Rider_GetPosition    # wave-slot
+0x00140910    Rider_GetVelocity    # wave-slot
+0x00140b80    Rider_GetIndex    # wave-slot
+0x00140bc0    Rider_IsHuman    # wave-slot
+0x00140c68    Rider_ResetRumble    # wave-slot
+0x00140c70    Rider_PulseRumble    # wave-slot
+0x00140c78    Rider_SetRumbleLevel    # wave-slot
+0x00140c80    Rider_UpdateRumble    # wave-slot
+0x00140ce0    RiderScriptObj_GetSelf    # wave-slot
+0x00144068    RaceStateRace_Exit    # wave-slot
+0x001446e8    Player_ScorePathBranch    # wave-slot
+0x0014583c    leaf_0014583c    # wave-slot
+0x00145844    leaf_00145844    # wave-slot
+0x0014584c    leaf_0014584c    # wave-slot
+0x00145854    leaf_00145854    # wave-slot
+0x0014585c    leaf_0014585c    # wave-slot
+0x001458ec    leaf_001458ec    # wave-slot
+0x001458f4    leaf_001458f4    # wave-slot
+0x001458fc    leaf_001458fc    # wave-slot
+0x00145904    leaf_00145904    # wave-slot
+0x0014590c    leaf_0014590c    # wave-slot
+0x00145914    leaf_00145914    # wave-slot
+0x0014591c    leaf_0014591c    # wave-slot
+0x00145924    leaf_00145924    # wave-slot
+0x001549e0    BEScoreInt_Commit    # wave-slot
+0x00155380    BEScoreInt_SaveState    # wave-slot
+0x00155388    BEScoreInt_LoadState    # wave-slot
+0x00155aa0    BEAggressionInt_Commit    # wave-slot
+0x00155aa8    BEAggressionInt_Reset    # wave-slot
+0x0015afe8    DebugPrintf_Stub_afe8    # wave-slot
+0x0015bb00    BEInterface_Commit    # wave-slot
+0x0015bb08    BEInterface_Reset    # wave-slot
+0x0015bb10    BEInterface_SaveState    # wave-slot
+0x0015bb18    BEInterface_LoadState    # wave-slot
+0x0015bcc0    BEMissionInt_Commit    # wave-slot
+0x0015bcc8    BEMissionInt_Reset    # wave-slot
+0x0015c6c8    BECharDBInt_Commit    # wave-slot
+0x0015c6d0    BECharDBInt_Reset    # wave-slot
+0x0015c6d8    BESaveInt_Commit    # wave-slot
+0x0015c6e0    BESaveInt_Reset    # wave-slot
+0x0015c7d0    BEEconInt_Commit    # wave-slot
+0x0015c7d8    BEEconInt_Reset    # wave-slot
+0x0015f640    RiderCameraTarget_GetSteer    # wave-slot
+0x0015f680    RiderCameraTarget_GetHandplantData0    # wave-slot
+0x0015f690    RiderCameraTarget_GetHandplantData1    # wave-slot
+0x0015f6a0    RiderCameraTarget_GetAirTime    # wave-slot
+0x0015f6e0    RiderCameraTarget_GetJumpOrigin    # wave-slot
+0x0015f6f0    RiderCameraTarget_GetJumpDir    # wave-slot
+0x0015f700    RiderCameraTarget_GetBoost    # wave-slot
+0x0015f710    RiderCameraTarget_GetSlopeTerm    # wave-slot
+0x0015f750    RiderCameraTarget_GetSurfaceType    # wave-slot
+0x0015f760    RiderCameraTarget_GetTakeoffPop    # wave-slot
+0x0015f770    RiderCameraTarget_IsOllie    # wave-slot
+0x0015f908    RiderCameraTarget_GetRailFlag    # wave-slot
+0x0015f918    RiderCameraTarget_GetLandingNormal    # wave-slot
+0x0015f928    RiderCameraTarget_GetLandingVelocity    # wave-slot
+0x0015fd48    ManualCamAlgo_ResetForRider    # wave-slot
+0x001604a0    ManualChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x001604b0    ManualChaseCameraAlgorithm_GetTuning    # wave-slot
+0x001607c8    MatrixChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x001607d8    MatrixChaseCameraAlgorithm_GetTuning    # wave-slot
+0x00160be0    RelativeChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x00160bf0    RelativeChaseCameraAlgorithm_GetTuning    # wave-slot
+0x001613d8    SplineCameraAlgorithm_GetEyeDrop    # wave-slot
+0x001613e8    SplineCameraAlgorithm_GetTuning    # wave-slot
+0x00161710    IdleChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x00161720    IdleChaseCameraAlgorithm_GetTuning    # wave-slot
+0x001673b8    DebugPrintf_Stub_73b8    # wave-slot
+0x00167e18    CameraAlgorithm_ResetForRider    # wave-slot
+0x00167e20    CameraAlgorithm_Reset    # wave-slot
+0x00167e28    CameraAlgorithm_Update    # wave-slot
+0x00167e58    CameraAlgorithm_GetTuning    # wave-slot
+0x00167e60    CameraAlgorithm_PostUpdate    # wave-slot
+0x00167e90    CameraAlgorithm_v10_Empty    # wave-slot
+0x00167e98    CameraAlgorithm_GetResetFlag    # wave-slot
+0x00167fb0    ChaseCameraAlgorithm_GetResetFlag    # wave-slot
+0x00167fb8    CamController_Update    # wave-slot
+0x00168320    LazyChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x00168330    LazyChaseCameraAlgorithm_GetTuning    # wave-slot
+0x001686b8    LookBackChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x001686c8    LookBackChaseCameraAlgorithm_GetTuning    # wave-slot
+0x00174808    DebugPrintf_Stub_4808    # wave-slot
+0x001765f8    CameraAction_v01_Empty    # wave-slot
+0x00177548    DirectionNeChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x00177610    DebugPrintf_Stub_7610    # wave-slot
+0x00178b98    Post_Race_1ChaseCameraAlgorithm_GetEyeDrop    # wave-slot
+0x00178ba8    Post_Race_1ChaseCameraAlgorithm_GetTuning    # wave-slot
+0x00178f18    DebugPrintf_Stub_8f18    # wave-slot
+0x00179758    DebugPrintf_Stub_9758    # wave-slot
+0x00186b48    cFEStateMemCard_OnWidgetNotify    # wave-slot
+0x00187c10    cFEStateMemCard_HandleInput    # wave-slot
+0x00193310    cFEStateBraggingRights_TransitionIn    # wave-slot
+0x00194980    cFEStateTitle_OnChildEvent    # wave-slot
+0x001a3300    cFEStateMPCircuit_OnWidgetCreated    # wave-slot
+0x001a7bb0    cFEStateReadMessagePopup_OnWidgetCreated    # wave-slot
+0x001b6078    cFEStateNetConfig_v21    # wave-slot
+0x001bea30    cFEStateNetCreateRoomPopup_v21    # wave-slot
+0x001c17d8    cFEStateNetQuickPlayPopup_v21    # wave-slot
+0x001c5dd0    cFEPopupConfirm_TransitionOut    # wave-slot
+0x001d1198    cFEStateRewardGalleryPosters_GetIconPath    # wave-slot
+0x001d1330    cFEStateRewardGalleryTradingCards_GetIconPath    # wave-slot
+0x001d14c8    cFEStateRewardGalleryConceptArts_GetIconPath    # wave-slot
+0x001d1660    cFEStateRewardGalleryVideos_GetIconPath    # wave-slot
+0x001d17f8    cFEStateRewardGalleryToys_GetIconPath    # wave-slot
+0x001d9f30    cFEStateNetHelpPopup_HandleInput    # wave-slot
+0x001dc930    AppModule_Unload    # wave-slot
+0x001dc938    AppModule_Enter    # wave-slot
+0x001dcc38    FELocale_SetField1    # wave-slot
+0x001dcc58    FELocale_v04_cc58    # wave-slot
+0x001dcca8    FEUICustom_v02    # wave-slot
+0x001dccf8    UIInputBase_v39    # wave-slot
+0x001dd560    FEUIInput_v41    # wave-slot
+0x001dd568    FEUIInput_v42    # wave-slot
+0x001dd570    FEUIInput_v43    # wave-slot
+0x001dd918    cFEStateUberTrick_v13    # wave-slot
+0x001ddfa8    cFEStateOptionsGame_OnDeactivate    # wave-slot
+0x001de010    cFEStateOptionsSound_OnDeactivate    # wave-slot
+0x001de078    cFEStateOptionsHUD_OnDeactivate    # wave-slot
+0x001de0e8    cFEStateOptionsController_OnDeactivate    # wave-slot
+0x001de2d8    cKeyboardPopup_TransitionOut    # wave-slot
+0x001de550    cFEStateEventSelect_v13    # wave-slot
+0x001de908    cFEStateNetAccountMem_v29    # wave-slot
+0x001de910    cFEStateNetAccountMem_v32    # wave-slot
+0x001de940    cFEStateMemCard_OnWidgetAction    # wave-slot
+0x001de948    cFEStateMemCard_v37    # wave-slot
+0x001de9f0    FEScreenAutosavePopup_TransitionIn    # wave-slot
+0x001deb50    cFEPopupOptionReset_v23    # wave-slot
+0x001deb80    cFEPopupVideoCalibration_TransitionIn    # wave-slot
+0x001deb88    cFEPopupVideoCalibration_TransitionOut    # wave-slot
+0x001df378    cFEPopupScreenPos_TransitionOut    # wave-slot
+0x001df578    cFEStateBraggingRights_v13    # wave-slot
+0x001df5c0    cFEStateChatRoom_v13    # wave-slot
+0x001df630    cFEStateOnlineAgreement_TransitionOut    # wave-slot
+0x001df6a0    cFEStateNetQuickPlayPopup_TransitionOut    # wave-slot
+0x001df8e0    cFEStateNetCreateRoomPopup_TransitionOut    # wave-slot
+0x001df988    cFEStateNetHelpPopup_TransitionOut    # wave-slot
+0x001dfa88    cFEStateRewardGallery_GetIconPath    # wave-slot
+0x001dfaa0    cFEStateRewardGallery_v26    # wave-slot
+0x001dfaa8    cFEStateRewardGallery_v27    # wave-slot
+0x001dfac0    cFEStateRewardGallery_InitButtons    # wave-slot
+0x001dfad0    cFEStateRewardGallery_GetItemRecord    # wave-slot
+0x001dfad8    cFEStateRewardGallery_GetItemPrice    # wave-slot
+0x001dfae0    cFEStateRewardGallery_GetItemField0E    # wave-slot
+0x001dfae8    cFEStateRewardGallery_GetItemName    # wave-slot
+0x001dfb88    cFEStateRewardGalleryPosters_GetItemRecord    # wave-slot
+0x001dfbb0    cFEStateRewardGalleryPosters_GetItemField0E    # wave-slot
+0x001dfbb8    cFEStateRewardGalleryPosters_GetItemName    # wave-slot
+0x001dfc58    cFEStateRewardGalleryTradingCards_GetItemRecord    # wave-slot
+0x001dfc80    cFEStateRewardGalleryTradingCards_GetItemField0E    # wave-slot
+0x001dfc88    cFEStateRewardGalleryTradingCards_GetItemName    # wave-slot
+0x001dfd28    cFEStateRewardGalleryConceptArts_GetItemRecord    # wave-slot
+0x001dfd50    cFEStateRewardGalleryConceptArts_GetItemField0E    # wave-slot
+0x001dfd58    cFEStateRewardGalleryConceptArts_GetItemName    # wave-slot
+0x001dfdf8    cFEStateRewardGalleryVideos_GetItemRecord    # wave-slot
+0x001dfe20    cFEStateRewardGalleryVideos_GetItemField0E    # wave-slot
+0x001dfe28    cFEStateRewardGalleryVideos_GetItemName    # wave-slot
+0x001dfec8    cFEStateRewardGalleryToys_GetItemRecord    # wave-slot
+0x001dfef0    cFEStateRewardGalleryToys_GetItemField0E    # wave-slot
+0x001dfef8    cFEStateRewardGalleryToys_GetItemName    # wave-slot
+0x001dff98    cFEStateRewardGalleryCheatChars_GetItemRecord    # wave-slot
+0x001dffc0    cFEStateRewardGalleryCheatChars_GetItemField0E    # wave-slot
+0x001dffc8    cFEStateRewardGalleryCheatChars_GetItemName    # wave-slot
+0x001e0014    leaf_001e0014    # wave-slot
+0x001e0020    cFEStateVideoPlayer_TransitionIn    # wave-slot
+0x001e0028    cFEStateVideoPlayer_TransitionOut    # wave-slot
+0x001e04f8    cFEPopupSelectMultiplayerMode_v23    # wave-slot
+0x001e0500    cFEPopupSelectMultiplayerMode_TransitionIn    # wave-slot
+0x001e0508    cFEPopupSelectMultiplayerMode_TransitionOut    # wave-slot
+0x001e0770    FEUISound_v03    # wave-slot
+0x001e0778    FEUISound_v04    # wave-slot
+0x001e07b0    OVUISound_v03    # wave-slot
+0x001e07b8    OVUISound_v04    # wave-slot
+0x001e08d0    cFEUseExistingAccount_v29    # wave-slot
+0x001e0940    cFEStateSelectPersona_v29    # wave-slot
+0x001e0948    cFEStateSelectPersona_v32    # wave-slot
+0x001e0a00    cFEStateChallengePopup_TransitionOut    # wave-slot
+0x001e0ab8    cFEStateChallengeReceivedPopup_TransitionOut    # wave-slot
+0x001e0ba0    cFEStateNetConfig_v32    # wave-slot
+0x001e0ba8    cFEStateNetConfig_v29    # wave-slot
+0x001e0c78    cFEStateAuthDNASError_TransitionOut    # wave-slot
+0x001e0c80    cFEStateAuthDNASError_v32    # wave-slot
+0x001e0c88    cFEStateAuthDNASError_v29    # wave-slot
+0x001e0c90    cFEStateNetAccountMem_TransitionIn    # wave-slot
+0x001e0c98    cFEStateNetAccountMem_TransitionOut    # wave-slot
+0x001e0d60    cFEStateCreateStep1_v29    # wave-slot
+0x001e0dd0    cFEStateCreateStep2_v29    # wave-slot
+0x001e0e40    cFEStateCreateDuplicate_v29    # wave-slot
+0x001e0e88    cFEStateLogin_v32    # wave-slot
+0x001e0e90    cFEStateLogin_v29    # wave-slot
+0x001e0ec0    cFEStateStats_v13    # wave-slot
+0x001e0ef0    cFEStateNetNews_TransitionOut    # wave-slot
+0x001e0f58    cFEStateRelogin_TransitionOut    # wave-slot
+0x001e0fb8    cFEStateNetMessenger_TransitionOut    # wave-slot
+0x001e1040    cFEStateReadMessagePopup_TransitionOut    # wave-slot
+0x001e1078    UISoundBase_PlaySound    # wave-slot
+0x001e1080    UISoundBase_v03    # wave-slot
+0x001e1088    UISoundBase_v04    # wave-slot
+0x001e10e8    UICustomBase_v02    # wave-slot
+0x001e10f0    UICustomBase_v03    # wave-slot
+0x001e10f8    UICustomBase_CreateState    # wave-slot
+0x001e1100    UICustomBase_v05    # wave-slot
+0x001e1138    UIInputBase_v02    # wave-slot
+0x001e1140    UIInputBase_IsStart    # wave-slot
+0x001e1148    UIInputBase_IsSelect    # wave-slot
+0x001e1150    UIInputBase_IsNext    # wave-slot
+0x001e1158    UIInputBase_IsPrevious    # wave-slot
+0x001e1160    UIInputBase_IsOption    # wave-slot
+0x001e1168    UIInputBase_IsMisc    # wave-slot
+0x001e1170    UIInputBase_IsNextHeld    # wave-slot
+0x001e1178    UIInputBase_IsPreviousHeld    # wave-slot
+0x001e1180    UIInputBase_IsOptionHeld    # wave-slot
+0x001e1188    UIInputBase_IsMiscHeld    # wave-slot
+0x001e1190    UIInputBase_IsNextReleased    # wave-slot
+0x001e1198    UIInputBase_IsPreviousReleased    # wave-slot
+0x001e11a0    UIInputBase_IsOptionReleased    # wave-slot
+0x001e11a8    UIInputBase_IsMiscReleased    # wave-slot
+0x001e11b0    UIInputBase_IsUp    # wave-slot
+0x001e11b8    UIInputBase_IsDown    # wave-slot
+0x001e11c0    UIInputBase_IsLeft    # wave-slot
+0x001e11c8    UIInputBase_IsRight    # wave-slot
+0x001e11d0    UIInputBase_IsUpHeld    # wave-slot
+0x001e11d8    UIInputBase_IsDownHeld    # wave-slot
+0x001e11e0    UIInputBase_IsLeftHeld    # wave-slot
+0x001e11e8    UIInputBase_IsRightHeld    # wave-slot
+0x001e11f0    UIInputBase_IsRShift1    # wave-slot
+0x001e11f8    UIInputBase_IsRShift2    # wave-slot
+0x001e1200    UIInputBase_IsLShift1    # wave-slot
+0x001e1208    UIInputBase_IsLShift2    # wave-slot
+0x001e1210    UIInputBase_IsRShift1Held    # wave-slot
+0x001e1218    UIInputBase_IsRShift2Held    # wave-slot
+0x001e1220    UIInputBase_IsLShift1Held    # wave-slot
+0x001e1228    UIInputBase_IsLShift2Held    # wave-slot
+0x001e1230    UIInputBase_IsCamZoom    # wave-slot
+0x001e1238    UIInputBase_IsCamPan    # wave-slot
+0x001e1240    UIInputBase_IsCamRotate    # wave-slot
+0x001e1248    UIInputBase_GetCamZoom    # wave-slot
+0x001e1258    UIInputBase_GetCamPan    # wave-slot
+0x001e1268    UIInputBase_GetCamRotate    # wave-slot
+0x001e1278    UIInputBase_IsAnyButton    # wave-slot
+0x001e1280    UIInputBase_v41    # wave-slot
+0x001e1288    UIInputBase_v42    # wave-slot
+0x001e1290    UIInputBase_v43    # wave-slot
+0x001e1298    UIInputBase_SetPort    # wave-slot
+0x001e12a0    UIInputBase_v45    # wave-slot
+0x001e12a8    UIInputBase_PollUsbKeyboard    # wave-slot
+0x001e7920    OVScreenFinalStandings_OnDeactivate    # wave-slot
+0x001e8e90    OVScreenPeakChallengeResults_HandleInput    # wave-slot
+0x001f8720    OVScreenPauseFreeride_OnDeactivate    # wave-slot
+0x001f8df0    OVScreenPauseFreeride_HandleInput    # wave-slot
+0x001faf08    OVScreenInGameError_TransitionIn    # wave-slot
+0x002087e8    OVScreenSession_OnWidgetCreated    # wave-slot
+0x002122e0    OVScreenAutosave_HandleInput    # wave-slot
+0x0021c700    cOVStateOverlay_v25    # wave-slot
+0x0021cb68    cOVState_ViewPopup_TransitionOut    # wave-slot
+0x002212c0    OVScreenMap_v13    # wave-slot
+0x00221400    OVScreenSession_v13    # wave-slot
+0x00221d80    OVScreenInGameError_v13    # wave-slot
+0x002222a8    OVScreenAutosave_OnWidgetAction    # wave-slot
+0x002222b0    OVScreenAutosave_v37    # wave-slot
+0x002224a0    LunoVM_ReturnZero    # wave-slot
+0x00232710    cPreGameLoadScreen_Load    # wave-slot
+0x00232718    cPreFELoadScreen_Load    # wave-slot
+0x00233b88    GameStateQuit_Exit    # wave-slot
+0x00236af0    GameStateEventSwitchLoad_Exit    # wave-slot
+0x00237030    GameStateReplayPlayback_Update    # wave-slot
+0x0023ac10    GMHandler1_v07    # wave-slot
+0x00243ab0    PreStartScreen_Load    # wave-slot
+0x00243cb0    GameState_OverlayEnter    # wave-slot
+0x00243cb8    GameState_OverlayUpdate    # wave-slot
+0x00243cc0    GameState_OverlayExit    # wave-slot
+0x00243cc8    GameState_Enter    # wave-slot
+0x00243cd0    GameState_Update    # wave-slot
+0x00243cd8    GameState_Exit    # wave-slot
+0x00243ce0    GameState_v08    # wave-slot
+0x00243ce8    GameState_v09    # wave-slot
+0x002443f8    GenericStreamPause_v03    # wave-slot
+0x00244528    GMHandler_Reset    # wave-slot
+0x00244530    GMHandler_v06    # wave-slot
+0x00244538    GMHandler_v07    # wave-slot
+0x00244540    GMHandler_OnRiderFinished    # wave-slot
+0x00244548    GMHandler_v09    # wave-slot
+0x00244550    GMHandler_SaveState    # wave-slot
+0x00244558    GMHandler_LoadState    # wave-slot
+0x00244620    GMHandler9_SaveState    # wave-slot
+0x00244628    GMHandler9_LoadState    # wave-slot
+0x00245690    cGameLoadStateOutLodge_OnWidgetCreated    # wave-slot
+0x002458b0    cGameLoadStateConquer_OnWidgetCreated    # wave-slot
+0x00245b50    cFELoadHintState_OnWidgetCreated    # wave-slot
+0x00245db8    cFELoadStateInLodge_OnWidgetCreated    # wave-slot
+0x0024d6d0    VisualEffectsMenu_DebugPrintfStub    # wave-slot
+0x00250aa0    AIVisualEffectsMenu_DebugPrintfStub    # wave-slot
+0x00255668    VD_SinkBase_Flush    # wave-slot
+0x00256250    DNASAuth_EmptyHook    # wave-slot
+0x002591b8    Net_GetConnManager    # wave-slot
+0x002591d0    Net_GetGameSetup    # wave-slot
+0x00269ec0    Path_InitAIFields    # wave-slot
+0x0026a068    Path_InitTrackFields    # wave-slot
+0x0026ada0    PathData_EmptyHook    # wave-slot
+0x0026c410    Path_InitFields    # wave-slot
+0x0026c418    Path_ReadField    # wave-slot
+0x00272680    InSeq_CurveTrackStop    # wave-slot
+0x002752f0    InSeq_CurveTrackGetValuePtr    # wave-slot
+0x002752f8    InSeq_CurveTrack_v05    # wave-slot
+0x00275300    InSeq_CurveTrackGetNextEventTime    # wave-slot
+0x00275308    InSeq_CurveTrackGetType    # wave-slot
+0x00275310    InSeq_CurveTrackGetChannel    # wave-slot
+0x00275318    InSeq_CurveTrackIsStarted    # wave-slot
+0x00275328    InSeq_SpanTrackGetValuePtr    # wave-slot
+0x00275330    InSeq_SpanTrack_v05    # wave-slot
+0x00275338    InSeq_SpanTrackGetType    # wave-slot
+0x00275340    InSeq_SpanTrackGetChannel    # wave-slot
+0x00275348    InSeq_SpanTrackIsStarted    # wave-slot
+0x00275358    InSeq_EventTrackGetValuePtr    # wave-slot
+0x00275360    InSeq_EventTrack_v05    # wave-slot
+0x00275368    InSeq_EventTrackGetType    # wave-slot
+0x00275370    InSeq_EventTrackGetChannel    # wave-slot
+0x00275378    InSeq_EventTrackIsStarted    # wave-slot
+0x00275388    InSeq_RampTrackGetValuePtr    # wave-slot
+0x00275390    InSeq_RampTrack_v05    # wave-slot
+0x00275398    InSeq_RampTrackGetType    # wave-slot
+0x002753a0    InSeq_RampTrackGetChannel    # wave-slot
+0x002753a8    InSeq_RampTrackIsStarted    # wave-slot
+0x00281168    ScriptViewObj_GetBindingCount    # wave-slot
+0x00283be0    ScriptMovie_DebugPrintf    # wave-slot
+0x002847a8    DataInstanceMan_OnDataAdded    # wave-slot
+0x002847b0    DataInstanceMan_OnDataRemoved    # wave-slot
+0x002847b8    DataInstanceMan_v04    # wave-slot
+0x002847c0    DataInstanceMan_v05    # wave-slot
+0x002847e8    ScriptEngine_SeqListenerOnAdvance    # wave-slot
+0x002847f0    ScriptEngine_SeqListenerOnEnd    # wave-slot
+0x002847f8    ScriptEngine_SeqListener_v05    # wave-slot
+0x00284800    ScriptEngine_SeqListener_v07    # wave-slot
+0x00284808    ScriptEngine_SeqListener_v08    # wave-slot
+0x00284810    ScriptEngine_SeqListener_v11    # wave-slot
+0x00284820    ScriptEngine_ScriptDbLoadBank    # wave-slot
+0x00284828    ScriptEngine_ScriptDbCancelBank    # wave-slot
+0x00284830    ScriptEngine_ScriptDbUnloadBank    # wave-slot
+0x00284838    ScriptEngine_ScriptDb_v10    # wave-slot
+0x00284840    ScriptEngine_ScriptDb_v11    # wave-slot
+0x00284848    ScriptEngine_ScriptDb_v12    # wave-slot
+0x00284878    ScriptBinding_Apply    # wave-slot
+0x00284880    ScriptBinding_Tick    # wave-slot
+0x00284888    ScriptBinding_AcceptCommand    # wave-slot
+0x00284940    ScriptDummyObj_GetBindingCount    # wave-slot
+0x00284948    ScriptDummyObj_GetBinding    # wave-slot
+0x002849b8    ScriptAudioObj_GetBindingCount    # wave-slot
+0x002849c0    ScriptAudioObj_GetBinding    # wave-slot
+0x00284a88    ScriptObjCam_GetBindingCount    # wave-slot
+0x00284a90    ScriptObjCam_GetBinding    # wave-slot
+0x00284ad8    cTransitionMan_ScriptGetBindingCount    # wave-slot
+0x00284ae0    cTransitionMan_ScriptGetBinding    # wave-slot
+0x00284b50    RiderScriptObj_GetBindingCount    # wave-slot
+0x00284b58    RiderScriptObj_GetBinding    # wave-slot
+0x00291430    SSXAudioSystem_UpdateAmbienceLoop    # wave-slot
+0x00296e18    SSXAudioSystem_UpdateWipeoutLoop    # wave-slot
+0x00297430    SSXAudioSystem_UpdateWipeoutLoop2    # wave-slot
+0x00298d88    SSXAudioSystem_UpdateBoostLoop    # wave-slot
+0x002a4a68    SSXAudioSystem_SectionSpeechTimerCallback    # wave-slot
+0x002b83b8    cWorldSound_DebugPrintf    # wave-slot
+0x002bacf0    SpeechHostBase_GetSpeechCategory    # wave-slot
+0x002bacf8    SpeechHostBase_GetSpeechCategoryVolume    # wave-slot
+0x002bbbf8    cWorldPainterMan_DebugPrintf    # wave-slot
+0x002bc500    tWPIGD_Base_GetMusicTrigger08    # wave-slot
+0x002bc508    tWPIGD_Base_GetMusicTrigger10    # wave-slot
+0x002bc510    tWPIGD_Base_GetMix08    # wave-slot
+0x002bc518    tWPIGD_Base_GetAmbience08    # wave-slot
+0x002bc520    tWPIGD_Base_GetSpeech08    # wave-slot
+0x002bc528    tWPIGD_Base_GetCamera08    # wave-slot
+0x002bc530    tWPIGD_Base_GetFog08    # wave-slot
+0x002bc538    tWPIGD_Base_GetFog10    # wave-slot
+0x002bc540    tWPIGD_Base_GetFog18    # wave-slot
+0x002bc548    tWPIGD_Base_GetFog20    # wave-slot
+0x002bc550    tWPIGD_Base_GetFog28    # wave-slot
+0x002bc558    tWPIGD_Base_GetFog30    # wave-slot
+0x002bc560    tWPIGD_Base_GetLightGlow08    # wave-slot
+0x002bc568    tWPIGD_Base_GetLightGlow10    # wave-slot
+0x002bc570    tWPIGD_Base_GetLightGlow18    # wave-slot
+0x002bc578    tWPIGD_Base_GetLightGlow20    # wave-slot
+0x002bc580    tWPIGD_Base_GetLightGlow28    # wave-slot
+0x002bc588    tWPIGD_Base_GetLightGlow30    # wave-slot
+0x002bc590    tWPIGD_Base_GetLightGlow38    # wave-slot
+0x002bc598    tWPIGD_Base_GetScreenTintRed    # wave-slot
+0x002bc5a0    tWPIGD_Base_GetScreenTintGreen    # wave-slot
+0x002bc5a8    tWPIGD_Base_GetScreenTintBlue    # wave-slot
+0x002bc5b0    tWPIGD_Base_GetScreenFillRed    # wave-slot
+0x002bc5b8    tWPIGD_Base_GetScreenFillGreen    # wave-slot
+0x002bc5c0    tWPIGD_Base_GetScreenFillBlue    # wave-slot
+0x002bc5c8    tWPIGD_Base_GetSkyBox08    # wave-slot
+0x002bc5d0    tWPIGD_Base_GetSunElevation    # wave-slot
+0x002bc5d8    tWPIGD_Base_GetSunAzimuth    # wave-slot
+0x002bc5e0    tWPIGD_Base_GetSunRed    # wave-slot
+0x002bc5e8    tWPIGD_Base_GetSunGreen    # wave-slot
+0x002bc5f0    tWPIGD_Base_GetSunBlue    # wave-slot
+0x002bc5f8    tWPIGD_Base_GetSunIntensity    # wave-slot
+0x002bc600    tWPIGD_Base_GetSunTexture    # wave-slot
+0x002bc608    tWPIGD_Base_GetSunFlareIntensity    # wave-slot
+0x002bc610    tWPIGD_Base_GetSunSize    # wave-slot
+0x002bc618    tWPIGD_Base_GetSurface08    # wave-slot
+0x002bc620    tWPIGD_Base_GetIrradianceName0    # wave-slot
+0x002bc628    tWPIGD_Base_GetIrradianceName1    # wave-slot
+0x002bc630    tWPIGD_Base_GetIrradianceName2    # wave-slot
+0x002bc638    tWPIGD_Base_GetIrradianceName3    # wave-slot
+0x002bc640    tWPIGD_Base_GetLighting48    # wave-slot
+0x002bc648    tWPIGD_Base_GetLighting50    # wave-slot
+0x002bc650    tWPIGD_Base_GetWeather08    # wave-slot
+0x002bc658    tWPIGD_Base_GetWeather10    # wave-slot
+0x002bc660    tWPIGD_Base_GetWeather18    # wave-slot
+0x002bc668    tWPIGD_Base_GetWeather20    # wave-slot
+0x002bc670    tWPIGD_Base_GetWeather28    # wave-slot
+0x002bc678    tWPIGD_Base_GetWeather30    # wave-slot
+0x002bc680    tWPIGD_Base_GetWeather38    # wave-slot
+0x002bc688    tWPIGD_Base_GetWeather40    # wave-slot
+0x002bc690    tWPIGD_Base_GetWeather48    # wave-slot
+0x002bc698    tWPIGD_Base_GetWeather50    # wave-slot
+0x002bc6a0    tWPIGD_Base_GetWeather58    # wave-slot
+0x002bc6a8    tWPIGD_Base_GetWeather60    # wave-slot
+0x002bc6b0    tWPIGD_Base_GetWeather68    # wave-slot
+0x002bc6b8    tWPIGD_Base_GetWeather70    # wave-slot
+0x002bc6c0    tWPIGD_Base_GetWeather78    # wave-slot
+0x002bc6c8    tWPIGD_Base_GetWeather80    # wave-slot
+0x002bc6d0    tWPIGD_Base_GetWeather88    # wave-slot
+0x002bc6d8    tWPIGD_Base_GetWeather90    # wave-slot
+0x002bc6e0    tWPIGD_Base_GetWeather98    # wave-slot
+0x002bc6e8    tWPIGD_Base_GetDanger08    # wave-slot
+0x002bc6f0    tWPIGD_Base_GetDanger10    # wave-slot
+0x002bda28    tWPIGD_MusicTrigger_v67    # wave-slot
+0x002bda30    tWPIGD_Ambience_v67    # wave-slot
+0x002bda38    tWPIGD_Camera_v67    # wave-slot
+0x002bda40    tWPIGD_Danger_v67    # wave-slot
+0x002bda48    tWPIGD_Fog_v67    # wave-slot
+0x002bda50    tWPIGD_LightGlow_v67    # wave-slot
+0x002bda58    tWPIGD_Lighting_v67    # wave-slot
+0x002bda60    tWPIGD_Mix_v67    # wave-slot
+0x002bda68    tWPIGD_ScreenTint_v67    # wave-slot
+0x002bda70    tWPIGD_SkyBox_v67    # wave-slot
+0x002bda78    tWPIGD_Speech_v67    # wave-slot
+0x002bda80    tWPIGD_Sun_v67    # wave-slot
+0x002bda88    tWPIGD_Surface_v67    # wave-slot
+0x002bda90    tWPIGD_Weather_v67    # wave-slot
+0x002bdac8    tWPIGD_Mix_IsEqual    # wave-slot
+0x002bdae0    tWPIGD_Ambience_IsEqual    # wave-slot
+0x002bdaf8    tWPIGD_Speech_IsEqual    # wave-slot
+0x002be0b0    tWPIGD_MusicTrigger_SetDefaults    # wave-slot
+0x002be0c8    tWPIGD_Mix_SetDefaults    # wave-slot
+0x002be0d8    tWPIGD_Ambience_SetDefaults    # wave-slot
+0x002be0e8    tWPIGD_Speech_SetDefaults    # wave-slot
+0x002be0f8    tWPIGD_Camera_SetDefaults    # wave-slot
+0x002be108    tWPIGD_Fog_SetDefaults    # wave-slot
+0x002be140    tWPIGD_LightGlow_SetDefaults    # wave-slot
+0x002be170    tWPIGD_ScreenTint_SetDefaults    # wave-slot
+0x002be198    tWPIGD_SkyBox_SetDefaults    # wave-slot
+0x002be1a8    tWPIGD_Sun_SetDefaults    # wave-slot
+0x002be1e0    tWPIGD_Surface_SetDefaults    # wave-slot
+0x002be2c8    tWPIGD_Danger_SetDefaults    # wave-slot
+0x002c0b30    WorldPainterQuery_DebugPrintf    # wave-slot
+0x002c1458    tWPIGD_Base_v67    # wave-slot
+0x002c1490    tWPIGD_MusicTrigger_Get08    # wave-slot
+0x002c1498    tWPIGD_MusicTrigger_Get10    # wave-slot
+0x002c14a0    tWPIGD_Mix_Get08    # wave-slot
+0x002c14a8    tWPIGD_Ambience_Get08    # wave-slot
+0x002c14b0    tWPIGD_Speech_Get08    # wave-slot
+0x002c14b8    tWPIGD_Camera_Get08    # wave-slot
+0x002c14c0    tWPIGD_Fog_Get08    # wave-slot
+0x002c14c8    tWPIGD_Fog_Get10    # wave-slot
+0x002c14d0    tWPIGD_Fog_Get18    # wave-slot
+0x002c14d8    tWPIGD_Fog_Get20    # wave-slot
+0x002c14e0    tWPIGD_Fog_Get28    # wave-slot
+0x002c14e8    tWPIGD_Fog_Get30    # wave-slot
+0x002c14f0    tWPIGD_LightGlow_Get08    # wave-slot
+0x002c14f8    tWPIGD_LightGlow_Get10    # wave-slot
+0x002c1500    tWPIGD_LightGlow_Get18    # wave-slot
+0x002c1508    tWPIGD_LightGlow_Get20    # wave-slot
+0x002c1510    tWPIGD_LightGlow_Get28    # wave-slot
+0x002c1518    tWPIGD_LightGlow_Get30    # wave-slot
+0x002c1520    tWPIGD_LightGlow_Get38    # wave-slot
+0x002c1528    tWPIGD_ScreenTint_GetTintRed    # wave-slot
+0x002c1530    tWPIGD_ScreenTint_GetTintGreen    # wave-slot
+0x002c1538    tWPIGD_ScreenTint_GetTintBlue    # wave-slot
+0x002c1540    tWPIGD_ScreenTint_GetFillRed    # wave-slot
+0x002c1548    tWPIGD_ScreenTint_GetFillGreen    # wave-slot
+0x002c1550    tWPIGD_ScreenTint_GetFillBlue    # wave-slot
+0x002c1558    tWPIGD_SkyBox_Get08    # wave-slot
+0x002c1570    tWPIGD_Sun_GetRed    # wave-slot
+0x002c1578    tWPIGD_Sun_GetGreen    # wave-slot
+0x002c1580    tWPIGD_Sun_GetBlue    # wave-slot
+0x002c1588    tWPIGD_Sun_GetIntensity    # wave-slot
+0x002c1590    tWPIGD_Sun_GetTexture    # wave-slot
+0x002c1598    tWPIGD_Sun_GetFlareIntensity    # wave-slot
+0x002c15a0    tWPIGD_Sun_GetSize    # wave-slot
+0x002c15a8    tWPIGD_Surface_Get08    # wave-slot
+0x002c15b0    tWPIGD_Lighting_GetIrradianceName0    # wave-slot
+0x002c15b8    tWPIGD_Lighting_GetIrradianceName1    # wave-slot
+0x002c15c0    tWPIGD_Lighting_Get28    # wave-slot
+0x002c15c8    tWPIGD_Lighting_Get38    # wave-slot
+0x002c15d0    tWPIGD_Lighting_Get48    # wave-slot
+0x002c15d8    tWPIGD_Lighting_Get50    # wave-slot
+0x002c15e0    tWPIGD_Weather_Get08    # wave-slot
+0x002c15e8    tWPIGD_Weather_Get10    # wave-slot
+0x002c15f0    tWPIGD_Weather_Get18    # wave-slot
+0x002c15f8    tWPIGD_Weather_Get20    # wave-slot
+0x002c1600    tWPIGD_Weather_Get28    # wave-slot
+0x002c1608    tWPIGD_Weather_Get30    # wave-slot
+0x002c1610    tWPIGD_Weather_Get38    # wave-slot
+0x002c1618    tWPIGD_Weather_Get40    # wave-slot
+0x002c1620    tWPIGD_Weather_Get48    # wave-slot
+0x002c1628    tWPIGD_Weather_Get50    # wave-slot
+0x002c1630    tWPIGD_Weather_Get58    # wave-slot
+0x002c1638    tWPIGD_Weather_Get60    # wave-slot
+0x002c1640    tWPIGD_Weather_Get68    # wave-slot
+0x002c1648    tWPIGD_Weather_Get70    # wave-slot
+0x002c1650    tWPIGD_Weather_Get78    # wave-slot
+0x002c1658    tWPIGD_Weather_Get80    # wave-slot
+0x002c1660    tWPIGD_Weather_Get88    # wave-slot
+0x002c1668    tWPIGD_Weather_Get90    # wave-slot
+0x002c1670    tWPIGD_Weather_Get98    # wave-slot
+0x002c1678    tWPIGD_Danger_Get08    # wave-slot
+0x002c1680    tWPIGD_Danger_Get10    # wave-slot
+0x002ca368    MenuSysItem_OnFocus    # wave-slot
+0x002ca370    MenuSysItem_OnBlur    # wave-slot
+0x002cad48    MenuSysPage_OnAction    # wave-slot
+0x002cad50    MenuSysPage_v04    # wave-slot
+0x002cc0b8    MenuSys_SetActive    # wave-slot
+0x002cc248    MenuSys_GetInputCode    # wave-slot
+0x002cc250    MenuSys_GetKeyCode    # wave-slot
+0x002cc258    MenuSys_GetKeyChar    # wave-slot
+0x002cd2e8    MenuSysLabelItem_IsSelectable    # wave-slot
+0x002cd398    MenuSysSpacerItem_IsSelectable    # wave-slot
+0x002cd3f0    MenuSysSpacerItem_Draw    # wave-slot
+0x002cff80    MenuSysColorSwatchItem_IsSelectable    # wave-slot
+0x002d0448    MenuSysVectorLabelItem_IsSelectable    # wave-slot
+0x002d2948    SSXStatsMan_DebugPrintf    # wave-slot
+0x002d39f8    MenuSysItem_ResetValue    # wave-slot
+0x002d4080    MenuSys_DebugPrintf_4080    # wave-slot
+0x002f1a00    AttachedEmitterFX_Reset    # wave-slot
+0x002f6b48    WorldLightMan_DebugPrintf    # wave-slot
+0x002f7c20    VfxComponent_Update    # wave-slot
+0x002f7c28    VfxComponent_Render    # wave-slot
+0x002f7c30    VfxComponent_v04    # wave-slot
+0x002f7ff0    cTransitionMan_Script_v09    # wave-slot
+0x002f8168    SnowFall_Save    # wave-slot
+0x002f9000    AttachedEmitterFX_DebugPrintf    # wave-slot
+0x002fa600    AttachedEmitterFX_DebugPrintf_2    # wave-slot
+0x0030b4b8    WScriptMan_Render    # wave-slot
+0x0030d3d8    WScriptProcess_IsMission    # wave-slot
+0x0030d480    WScriptMission_IsMission    # wave-slot
+0x00311860    AnimTable_GetAnimNameStub    # wave-slot
+0x003150b8    AnimData_Identity    # wave-slot
+0x0031abc0    PS2ExecMan_v07    # wave-slot
+0x0031abc8    PS2ExecMan_GetFrameRate    # wave-slot
+0x00320950    ExecManBase_v11    # wave-slot
+0x00320958    ExecManBase_v12    # wave-slot
+0x00327738    PS2Pad_GetNumActuators    # wave-slot
+0x0032e688    CollSegment_CollideSphereTree    # wave-slot
+0x0032f8b0    CollHull_ResetTransform    # wave-slot
+0x00330778    CollSphereTree_ResetTransform    # wave-slot
+0x003388e0    Nash_ReturnSelf    # wave-slot
+0x00340a08    CollVolume_RefineTriangleHit    # wave-slot
+0x00340a10    CollSegment_GetDiameter    # wave-slot
+0x00346060    DynamicParticleModifier_OnTransfer    # wave-slot
+0x0034af18    Flag_Render    # wave-slot
+0x0035cfe0    RailModifier_v04    # wave-slot
+0x0035ed88    RollerModifier_UpdateTransform    # wave-slot
+0x0035fdd0    SyncProcess_ReturnSelf    # wave-slot
+0x00360720    GameProcess_Update    # wave-slot
+0x00360728    GameProcess_PostUpdate    # wave-slot
+0x00360730    GameProcess_Render    # wave-slot
+0x00360738    GameProcess_v05    # wave-slot
+0x00360740    GameProcess_IdLessEqual    # wave-slot
+0x00360748    GameProcess_IdEquals    # wave-slot
+0x00360750    GameProcess_GetId    # wave-slot
+0x00360758    GameProcess_v09    # wave-slot
+0x00360760    GameProcess_IsType    # wave-slot
+0x00360778    GameProcess_Save    # wave-slot
+0x00360780    GameProcess_v13    # wave-slot
+0x00360788    TypedProcess_Update    # wave-slot
+0x00360790    TypedProcess_Render    # wave-slot
+0x00360798    TypedProcess_v14    # wave-slot
+0x00360880    SyncProcess_GetId    # wave-slot
+0x00360910    WorldObj_v15    # wave-slot
+0x00360918    WorldObj_v16    # wave-slot
+0x00360920    WorldObj_v11    # wave-slot
+0x00360930    WorldObj_v17    # wave-slot
+0x00360938    WorldObj_v18    # wave-slot
+0x00360940    WorldObj_v19    # wave-slot
+0x00360948    WorldObj_v20    # wave-slot
+0x00360950    WorldObj_v21    # wave-slot
+0x00360958    WorldObj_v22    # wave-slot
+0x00360960    WorldObj_v23    # wave-slot
+0x00360970    WorldObj_v24    # wave-slot
+0x00360980    WorldObj_v25    # wave-slot
+0x00360990    WorldObj_v26    # wave-slot
+0x00360998    WorldObj_GetMatrices    # wave-slot
+0x003609a0    WorldObj_v28    # wave-slot
+0x003609a8    WorldObj_GetMatrixAt    # wave-slot
+0x003609b0    WorldObj_v30    # wave-slot
+0x003609c0    WorldObj_v31    # wave-slot
+0x003609c8    WorldObj_v32    # wave-slot
+0x003609d0    WorldObj_HandleEvent    # wave-slot
+0x003609d8    WorldObj_v37    # wave-slot
+0x003609e0    WorldObj_v38    # wave-slot
+0x003609e8    WorldObj_v39    # wave-slot
+0x003609f0    WorldObj_v40    # wave-slot
+0x003609f8    WorldObj_v41    # wave-slot
+0x00360a00    WorldObj_GetContactVelocity    # wave-slot
+0x00360a08    WorldObj_ApplyImpulse    # wave-slot
+0x00360a10    WorldObj_v44    # wave-slot
+0x00360a18    WorldObj_v45    # wave-slot
+0x00360a20    WorldObj_v46    # wave-slot
+0x00360a50    DeadNode_KillRestorable    # wave-slot
+0x00360a58    DeadNode_Kill    # wave-slot
+0x00360a60    DeadNode_HandleEvent    # wave-slot
+0x00360a68    DeadFade_HandleEvent    # wave-slot
+0x00360a98    Hide_KillRestorable    # wave-slot
+0x00360aa0    Hide_Kill    # wave-slot
+0x00360aa8    Hide_HandleEvent    # wave-slot
+0x00360ab0    Hide_v40    # wave-slot
+0x00360ae0    RestoreNode_KillRestorable    # wave-slot
+0x00360ae8    RestoreNode_HandleEvent    # wave-slot
+0x00360af0    Boost_v49    # wave-slot
+0x00360af8    Boost_v50    # wave-slot
+0x00360b30    TransformModifier_Update    # wave-slot
+0x00360b38    TransformModifier_UpdateTransform    # wave-slot
+0x00360b40    TransformModifier_PostUpdate    # wave-slot
+0x00360b48    TransformModifier_HandleEvent    # wave-slot
+0x00360b50    TransformModifier_IsTransformFinished    # wave-slot
+0x00360b58    TransformModifier_ClearTransformFinished    # wave-slot
+0x00360b60    TransformModifier_v08    # wave-slot
+0x00360b68    TransformModifier_v09    # wave-slot
+0x00360b70    TransformModifier_v10    # wave-slot
+0x00360b78    TransformModifier_Render    # wave-slot
+0x00360b80    TransformModifier_GetTransformBounds    # wave-slot
+0x00360b88    TransformModifier_SetTransformBounds    # wave-slot
+0x00360b90    TransformModifier_GetTransformRadius    # wave-slot
+0x00360ba0    TransformModifier_SetTransformRadius    # wave-slot
+0x00360ba8    TransformModifier_v16    # wave-slot
+0x00360bb0    TransformModifier_HasTransformChanged    # wave-slot
+0x00360bb8    TransformModifier_GetMatrix    # wave-slot
+0x00360bc0    TransformModifier_v19    # wave-slot
+0x00360bc8    TransformModifier_v20    # wave-slot
+0x00360bd0    TransformModifier_v21    # wave-slot
+0x00360bd8    TransformModifier_v22    # wave-slot
+0x00360be0    TransformModifier_v23    # wave-slot
+0x00360be8    TransformModifier_v24    # wave-slot
+0x00360bf0    TransformModifier_v25    # wave-slot
+0x00360bf8    TransformModifier_GetType    # wave-slot
+0x00360c00    TransformModifier_Save    # wave-slot
+0x00360c58    BoostModifier_BaseV02    # wave-slot
+0x00360c60    BoostModifier_BaseHandleEvent    # wave-slot
+0x00360c68    BoostModifier_BaseV04    # wave-slot
+0x00360c70    BoostModifier_BaseGetType    # wave-slot
+0x00360ce8    ModifierListNode_GetType    # wave-slot
+0x00360cf0    ModifierListNode_OnTransfer    # wave-slot
+0x00360cf8    ModifierListNode_Save    # wave-slot
+0x00360d00    ParticleModifier_BaseUpdate    # wave-slot
+0x00360d08    ParticleModifier_BaseRender    # wave-slot
+0x00360d10    ParticleModifier_BaseHandleEvent    # wave-slot
+0x00360d20    ParticleModifier_GetType    # wave-slot
+0x00360d28    DynamicParticleModifier_GetType    # wave-slot
+0x00360d38    HaloModifier_GetType    # wave-slot
+0x00360d90    RailModifierListNode_v02    # wave-slot
+0x00360dc8    ModObj_v47    # wave-slot
+0x00360dd0    ModObj_AcceptsModifiers    # wave-slot
+0x00361060    AnimObject_BaseV15    # wave-slot
+0x00361080    AnimObject_BaseV53    # wave-slot
+0x00361090    AnimObject_v26    # wave-slot
+0x00361150    AnimObject_v19    # wave-slot
+0x00361198    AnimObject_v17    # wave-slot
+0x00361458    AnimTeeter_v19    # wave-slot
+0x003614b8    BoostModifier_GetType    # wave-slot
+0x003614c0    BoostModifier_v09    # wave-slot
+0x003614c8    BoostModifier_v10    # wave-slot
+0x003614f8    Debounce_v40    # wave-slot
+0x00361528    Conveyor_v19    # wave-slot
+0x00361558    FlexBridge_v19    # wave-slot
+0x00361560    FlexBridge_v38    # wave-slot
+0x00361568    FlexBridge_v44    # wave-slot
+0x00361570    FlexBridge_v45    # wave-slot
+0x00361578    FlexRail_v47    # wave-slot
+0x00361580    FlexRail_v48    # wave-slot
+0x00361588    FlexRail_ApplyImpulse    # wave-slot
+0x00361590    FlexRail_GetContactVelocity    # wave-slot
+0x00361598    FlexRail_v49    # wave-slot
+0x003615a0    FlexRail_v46    # wave-slot
+0x00361768    Floating_v19    # wave-slot
+0x00361770    Floating_v44    # wave-slot
+0x003617b0    Floating_v26    # wave-slot
+0x003618f8    PositionModifier_Update    # wave-slot
+0x00361900    PositionModifier_HasTransformChanged    # wave-slot
+0x00361908    PositionModifier_GetType    # wave-slot
+0x00361910    PositionModifier_GetTransformBounds    # wave-slot
+0x00361930    PositionModifier_GetTransformRadius    # wave-slot
+0x00361938    PositionModifier_SetTransformRadius    # wave-slot
+0x003619b8    ParentModifier_Update    # wave-slot
+0x003619c8    ParentModifier_v16    # wave-slot
+0x003619d0    ParentModifier_GetType    # wave-slot
+0x00361a10    MagnetModifier_HasTransformChanged    # wave-slot
+0x00361a20    MagnetModifier_v20    # wave-slot
+0x00361a28    MagnetModifier_GetTransformBounds    # wave-slot
+0x00361a48    MagnetModifier_GetTransformRadius    # wave-slot
+0x00361a50    MagnetModifier_SetTransformRadius    # wave-slot
+0x00361a58    MagnetModifier_GetType    # wave-slot
+0x00361ad8    AvaSplineModifier_GetTransformBounds    # wave-slot
+0x00361af8    AvaSplineModifier_GetTransformRadius    # wave-slot
+0x00361b00    AvaSplineModifier_SetTransformRadius    # wave-slot
+0x00361b08    AvaSplineModifier_GetType    # wave-slot
+0x00361b10    AvaSplineModifier_GetMatrix    # wave-slot
+0x00361b48    SplineModifier_IsTransformFinished    # wave-slot
+0x00361b50    SplineModifier_ClearTransformFinished    # wave-slot
+0x00361b58    SplineModifier_GetTransformBounds    # wave-slot
+0x00361b78    SplineModifier_GetTransformRadius    # wave-slot
+0x00361b80    SplineModifier_SetTransformRadius    # wave-slot
+0x00361b88    SplineModifier_HasTransformChanged    # wave-slot
+0x00361bd8    SplineModifier_GetType    # wave-slot
+0x00361be0    MultiSplineModifier_GetTransformBounds    # wave-slot
+0x00361c10    MultiSplineModifier_GetTransformRadius    # wave-slot
+0x00361c18    MultiSplineModifier_SetTransformRadius    # wave-slot
+0x00361c70    MultiSplineModifier_GetType    # wave-slot
+0x00361ca8    RollerModifier_v08    # wave-slot
+0x00361cf8    RollerModifier_v09    # wave-slot
+0x00361d18    RollerModifier_GetTransformBounds    # wave-slot
+0x00361d20    RollerModifier_GetTransformRadius    # wave-slot
+0x00361d28    RollerModifier_SetTransformRadius    # wave-slot
+0x00361d30    RollerModifier_GetMatrix    # wave-slot
+0x00361d38    RollerModifier_v19    # wave-slot
+0x00361d40    RollerModifier_GetType    # wave-slot
+0x00361d88    AnimCombo_v19    # wave-slot
+0x00361e08    AnimDelta_v19    # wave-slot
+0x0036a1b0    GraphicsMan_AcquireTextureRef    # wave-slot
+0x00375a00    DetailSystem_Update    # wave-slot
+0x0038b178    PS2BezierMan_BeginPass    # wave-slot
+0x0038f7f8    VfxVisualEffectsTest_Update    # wave-slot
+0x00393fa8    GraphicsMan_SetDefaultDisplayMode    # wave-slot
+0x00393fb0    GraphicsMan_IsProgressive    # wave-slot
+0x00394008    GraphicsMan_v16    # wave-slot
+0x00394010    GraphicsMan_TryAcquireFrame    # wave-slot
+0x00394018    GraphicsMan_IsIdle    # wave-slot
+0x003942c0    GraphicsMan_ReleaseTextureRef    # wave-slot
+0x003942c8    GraphicsMan_DrawTransition    # wave-slot
+0x003942d0    GraphicsMan_v62    # wave-slot
+0x003942d8    GraphicsMan_GetColorMask    # wave-slot
+0x003942e0    GraphicsMan_v65    # wave-slot
+0x003945b8    GraphicsMan_ClearLights    # wave-slot
+0x003945c0    GraphicsMan_AddLight    # wave-slot
+0x003945c8    GraphicsMan_v74    # wave-slot
+0x003945d0    GraphicsMan_v88    # wave-slot
+0x003945d8    GraphicsMan_DrawShadowVolume    # wave-slot
+0x003945e0    GraphicsMan_DrawBoardWake    # wave-slot
+0x003945e8    GraphicsMan_v98    # wave-slot
+0x00394610    GraphicsMan_DrawSkinnedModelShadow    # wave-slot
+0x00394618    GraphicsMan_v102    # wave-slot
+0x00394620    GraphicsMan_v103    # wave-slot
+0x00394628    GraphicsMan_v104    # wave-slot
+0x00394630    GraphicsMan_v105    # wave-slot
+0x00394638    GraphicsMan_v106    # wave-slot
+0x00394640    GraphicsMan_v107    # wave-slot
+0x00394648    GraphicsMan_v108    # wave-slot
+0x00394650    GraphicsMan_v109    # wave-slot
+0x00394658    GraphicsMan_v110    # wave-slot
+0x00394660    GraphicsMan_v111    # wave-slot
+0x00394668    GraphicsMan_v112    # wave-slot
+0x00394670    GraphicsMan_v113    # wave-slot
+0x00394678    GraphicsMan_GetFlipCount    # wave-slot
+0x00394680    GraphicsMan_UpdateLensEffects    # wave-slot
+0x00394688    GraphicsMan_AddView    # wave-slot
+0x003946e8    GraphicsMan_RemoveInterruptHandlers    # wave-slot
+0x00394a44    PowerCurve_One    # wave-slot
+0x00394a54    PowerCurve_Linear    # wave-slot
+0x00394a5c    PowerCurve_Pow2    # wave-slot
+0x00394a64    PowerCurve_Pow3    # wave-slot
+0x00394a70    PowerCurve_Pow4    # wave-slot
+0x00394b68    GridMeshBase_SetScale    # wave-slot
+0x00394b78    BezierManBase_v04    # wave-slot
+0x00394b80    BezierManBase_v05    # wave-slot
+0x00394b88    BezierManBase_v19    # wave-slot
+0x00394b90    BezierManBase_v20    # wave-slot
+0x00394bc0    PS2BezierMan_SetLodNearDist    # wave-slot
+0x00394bc8    PS2BezierMan_SetLodFarDist    # wave-slot
+0x00394bd0    PS2BezierMan_GetLodNearDist    # wave-slot
+0x00394bd8    PS2BezierMan_GetLodFarDist    # wave-slot
+0x00394be0    PS2BezierMan_v10    # wave-slot
+0x00394be8    PS2BezierMan_v11    # wave-slot
+0x00394bf0    PS2BezierMan_v12    # wave-slot
+0x00394bf8    PS2BezierMan_v13    # wave-slot
+0x00394c00    PS2BezierMan_v14    # wave-slot
+0x00394c08    PS2BezierMan_v15    # wave-slot
+0x00394c10    PS2BezierMan_v16    # wave-slot
+0x003968c8    VfxTube_Render    # wave-slot
+0x00396918    PathArrow_Update    # wave-slot
+0x00396920    PathArrow_Render    # wave-slot
+0x00396958    DetailSystem_v05    # wave-slot
+0x003a4bd8    UIObject_HandleInput    # wave-slot
+0x003a4be0    UIObject_RefreshText    # wave-slot
+0x003a4be8    UIObject_Render    # wave-slot
+0x003a4bf0    UIObject_v18    # wave-slot
+0x003a4ea8    UIIcon_GetType    # wave-slot
+0x003a50f8    cUIGroup_GetType    # wave-slot
+0x003a5330    UIMenu_GetType    # wave-slot
+0x003a5500    UIPair_GetType    # wave-slot
+0x003a56a0    UIListBox_GetType    # wave-slot
+0x003a56d8    UIListBox_v23    # wave-slot
+0x003a5aa8    UIState_Init    # wave-slot
+0x003a5ab0    UIState_TransitionIn    # wave-slot
+0x003a5ab8    UIState_HandleInput    # wave-slot
+0x003a5ac0    UIState_TransitionOut    # wave-slot
+0x003a5ac8    UIState_OnDeactivate    # wave-slot
+0x003a5ad0    UIState_OnRender    # wave-slot
+0x003a5ad8    UIState_OnAnimEvent    # wave-slot
+0x003a5b08    UIState_OnChildEvent    # wave-slot
+0x003a5b10    UIState_OnWidgetCreated    # wave-slot
+0x003a5b18    UIState_OnWidgetAction    # wave-slot
+0x003a5b20    UIState_OnWidgetNotify    # wave-slot
+0x003a5b28    UIState_v21    # wave-slot
+0x003a5b30    UIState_v22    # wave-slot
+0x003a5b38    UIState_v23    # wave-slot
+0x003a5b40    UIState_OnNetEvent    # wave-slot
+0x003a5df0    UIText_GetType    # wave-slot
+0x003a6000    cUIScroll_GetType    # wave-slot
+0x003a6168    cUIProgress_GetType    # wave-slot
+0x003a6220    cUISlider_GetType    # wave-slot
+0x003a6330    cUITextScroll_GetType    # wave-slot
+0x003a6540    UIVector_GetType    # wave-slot
+0x003adc48    cPS2ChunkResolve_v08    # wave-slot
+0x003b0fa0    PS2_SONY_CODEC_INTERNAL_v05    # wave-slot
+0x003b5470    SND_TimerNullCallback    # wave-slot
+0x003c9358    SND_DecUtk_GetPosMem    # wave-slot
+0x003c9518    SND_DecUtk_GetPosLoop    # wave-slot
+0x003c9ac8    SND_DecPcm16_InitMem    # wave-slot
+0x003c9bc8    SND_DecPcm16_InitLoop    # wave-slot
+0x003c9ff8    SND_DecEaxa_GetPosMem    # wave-slot
+0x003ca358    SND_DecEaxa_GetPosLoop    # wave-slot
+0x003d16e0    PATH_ReturnArg    # wave-slot
+0x003d16e8    PATH_NopStub2    # wave-slot
+0x003d3010    PATH_NopStub3    # wave-slot
+0x003d3018    PATH_SetUserCallback    # wave-slot
+0x003d32a8    PATH_GetVersionString    # wave-slot
+0x003dbac8    LocStringTable_CompareId    # wave-slot
+0x003f61c8    UsbKb_NullCallback    # wave-slot
+0x003fb480    Crc32_IsInitialized    # wave-slot
+0x003fd908    leaf_003fd908    # wave-slot
+0x0040cf48    libusbkb_SetLEDStatusCallback    # wave-slot
+0x0040cf68    libusbkb_SetLEDModeCallback    # wave-slot
+0x00100000        # wave-slot
+0x00100008    entry    # wave-slot
+0x00113e50    RaceStateShutdown_Enter    # wave-slot
+0x00117138    cHUDFX_ShowDelayed    # wave-slot
+0x00117290    RiderMetrix_dtor    # wave-slot
+0x0014c068    Bolts_BuildChildTables    # wave-slot
+0x0014c548    Bolts_SetBoltField10    # wave-slot
+0x0014c590    Bolts_SetBoltField1    # wave-slot
+0x0014c5d8    Bolts_SetBoltField0C    # wave-slot
+0x0014daa0    Bolts_FindTable2Entries_Wrapper    # wave-slot
+0x0014dac0    Bolts_FindTable2Entries    # wave-slot
+0x00150ea8        # wave-slot
+0x00150ed0        # wave-slot
+0x00150ef8        # wave-slot
+0x00150f20        # wave-slot
+0x00150f48        # wave-slot
+0x00150f70        # wave-slot
+0x00150f98        # wave-slot
+0x00151220        # wave-slot
+0x00151248        # wave-slot
+0x00151270        # wave-slot
+0x00151298        # wave-slot
+0x001512c0        # wave-slot
+0x001512e8        # wave-slot
+0x00151310        # wave-slot
+0x0016bda0    Math_WrapAngleDeg    # wave-slot
+0x0016bde8    Math_WrapAngleClampDeg    # wave-slot
+0x0017a378    DebugMenu_ParseWorldListFile    # wave-slot
+0x0017fe4c        # wave-slot
+0x0017fe54        # wave-slot
+0x0017fe5c        # wave-slot
+0x00180508    KeyboardScreen_ctor    # wave-slot
+0x00196378    cFEStateAudioOptions_OnActivate    # wave-slot
+0x0019ad18    cFEStateCharEquip_ScrollItemList    # wave-slot
+0x001a5768    cFEStateNetMessenger_FindName    # wave-slot
+0x001a6f70    cFEStateNetMessenger_RefreshRosterEntries    # wave-slot
+0x001b0d30    cFEStateChallengeReceivedPopup_ShowAcceptDecline    # wave-slot
+0x001b6080        # wave-slot
+0x001bba18    cFEStateCreateStep2_IsEmailFormatValid    # wave-slot
+0x001bdca0        # wave-slot
+0x001c0218    cFEStateOnlineMainMenu_OnChildEventIgnoreConfirm    # wave-slot
+0x001ce758    cFEStateTrophyRoom_SetEventName    # wave-slot
+0x001ce9e0    cFEStateTrophyRoom_SetEventStatText    # wave-slot
+0x001ced90    cFEStateTrophyRoom_QueryEventReward    # wave-slot
+0x001ceea0    cFEStateRewardGallery_ctor    # wave-slot
+0x001db718    StdList_Clear    # wave-slot
+0x001db918    StdVector_InsertAux_2    # wave-slot
+0x001dbc98    FrontEnd_StaticInitDestroy    # wave-slot
+0x001dd6a8    cFEState_ctor_2    # wave-slot
+0x001dd6e0    cFEState_ctor_3    # wave-slot
+0x001dd718    cFEState_ctor_4    # wave-slot
+0x001de240    cFEStateProfileLoad_ctor_2    # wave-slot
+0x001de558    cFEStateBackground_ctor_2    # wave-slot
+0x001de5f0    cFEStateTransition_ctor_2    # wave-slot
+0x001dea80        # wave-slot
+0x001e58e0    cOVState_ViewPopup_ShowNext    # wave-slot
+0x001e81b0        # wave-slot
+0x001e88d0        # wave-slot
+0x001ff748        # wave-slot
+0x001ff780        # wave-slot
+0x001ff790        # wave-slot
+0x001ff798        # wave-slot
+0x001ff7a8        # wave-slot
+0x0020df10        # wave-slot
+0x00212788    OVList_Clear    # wave-slot
+0x0021c640    cOVStateOverlay_ctor    # wave-slot
+0x0021cb08    cOVState_ViewPopup_ctor_2    # wave-slot
+0x0021cba0    cOVStateHUD1P_ctor_2    # wave-slot
+0x0021f9b0    cOVStateHUD1P_DrawCollectedCount    # wave-slot
+0x0021fd38    cOVStateHUD1P_DrawMissionStatus    # wave-slot
+0x00220d38    cFEStateLodge_ctor_2    # wave-slot
+0x00220d98    cFEStateLodgeRiderDetail_ctor_2    # wave-slot
+0x00220df8    cFEStateBuyAttrib_ctor_2    # wave-slot
+0x00220e58    cFEStateCareerStats_ctor_2    # wave-slot
+0x00222428    cOVStateOverlay_GlobalCtors    # wave-slot
+0x00242e58    SSXApp_ListClear    # wave-slot
+0x002438b0    ModuleBase_dtor_2    # wave-slot
+0x002447f0    GMHandler_SetTitleW    # wave-slot
+0x00244810    GMHandler_SetTitleA    # wave-slot
+0x00253748    VidEnginePlayer_PlayBlocking    # wave-slot
+0x00253ad0        # wave-slot
+0x00253b58    VidEnginePlayer_StaticInit    # wave-slot
+0x00254e60    VD_StaticInit    # wave-slot
+0x00256088    ssx_LoadNetGuiElf    # wave-slot
+0x002560b0    DNASAuth_RunBlocking    # wave-slot
+0x002561b8    cFEStateAuthDNASCreate_ctor    # wave-slot
+0x002561e0    DNASAuth_dtor    # wave-slot
+0x00256258    DNASAuth_Start    # wave-slot
+0x002562d0    DNASAuth_BeginAuth    # wave-slot
+0x002563a8    DNASAuth_FreeBuffers    # wave-slot
+0x002563f8    DNASAuth_Update    # wave-slot
+0x00256460    DNASAuth_UpdateLoadOverlay    # wave-slot
+0x00256510    DNASAuth_UpdateLoadConfig    # wave-slot
+0x002565e0    DNASAuth_UpdateAuth    # wave-slot
+0x002688e0    cPrivateMessage_dtor    # wave-slot
+0x00269008    cSetupMan_ClientRecvMsg1    # wave-slot
+0x002690c8    cSetupMan_ClientRecvMsg3    # wave-slot
+0x00269478    cSetupMan_HostRecvMsg7    # wave-slot
+0x002696f8    cSetupMan_HostRecvMsg13    # wave-slot
+0x002697d0    cSetupMan_ClientRecvMsg6    # wave-slot
+0x0026c998    PlaybackMan_IsFileLoaded    # wave-slot
+0x0026c9f0    PlaybackMan_StartFileLoad    # wave-slot
+0x002a8b28    MIDIBanks_PlayTimerCallback    # wave-slot
+0x002a9128        # wave-slot
+0x002b3e20        # wave-slot
+0x002b9338    BankMonitor_InitCurrentPlayParams    # wave-slot
+0x002b93b8    BankMonitor_ResetCurrentParams    # wave-slot
+0x002b95b0    BankMonitor_PushDefaultParams    # wave-slot
+0x002b9e70    SndLoadQueue_FinishCurrentOk    # wave-slot
+0x002b9e90    SndLoadQueue_FinishCurrentFail    # wave-slot
+0x002b9f08    SndBankMan_IsBankInUse    # wave-slot
+0x002b9ff8    Audio_PushDefaultParams    # wave-slot
+0x002ba208    Audio_PushParamsBank    # wave-slot
+0x002ba448    Audio_PushParamsBankSound    # wave-slot
+0x002ba6b0    Audio_PlaySound    # wave-slot
+0x002ba920    Audio_PlaySoundVolume    # wave-slot
+0x002badd0    cWorldSound_CollectSubtree    # wave-slot
+0x002baee8    cWorldSound_GlobalCtors    # wave-slot
+0x002bafb0    WorldPainter_StaticInit    # wave-slot
+0x002bb0e0    WorldPainter_GlobalCtors    # wave-slot
+0x002bb140    cWorldPainterMan_dtor    # wave-slot
+0x002bb2b8    cWorldPainterMan_Update    # wave-slot
+0x002bb318    cWorldPainterMan_LoadFile    # wave-slot
+0x002bb3f0    WPFile_PollLoad    # wave-slot
+0x002bb4d8    WPFile_BeginLoad    # wave-slot
+0x002bb5a8    WPFile_Unload    # wave-slot
+0x002bb928    WorldPainter_DebugDrawNode    # wave-slot
+0x002bbc38    cWorldPainterMan_StaticInitDestroy    # wave-slot
+0x002bc4e0    cWorldPainterMan_GlobalCtors    # wave-slot
+0x002bcd68    tWPIGD_Ambience_Blend    # wave-slot
+0x002bce08    tWPIGD_Speech_Blend    # wave-slot
+0x002bd968    tWPIGD_Danger_Blend    # wave-slot
+0x002bda98        # wave-slot
+0x002be078        # wave-slot
+0x002be2d8    tWPIGD_MusicTrigger_LoadState    # wave-slot
+0x002be518    tWPIGD_Fog_LoadState    # wave-slot
+0x002be698    tWPIGD_LightGlow_LoadState    # wave-slot
+0x002be850    tWPIGD_ScreenTint_LoadState    # wave-slot
+0x002bea38    tWPIGD_Sun_LoadState    # wave-slot
+0x002becc8    tWPIGD_Lighting_LoadState    # wave-slot
+0x002bee48    tWPIGD_Weather_LoadState    # wave-slot
+0x002bf2a0    tWPIGD_Danger_LoadState    # wave-slot
+0x002bf340    tWPIGD_MusicTrigger_SaveState    # wave-slot
+0x002bf580    tWPIGD_Fog_SaveState    # wave-slot
+0x002bf700    tWPIGD_LightGlow_SaveState    # wave-slot
+0x002bf8b8    tWPIGD_ScreenTint_SaveState    # wave-slot
+0x002bfaa0    tWPIGD_Sun_SaveState    # wave-slot
+0x002bfd30    tWPIGD_Lighting_SaveState    # wave-slot
+0x002c0308    tWPIGD_Danger_SaveState    # wave-slot
+0x002c2d30    ISTR_Alloc    # wave-slot
+0x002c2d68    ISTR_Free    # wave-slot
+0x002c2d88    ISTR_MemCopy    # wave-slot
+0x002c2db0    ISTR_Realloc    # wave-slot
+0x002c7038    ConsoleClock_FormatDate    # wave-slot
+0x002c7100    ConsoleClock_GetTime    # wave-slot
+0x002c7160    ConsoleClock_GetDate    # wave-slot
+0x002c7208    Date_DaysInMonth    # wave-slot
+0x002c7260    Date_AddDays    # wave-slot
+0x002c73c0    ConsoleClock_Update    # wave-slot
+0x002c7478    cPS2ConsoleConfig_ctor    # wave-slot
+0x002ca408    MenuSysItem_GetLeftAxis    # wave-slot
+0x002ca428    MenuSysItem_GetRightAxis    # wave-slot
+0x002ca448    MenuSysItem_GetUpAxis    # wave-slot
+0x002ca468    MenuSysItem_GetDownAxis    # wave-slot
+0x002ca488    MenuSysItem_IsSlowModHeld    # wave-slot
+0x002ca4a8    MenuSysItem_IsFineModHeld    # wave-slot
+0x002ca4c8    MenuSysItem_MeasureRow    # wave-slot
+0x002ca768    MenuSysItem_DrawRowText    # wave-slot
+0x002ca988    MenuSysItem_DrawRow    # wave-slot
+0x002cad58    MenuSysPage_Draw    # wave-slot
+0x002cb498    MenuSysPage_DrawFrame    # wave-slot
+0x002cb8c8    MenuSysPage_DrawScrollArrowDown    # wave-slot
+0x002cbac8    MenuSysPage_DrawScrollArrowUp    # wave-slot
+0x002cbd50    MenuSysPage_RemoveItem    # wave-slot
+0x002cbe20    MenuSysPage_SortItems    # wave-slot
+0x002cc260    MenuSys_GetLeftAxis    # wave-slot
+0x002cc280    MenuSys_GetRightAxis    # wave-slot
+0x002cc2a0    MenuSys_GetUpAxis    # wave-slot
+0x002cc2c0    MenuSys_GetDownAxis    # wave-slot
+0x002cc2e0    MenuSys_IsSlowModHeld    # wave-slot
+0x002cc318    MenuSys_IsFineModHeld    # wave-slot
+0x002cc500    MenuSysBoolItem_ctor    # wave-slot
+0x002cc648    MenuSysBoolItem_Measure    # wave-slot
+0x002cc7b0    MenuSysEnumItem_ctor    # wave-slot
+0x002cc7f8    MenuSysEnumItem_ctor_2    # wave-slot
+0x002cc838    MenuSysEnumItem_ctor_3    # wave-slot
+0x002cc8f0    MenuSysEnumItem_HandleInput    # wave-slot
+0x002ccb18    MenuSysEnumItem_Measure    # wave-slot
+0x002ccdc8    MenuSysSubmenuItem_Draw    # wave-slot
+0x002ccee0    MenuSysBackItem_Draw    # wave-slot
+0x002ccf50    MenuSysActionItem_ctor_2    # wave-slot
+0x002cd128    MenuSysCallbackItem_ctor    # wave-slot
+0x002cd168    MenuSysCallbackItem_ctor_2    # wave-slot
+0x002cd278    MenuSysCallbackItem_Draw    # wave-slot
+0x002cd2a0    MenuSysLabelItem_ctor    # wave-slot
+0x002cd328    MenuSysLabelItem_Draw    # wave-slot
+0x002cd350    MenuSysSpacerItem_ctor    # wave-slot
+0x002cd3f8    MenuSysInt8Item_ctor    # wave-slot
+0x002cd450    MenuSysInt8Item_ctor_2    # wave-slot
+0x002cd4a0    MenuSysInt8Item_ctor_3    # wave-slot
+0x002cd5a0    MenuSysInt8Item_HandleInput    # wave-slot
+0x002cd850    MenuSysIntItem_ctor    # wave-slot
+0x002cd8a8    MenuSysIntItem_ctor_2    # wave-slot
+0x002cd9d8    MenuSysIntItem_HandleInput    # wave-slot
+0x002cdc88    MenuSysFloatItem_ctor    # wave-slot
+0x002cdd78    MenuSysFloatItem_HandleInput    # wave-slot
+0x002cdfd8    MenuSys_FormatFloat    # wave-slot
+0x002ce170    MenuSysFloatRangeItem_ctor    # wave-slot
+0x002ce1f0    MenuSysFloatRangeItem_HandleInput    # wave-slot
+0x002ce488    MenuSysTextEditItem_HandleInput    # wave-slot
+0x002ce820    MenuSysTextEditItem_Measure    # wave-slot
+0x002ce910    MenuSysTextEditItem_Draw    # wave-slot
+0x002ced78    MenuSysColorChannelItem_HandleInput    # wave-slot
+0x002ceee8    MenuSysColorChannelItem_Measure    # wave-slot
+0x002cf1c8    MenuSysColorChannelItem_Draw    # wave-slot
+0x002cf788    MenuSysGroupItem_PageForwardV03    # wave-slot
+0x002cf7b8    MenuSysGroupItem_PageForwardV04    # wave-slot
+0x002cf7e8    MenuSysGroupItem_ctor    # wave-slot
+0x002cf860    MenuSysGroupItem_ctor_2    # wave-slot
+0x002cf908    MenuSysGroupItem_AddItem    # wave-slot
+0x002cf928    MenuSysGroupItem_RemoveItem    # wave-slot
+0x002cf948    MenuSysGroupItem_Reset    # wave-slot
+0x002cf988    MenuSysGroupItem_SetHeaderItem    # wave-slot
+0x002cfa08    MenuSysGroupItem_HandleInput    # wave-slot
+0x002cfaf8    MenuSysGroupItem_v09    # wave-slot
+0x002cfef8    MenuSysGroupItem_OnBlur    # wave-slot
+0x002d0008    MenuSysColorSwatchItem_Draw    # wave-slot
+0x002d02b0    MenuSysColorItem_ctor    # wave-slot
+0x002d03d0    MenuSysColorItem_HandleInput    # wave-slot
+0x002d03f0    MenuSysVectorLabelItem_ctor    # wave-slot
+0x002d05a8    MenuSysVectorItem_ctor    # wave-slot
+0x002d06e8    MenuSysVectorItem_HandleInput    # wave-slot
+0x002d0808    MenuSysPoint2DItem_ctor    # wave-slot
+0x002d0908    MenuSysPoint2DItem_HandleInput    # wave-slot
+0x002d0ef8    MenuSysPoint2DItem_Draw    # wave-slot
+0x002d1740    MenuSysMessagePage_ctor    # wave-slot
+0x002d17f0    MenuSysMessagePage_ctor_2    # wave-slot
+0x002d1cc0    World_CreateDeadNode    # wave-slot
+0x002d1cf0    World_GetAvalancheMatrix    # wave-slot
+0x002d2988    SSXStatsMan_StaticInitDestroy    # wave-slot
+0x002d3a68    MenuSysBoolItem_dtor    # wave-slot
+0x002d3a98    MenuSysEnumItem_dtor    # wave-slot
+0x002d3ae0    MenuSysSubmenuItem_dtor    # wave-slot
+0x002d3b10    MenuSysBackItem_dtor    # wave-slot
+0x002d3b38    MenuSysActionItem_dtor    # wave-slot
+0x002d3b80    MenuSysCallbackItem_dtor    # wave-slot
+0x002d3bb0    MenuSysLabelItem_dtor    # wave-slot
+0x002d3be0    MenuSysSpacerItem_dtor    # wave-slot
+0x002d3c00    MenuSysInt8Item_dtor    # wave-slot
+0x002d3c30    MenuSysIntItem_dtor    # wave-slot
+0x002d3c60    MenuSysFloatItem_dtor    # wave-slot
+0x002d3ce0    MenuSysFloatRangeItem_dtor    # wave-slot
+0x002d3d20    MenuSysTextEditItem_dtor    # wave-slot
+0x002d3d48    MenuSysTextEditItem_SetText    # wave-slot
+0x002d3d70    MenuSysColorChannelItem_dtor    # wave-slot
+0x002d3d90    MenuSysGroupItem_PageDtor    # wave-slot
+0x002d3db0    MenuSysGroupItem_dtor    # wave-slot
+0x002d3df8    MenuSysColorSwatchItem_dtor    # wave-slot
+0x002d3e20    MenuSysColorItem_dtor    # wave-slot
+0x002d3ea8    MenuSysVectorLabelItem_dtor    # wave-slot
+0x002d3ed0    MenuSysVectorItem_dtor    # wave-slot
+0x002d3f50    MenuSysPoint2DItem_dtor    # wave-slot
+0x002d3f78    MenuSysMessagePage_dtor    # wave-slot
+0x002d3fd8    cPS2ConsoleConfig_v01    # wave-slot
+0x002d4008    MenuSysPage_SortCompare    # wave-slot
+0x002d4030    cPS2ConsoleConfig_BaseDtor    # wave-slot
+0x002d4060    SSXStatsMan_GlobalCtors    # wave-slot
+0x002d40c0    VisualEffects_StaticInit    # wave-slot
+0x002d48d0    VisualEffects_GlobalCtors    # wave-slot
+0x002dc168        # wave-slot
+0x002ebd88    TransitionEffect_ctorRandom    # wave-slot
+0x002ec060        # wave-slot
+0x002f0fe8    RiderBase_DtorAttackFX    # wave-slot
+0x002f1768    cAttachedDynamicEmitter_ctor    # wave-slot
+0x002f17a8    cAttachedDynamicEmitter_v04    # wave-slot
+0x002f2130    cAttachedDynamicEmitter_Create    # wave-slot
+0x002f3618    cSplashManager_dtor    # wave-slot
+0x002f5230    WorldLightMan_dtor    # wave-slot
+0x002fc5d8    WorldObjFactory_DeadFade    # wave-slot
+0x002fcdc8    WorldObjFactory_FlexBridge    # wave-slot
+0x002fd250    WScriptFn_AddRollerModifier    # wave-slot
+0x00301120    WScriptFn_CollectItem    # wave-slot
+0x00302210    WScriptFn_SectionEventCommand    # wave-slot
+0x00303f80        # wave-slot
+0x00307128    WScriptMission_ctor    # wave-slot
+0x003071c8    WScriptMission_dtor    # wave-slot
+0x003071f0    WScriptMission_v04    # wave-slot
+0x00307240    WScriptMission_v02    # wave-slot
+0x003072b0    WScriptMission_v17    # wave-slot
+0x00307308    WScriptMission_v18    # wave-slot
+0x003074c0    WScriptMission_v19    # wave-slot
+0x00307568    WScriptMission_v20    # wave-slot
+0x00316a48    BlockMan_Init    # wave-slot
+0x00316d28    App_dtor    # wave-slot
+0x00317308    App_SetExecCallback    # wave-slot
+0x003177c8    Rand_SeedMain    # wave-slot
+0x00317890    Rand_FloatSpread    # wave-slot
+0x00317908    Rand_RestoreGameState    # wave-slot
+0x00317930    Rand_GetDefaultState    # wave-slot
+0x00319610    ssx_IopInit    # wave-slot
+0x00319790    ssx_UnloadIopModule    # wave-slot
+0x00319800    ssx_ExitMsifRpc    # wave-slot
+0x00319820    ssx_IopReboot    # wave-slot
+0x003198a0    ssx_PowerOffThread    # wave-slot
+0x00319910        # wave-slot
+0x0031ab30        # wave-slot
+0x0031adb0    ssx_SystemInit    # wave-slot
+0x0031af80    ssx_main    # wave-slot
+0x0031b008    ssx_LoadExecPS2    # wave-slot
+0x0031b9b0    Quat_RotateTowards    # wave-slot
+0x0031bcb0    Quat_Slerp    # wave-slot
+0x0031e0e0    cCSICubicSpline_SampleRange    # wave-slot
+0x00320550    EACore_StaticInitDestroy    # wave-slot
+0x00320920    ExecManBase_dtor    # wave-slot
+0x00320c18    InputBinding_EvalFloatArgs    # wave-slot
+0x00320c70    InputBinding_EvalBoolArgs    # wave-slot
+0x00325f44        # wave-slot
+0x0032c9b8    SphereTree_CollidePlane    # wave-slot
+0x0034a838        # wave-slot
+0x0035b200        # wave-slot
+0x0036a048        # wave-slot
+0x0036a3e0    Morton_Encode8x8    # wave-slot
+0x00372144        # wave-slot
+0x00372154        # wave-slot
+0x00372178        # wave-slot
+0x00372188        # wave-slot
+0x003737d0    BezierPatchCache_Free    # wave-slot
+0x0038f560    SprStream_EndCurrentBlock    # wave-slot
+0x00392edc        # wave-slot
+0x00392ee4        # wave-slot
+0x00392eec        # wave-slot
+0x00392f08        # wave-slot
+0x00392f20        # wave-slot
+0x00392f38        # wave-slot
+0x00392f50        # wave-slot
+0x00392f5c        # wave-slot
+0x003a38b8        # wave-slot
+0x003a3994        # wave-slot
+0x003a39a4        # wave-slot
+0x003a39b4        # wave-slot
+0x003a39c4        # wave-slot
+0x003b0680    RCMP_DECODER_Reset    # wave-slot
+0x003b06f8    RCMP_DECODER_ReleaseChunk    # wave-slot
+0x003b07b8    RCMP_GlobalCtors    # wave-slot
+0x003b07d8    RCMP_GlobalDtors    # wave-slot
+0x003beca0        # wave-slot
+0x003bed30        # wave-slot
+0x003c555c        # wave-slot
+0x003c556c        # wave-slot
+0x003c557c        # wave-slot
+0x003c558c        # wave-slot
+0x003c559c        # wave-slot
+0x003c55ac        # wave-slot
+0x003c55bc        # wave-slot
+0x003c55cc        # wave-slot
+0x003c55dc        # wave-slot
+0x003cc878        # wave-slot
+0x003d0c78        # wave-slot
+0x003d2138        # wave-slot
+0x003d4898        # wave-slot
+0x003d49d0        # wave-slot
+0x003dbae8    LocStringTable_RemapId    # wave-slot
+0x003e5a78    Debug_SetChannelFlag    # wave-slot
+0x003e5aa8    Debug_SetChannelState    # wave-slot
+0x003e5b60    Debug_InitChannels    # wave-slot
+0x003e5c78    Debug_VPrintf    # wave-slot
+0x003e5d30    Debug_Printf    # wave-slot
+0x003e5d78    Debug_PrintfChannel2    # wave-slot
+0x003e5dc8    Debug_EnableOutput    # wave-slot
+0x003e5e38    Debug_IsOutputEnabled    # wave-slot
+0x003e5e88    Debug_SetOutput    # wave-slot
+0x003e5ef8    Debug_EnableChannel    # wave-slot
+0x003e5f48    Debug_IsChannelEnabled    # wave-slot
+0x003e5f98    Debug_SetChannelName    # wave-slot
+0x003e5ff0    Debug_OutputDirect    # wave-slot
+0x003e6428    Debug_ConsoleOutput    # wave-slot
+0x003fb490        # wave-slot
+0x003fb4c0        # wave-slot
+0x003fb558        # wave-slot
+0x003fb5b0        # wave-slot
+0x003fd810        # wave-slot
+0x00403d70        # wave-slot
+0x00403d80        # wave-slot
+0x00403d90        # wave-slot
+0x00403da0        # wave-slot
+0x00403db0        # wave-slot
+0x00408508        # wave-slot
+0x00408ca8        # wave-slot
+0x00408fb0        # wave-slot
+0x0040a320        # wave-slot
+0x0040cef8        # wave-slot
+0x0040cf88        # wave-slot
+0x00412cb4        # wave-slot
+0x00412cc4        # wave-slot
+0x00412ccc        # wave-slot
+0x00412d08        # wave-slot
+0x00412d4c        # wave-slot
+0x00412d88        # wave-slot
+0x00412dcc        # wave-slot
+0x00421eb0        # wave-slot
+0x00421ed4        # wave-slot
+0x00421ef4        # wave-slot
+0x00421f08        # wave-slot
+0x004239a0    SetGsCrt    # wave-slot
+0x00423a50    SetVTLBRefillHandler    # wave-slot
+0x00423b20    SetAlarm    # wave-slot
+0x00423b80    iSetAlarm    # wave-slot
+0x00423bf0    TerminateThread    # wave-slot
+0x00423c00    iTerminateThread    # wave-slot
+0x00423c40    iChangeThreadPriority    # wave-slot
+0x00423cb0    iReferThreadStatus    # wave-slot
+0x00423d80    EndOfHeap    # wave-slot
+0x00423e40    SetOsdConfigParam    # wave-slot
+0x00424050    iFlushCache    # wave-slot
+0x00424110    SetVSyncFlag    # wave-slot
+0x00424a20    iEnableIntc    # wave-slot
+0x00424a40    iDisableIntc    # wave-slot
+0x00424a60    iEnableDmac    # wave-slot
+0x00424a80    iDisableDmac    # wave-slot
+0x00424aa0    libkernl_IntrHelperThread    # wave-slot
+0x00424ce8    iRotateThreadReadyQueue    # wave-slot
+0x00424d68    iSuspendThread    # wave-slot
+0x0042c130        # wave-slot
+0x0042c168        # wave-slot
+0x0042c360        # wave-slot
+0x0042c4d0        # wave-slot
+0x0042c780        # wave-slot
+0x0042cb78        # wave-slot
+0x0042e278        # wave-slot
+0x0042e498        # wave-slot

@@ -2303,7 +2303,7 @@ pub fn c_game_comm_dtor(c: &mut Cpu) {
 pub fn c_game_comm_set_state(c: &mut Cpu) {
     guest(c, |c| {
         if c.pc != 0x00257038 {
-            return Ok(ee::s06::f_00257038__entries(c));
+            return Ok(c_game_comm_set_state_resume(c));
         }
         'b_2570c0: {
             'b_2570bc: {
@@ -2386,6 +2386,130 @@ pub fn c_game_comm_set_state(c: &mut Cpu) {
         c.pc = t;
         return Ok(());
     })
+}
+
+/// Native resume of `c_game_comm_set_state` (converted from the `entries` body): any entry
+/// other than 0x00257038, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn c_game_comm_set_state_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00257038 => {
+                    c.cycles += 9;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S1][0] = c.g[A1][0];
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.g[V0][0] = (c.g[V1][0] < 0xfu64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S0][0] = c.g[A0][0];
+                    if t {
+                        pc = 0x002570bc;
+                        continue;
+                    }
+                    pc = 0x0025705c;
+                    continue;
+                }
+                0x0025705c => {
+                    c.cycles += 7;
+                    c.g[V0][0] = 0x480000;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4d0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                0x00257078 => {
+                    c.cycles += 10;
+                    c.g[RA][0] = sx(0x00257080);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x00258330,
+                        f: ee::s06::cGameComm_UpdateMaxLatency,
+                    }
+                    .call(c, 0x00257080)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0xe10;
+                    c.g[RA][0] = sx(0x00257090);
+                    c.g[A2][0] = 0u64;
+                    Callee {
+                        addr: 0x00258870,
+                        f: ee::s06::cGameComm_SetTimeoutTimer,
+                    }
+                    .call(c, 0x00257090)?;
+                    c.g[RA][0] = sx(0x00257098);
+                    call_ptr(c, 0x0031ad18, 0x00257098)?;
+                    let t = true;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x70), c.g[S1][0]);
+                    if t {
+                        pc = 0x002570c0;
+                        continue;
+                    }
+                    pc = 0x002570a0;
+                    continue;
+                }
+                0x002570a0 => {
+                    c.cycles += 3;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x84), 0u64);
+                    let t = true;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x78), 0u64);
+                    if t {
+                        pc = 0x002570bc;
+                        continue;
+                    }
+                    pc = 0x002570ac;
+                    continue;
+                }
+                0x002570ac => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0x708;
+                    c.g[RA][0] = sx(0x002570bc);
+                    c.g[A2][0] = 0u64;
+                    Callee {
+                        addr: 0x00258870,
+                        f: ee::s06::cGameComm_SetTimeoutTimer,
+                    }
+                    .call(c, 0x002570bc)?;
+                    pc = 0x002570bc;
+                    continue;
+                }
+                0x002570bc => {
+                    c.cycles += 1;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x70), c.g[S1][0]);
+                    pc = 0x002570c0;
+                    continue;
+                }
+                0x002570c0 => {
+                    c.cycles += 5;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00257038, 0x002570d4);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 /// `cGameComm_ResetRaceSync` (0x00257610): Reset the race-sync words when the guards pass.

@@ -479,9 +479,8 @@ pub fn snd_play_params_ctor(c: &mut Cpu) {
 /// Converted from the generated labelled-block body: every register, cycle and
 /// call kept.
 pub fn snd_play_params_dtor_ported(c: &mut Cpu) {
-    if c.pc != 0x002a97c0 {
-        return ee::s08::f_002a97c0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2a982c: {
             c.cycles += 11;

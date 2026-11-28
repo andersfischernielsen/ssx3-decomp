@@ -527,7 +527,9 @@ pub fn fe_locale_load_table(c: &mut Cpu) {
         frame.save(c, S2, 0x10);
         let negative = (c.g[S0][0] as i64) < 0;
         frame.save_ra(c, 0);
-        let mut one = !negative;
+        // The negative and the allocating paths both fall through to the
+        // `+1` at the join; only a non-null existing entry skips it.
+        let mut one = true;
         if !negative {
             c.cycles += 6;
             c.g[V1][0] = sx(p_5(r32(c, A0), 8));

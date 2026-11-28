@@ -2666,7 +2666,7 @@ pub fn c_dsock_channel_update(c: &mut Cpu) {
     use callee::*;
     guest(c, |c| {
         if c.pc != 0x0025_6a00 {
-            return Ok(ee::s06::f_00256a00__entries(c));
+            return Ok(c_dsock_channel_update_resume(c));
         }
         'l_256a00: loop {
             'b_256a50: {
@@ -2737,6 +2737,99 @@ pub fn c_dsock_channel_update(c: &mut Cpu) {
             return Ok(());
         }
     })
+}
+
+/// Native resume of `c_dsock_channel_update` (converted from the `entries` body): any entry
+/// other than 0x00256a00, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn c_dsock_channel_update_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00256a00 => {
+                    c.cycles += 7;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                    c.g[A1][0] = c.g[A0][0];
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                    c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x480000;
+                    if t {
+                        pc = 0x00256a4c;
+                        continue;
+                    }
+                    pc = 0x00256a1c;
+                    continue;
+                }
+                0x00256a1c => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x460));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                0x00256a34 => {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00256a3c);
+                    c.g[A0][0] = c.g[A1][0];
+                    Callee {
+                        addr: 0x00256a58,
+                        f: ee::s06::cDSockChannel_UpdateConnecting,
+                    }
+                    .call(c, 0x00256a3c)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    if t {
+                        pc = 0x00256a50;
+                        continue;
+                    }
+                    pc = 0x00256a44;
+                    continue;
+                }
+                0x00256a44 => {
+                    c.cycles += 2;
+                    c.g[RA][0] = sx(0x00256a4c);
+                    c.g[A0][0] = c.g[A1][0];
+                    Callee {
+                        addr: 0x00256aa8,
+                        f: ee::s06::cDSockChannel_UpdateConnected,
+                    }
+                    .call(c, 0x00256a4c)?;
+                    pc = 0x00256a4c;
+                    continue;
+                }
+                0x00256a4c => {
+                    c.cycles += 1;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    pc = 0x00256a50;
+                    continue;
+                }
+                0x00256a50 => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00256a00, 0x00256a58);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 /// `void cDSockChannel_UpdateConnected(cDSockChannel *self)`

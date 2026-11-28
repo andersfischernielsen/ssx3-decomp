@@ -69,9 +69,8 @@ pub fn irradiance_free(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn irradiance_load_811(c: &mut Cpu) {
-    if c.pc != 0x0038acd0 {
-        return ee::s12::f_0038acd0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_38ad90: {
             c.cycles += 45;

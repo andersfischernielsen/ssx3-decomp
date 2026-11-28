@@ -2924,9 +2924,8 @@ pub fn render_toggles_menu_ctor(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn visual_effects_menus_static_init_destroy(c: &mut Cpu) {
-    if c.pc != 0x0024e8d8 {
-        return ee::s06::f_0024e8d8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_24f694: {
             'b_24f690: {
