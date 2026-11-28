@@ -10900,10 +10900,11 @@ pub(crate) mod tests {
 
     #[test]
     fn lobby_api_pop_ping_request_matches() {
-        check(
+        check_paths(
             ee::s14::f_003e7918__generated,
             lobby_api_pop_ping_request,
             84,
+            &[32, 42, 47, 52, 59, 85, 87, 102, 104, 114, 115, 118, 119, 129, 135, 147, 181, 194, 196],
             &|c, seed| {
                 let _r = lobby_base(c, seed, 0x3e79_18, 1);
                 lobby_zero(c, LOBBY, 0x160);

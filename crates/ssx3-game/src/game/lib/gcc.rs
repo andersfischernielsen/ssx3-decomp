@@ -19197,10 +19197,11 @@ pub(crate) mod tests {
         // S1 window is steered small so the CFA loop stays bounded; the
         // tail copy loop runs a fixed 9 iterations. Both sides run the same
         // walk identically.
-        check(
+        check_paths(
             ee::s15::f_00414818__generated,
             frame_state_for,
             SEEDS_4 + 10,
+            &[76, 732, 899, 7174, 7190, 7320, 191019, 191101],
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0041_4818, 0);
                 fill(c, &mut r, DB + 0x400, 32);

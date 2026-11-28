@@ -22422,20 +22422,32 @@ pub(crate) mod tests {
 
     #[test]
     fn ecvtbuf_matches() {
-        check(ee::s15::f_00421a50__generated, ecvtbuf, 200, &|c, seed| {
-            let mut r = Rng(0x1a50 ^ seed as u64);
-            heap_init(c, &mut r);
-            c.g[A0][0] = dbl_2(seed, &mut r);
-            c.g[A1][0] = [0, 1, 3, 6, 10, 17][seed as usize % 6] as u64;
-            c.g[A2][0] = SCR as u64;
-            c.g[A3][0] = (SCR + 4) as u64;
-            c.g[T0][0] = if seed % 3 == 0 { 0 } else { DST as u64 };
-            c.bus.write32(SCR, 0);
-            c.bus.write32(SCR + 4, 0);
-            for i in 0..0x200 {
-                c.bus.write8(DST + i as u32, 0xcc);
-            }
-        });
+        check_paths(
+            ee::s15::f_00421a50__generated,
+            ecvtbuf,
+            200,
+            &[
+                191, 240, 604, 4870, 6589, 6624, 6632, 6644, 6649, 6654, 6662, 6664, 6669, 6672,
+                6710, 6726, 6913, 7207, 7270, 7283, 7293, 7304, 7312, 7317, 7318, 7521, 7526, 7565,
+                7589, 7601, 7626, 7649, 7741, 7766, 8094, 8177, 8247, 8273, 8289, 8292, 8312, 8324,
+                8329, 8760, 8933, 9918, 9921, 10938, 11072, 11769, 11773, 11778, 11789, 11791,
+                11803, 11836, 12123, 12133, 12252, 12265, 12371, 12562, 12603, 12653, 12657, 12678,
+            ],
+            &|c, seed| {
+                let mut r = Rng(0x1a50 ^ seed as u64);
+                heap_init(c, &mut r);
+                c.g[A0][0] = dbl_2(seed, &mut r);
+                c.g[A1][0] = [0, 1, 3, 6, 10, 17][seed as usize % 6] as u64;
+                c.g[A2][0] = SCR as u64;
+                c.g[A3][0] = (SCR + 4) as u64;
+                c.g[T0][0] = if seed % 3 == 0 { 0 } else { DST as u64 };
+                c.bus.write32(SCR, 0);
+                c.bus.write32(SCR + 4, 0);
+                for i in 0..0x200 {
+                    c.bus.write8(DST + i as u32, 0xcc);
+                }
+            },
+        );
     }
 
     #[test]
@@ -24017,102 +24029,109 @@ pub(crate) mod tests {
 
     #[test]
     fn ungetc_matches() {
-        check(ee::s15::f_00420378__generated, ungetc, 200, &|c, seed| {
-            let mut r = file_fixture_3(c, seed, 0x0378, 3);
-            match seed % 11 {
-                0 => {
-                    // `EOF`: nothing pushed back.
-                    c.g[A0][0] = 0xffffffffffffffff;
-                    c.g[A1][0] = FILE_3 as u64;
+        check_paths(
+            ee::s15::f_00420378__generated,
+            ungetc,
+            200,
+            &[13, 28, 49, 53, 56, 81, 111, 119],
+            &|c, seed| {
+                let mut r = file_fixture_3(c, seed, 0x0378, 3);
+                match seed % 11 {
+                    0 => {
+                        // `EOF`: nothing pushed back.
+                        c.g[A0][0] = 0xffffffffffffffff;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    1 => {
+                        // Push back onto a buffered read stream.
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.g[A0][0] = b'A' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    2 => {
+                        // Empty read buffer: the `_ubuf` path.
+                        c.bus.write32(FILE_3 + 0x4, 0);
+                        c.g[A0][0] = b'B' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    3 => {
+                        // Write mode: flush first.
+                        c.bus.write16(FILE_3 + 0xc, 0x208);
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 4);
+                        c.g[A0][0] = b'C' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    4 => {
+                        // Unfiltered character (>255 masked to a byte).
+                        c.bus.write32(FILE_3 + 0x4, 3);
+                        c.g[A0][0] = 0x141;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    5 => {
+                        // Write mode with the 0x10 bit: the flush path runs.
+                        c.bus.write16(FILE_3 + 0xc, 0x218);
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 4);
+                        c.g[A0][0] = b'D' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    6 => {
+                        // Read count at the `_ubuf` limit.
+                        c.bus.write32(FILE_3 + 0x4, 5);
+                        c.bus.write32(FILE_3 + 0x34, 5);
+                        c.bus.write32(FILE_3 + 0x30, DST);
+                        c.g[A0][0] = b'E' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    7 => {
+                        // Read count past it.
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.bus.write32(FILE_3 + 0x34, 3);
+                        c.bus.write32(FILE_3 + 0x30, DST);
+                        c.g[A0][0] = b'F' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    8 => {
+                        // No buffer base: the null-base path.
+                        c.bus.write32(FILE_3 + 0x10, 0);
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.g[A0][0] = b'G' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    9 => {
+                        // Write mode with a FAKE cookie the flush can call:
+                        // the flush succeeds, reaching the `& ~0x8` clear
+                        // (covers the flag-clear store).
+                        use crate::difftest::fakes::{
+                            fake_call, fake_jump_out, fake_syscall, FAKE, LOG_RESULTS,
+                            LOG_UNWIND_AT,
+                        };
+                        c.hooks.miss = fake_call;
+                        c.hooks.jump_out = fake_jump_out;
+                        c.hooks.syscall = fake_syscall;
+                        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                        c.bus.write16(FILE_3 + 0xc, 0x218);
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 4);
+                        c.bus.write32(FILE_3 + 0x1c, 3);
+                        c.bus.write32(FILE_3 + 0x24, FAKE);
+                        c.bus.write32(LOG_RESULTS, 4);
+                        c.g[A0][0] = b'G' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    _ => {
+                        // Advanced position: `_p` past the buffer base.
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 10);
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.g[A0][0] = b'H' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
                 }
-                1 => {
-                    // Push back onto a buffered read stream.
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.g[A0][0] = b'A' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                2 => {
-                    // Empty read buffer: the `_ubuf` path.
-                    c.bus.write32(FILE_3 + 0x4, 0);
-                    c.g[A0][0] = b'B' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                3 => {
-                    // Write mode: flush first.
-                    c.bus.write16(FILE_3 + 0xc, 0x208);
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 4);
-                    c.g[A0][0] = b'C' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                4 => {
-                    // Unfiltered character (>255 masked to a byte).
-                    c.bus.write32(FILE_3 + 0x4, 3);
-                    c.g[A0][0] = 0x141;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                5 => {
-                    // Write mode with the 0x10 bit: the flush path runs.
-                    c.bus.write16(FILE_3 + 0xc, 0x218);
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 4);
-                    c.g[A0][0] = b'D' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                6 => {
-                    // Read count at the `_ubuf` limit.
-                    c.bus.write32(FILE_3 + 0x4, 5);
-                    c.bus.write32(FILE_3 + 0x34, 5);
-                    c.bus.write32(FILE_3 + 0x30, DST);
-                    c.g[A0][0] = b'E' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                7 => {
-                    // Read count past it.
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.bus.write32(FILE_3 + 0x34, 3);
-                    c.bus.write32(FILE_3 + 0x30, DST);
-                    c.g[A0][0] = b'F' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                8 => {
-                    // No buffer base: the null-base path.
-                    c.bus.write32(FILE_3 + 0x10, 0);
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.g[A0][0] = b'G' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                9 => {
-                    // Write mode with a FAKE cookie the flush can call:
-                    // the flush succeeds, reaching the `& ~0x8` clear
-                    // (covers the flag-clear store).
-                    use crate::difftest::fakes::{
-                        fake_call, fake_jump_out, fake_syscall, FAKE, LOG_RESULTS, LOG_UNWIND_AT,
-                    };
-                    c.hooks.miss = fake_call;
-                    c.hooks.jump_out = fake_jump_out;
-                    c.hooks.syscall = fake_syscall;
-                    c.bus.write32(LOG_UNWIND_AT, u32::MAX);
-                    c.bus.write16(FILE_3 + 0xc, 0x218);
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 4);
-                    c.bus.write32(FILE_3 + 0x1c, 3);
-                    c.bus.write32(FILE_3 + 0x24, FAKE);
-                    c.bus.write32(LOG_RESULTS, 4);
-                    c.g[A0][0] = b'G' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                _ => {
-                    // Advanced position: `_p` past the buffer base.
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 10);
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.g[A0][0] = b'H' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-            }
-            let _ = &mut r;
-        });
+                let _ = &mut r;
+            },
+        );
     }
 
     #[test]

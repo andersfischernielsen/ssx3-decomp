@@ -6734,10 +6734,11 @@ pub(crate) mod tests {
     fn tty_write_matches() {
         hook_req_send();
         hook_poll();
-        check(
+        check_paths(
             ee::s15::f_00425040__generated,
             libkernl_tty_write,
             SEEDS,
+            &[26, 73, 85, 112, 124, 513, 525, 3203, 3215],
             &|c, seed| {
                 machine(c, seed, 1_366_002, 1);
                 c.pc = 0x0042_5040;

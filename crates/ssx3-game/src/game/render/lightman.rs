@@ -7502,10 +7502,11 @@ pub(crate) mod tests {
     #[test]
     fn render2d_draw_sprite_matches() {
         sprite_hook();
-        check(
+        check_paths(
             ee::s13::f_003a20a0__generated,
             render2d_draw_sprite,
             200,
+            &[26, 168, 169, 170, 171, 172, 173],
             &|c, seed| {
                 sprite_setup(c, seed);
             },

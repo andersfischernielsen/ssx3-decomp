@@ -13335,10 +13335,14 @@ pub(crate) mod tests {
     /// Every path kind (`resolve_path_setup`).
     #[test]
     fn ea_file_resolve_path_matches() {
-        check(
+        check_paths(
             gen_ea_file_resolve_path,
             hand_ea_file_resolve_path,
             64,
+            &[
+                250, 252, 257, 295, 315, 423, 436, 494, 514, 570, 622, 668, 711, 724, 732, 835,
+                865, 909, 965, 1063,
+            ],
             &|c, seed| {
                 resolve_path_setup(c, seed, false);
             },

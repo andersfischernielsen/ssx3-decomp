@@ -8746,10 +8746,11 @@ pub(crate) mod tests {
     #[test]
     fn exec_request_dma_wait_matches() {
         hook_dma_fakes();
-        check(
+        check_paths(
             ee::s15::f_00427230__generated,
             sce_sif_exec_request,
             8,
+            &[7340220, 7340222, 7340227, 7340228, 7340230],
             &|c, seed| {
                 machine(c, seed, 1_361_013, 0);
                 exec_setup(c, seed * 16 + 15);
@@ -9073,10 +9074,11 @@ pub(crate) mod tests {
             c.pc = 0x0042_5d38;
             c.bus.write32(0x0045_0000 + 0x517c, 0x0101_0100 + seed);
         };
-        check(
+        check_paths(
             ee::s15::f_00425d38__generated,
             sce_sif_init_cmd,
             SEEDS,
+            &[34],
             setup,
         );
         let mut seen = std::collections::BTreeSet::new();
@@ -9098,22 +9100,24 @@ pub(crate) mod tests {
     #[test]
     fn init_cmd_full_matches() {
         hook_init_fake();
-        check(
+        let setup = &|c: &mut Cpu, seed: u32| {
+            machine(c, seed, 1_362_011, 1);
+            c.pc = 0x0042_5d38;
+            c.bus.write32(0x0045_0000 + 0x517c, 0);
+            for i in 0..0x70u32 {
+                c.bus.write32(0x0052_bcc0 + 4 * i, 0x5d5d_0000 ^ (4 * i));
+            }
+            if seed % 4 != 3 {
+                c.bus.write32(INIT_GATE, GATE_MAGIC);
+            }
+            c.bus.write32(INIT_POLL_N, 1 + seed % 3);
+        };
+        check_paths(
             ee::s15::f_00425d38__generated,
             sce_sif_init_cmd,
             SEEDS,
-            &|c, seed| {
-                machine(c, seed, 1_362_011, 1);
-                c.pc = 0x0042_5d38;
-                c.bus.write32(0x0045_0000 + 0x517c, 0);
-                for i in 0..0x70u32 {
-                    c.bus.write32(0x0052_bcc0 + 4 * i, 0x5d5d_0000 ^ (4 * i));
-                }
-                if seed % 4 != 3 {
-                    c.bus.write32(INIT_GATE, GATE_MAGIC);
-                }
-                c.bus.write32(INIT_POLL_N, 1 + seed % 3);
-            },
+            &[536, 766, 823, 824, 828],
+            setup,
         );
     }
 

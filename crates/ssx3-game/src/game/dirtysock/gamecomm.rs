@@ -6107,6 +6107,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_paths;
+    use crate::difftest::require_paths;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -8183,6 +8184,18 @@ pub(crate) mod tests {
             SEEDS,
             &|c, seed| ctor_fixture(c, seed),
         );
+        require_paths(
+            c_game_comm_ctor_generated,
+            SEEDS,
+            &[
+                2671, 2672, 2673, 2674, 2675, 2676, 2677, 2678, 2679, 2680, 2681, 2682, 2683, 2684,
+                2685, 2686, 2687, 2688, 2689, 2690, 2691, 2692, 2693, 2694, 2695, 2696, 2697, 2698,
+                2699, 2700, 2701, 2703, 2704,
+            ],
+            &|c, seed| {
+                ctor_fixture(c, seed);
+            },
+        );
     }
 
     /// `dtor` fixture: the constructed block; the free-list head, the
@@ -9449,10 +9462,14 @@ pub(crate) mod tests {
     /// mismatch between the two rings.
     #[test]
     fn c_game_comm_send_sync_check_matches() {
-        check(
+        check_paths(
             ee::s06::f_00258f20__generated,
             c_game_comm_send_sync_check,
             300,
+            &[
+                19, 20, 22, 23, 25, 26, 28, 31, 51, 55, 56, 59, 60, 64, 74, 78, 79, 83, 233, 237,
+                239, 243, 256, 262,
+            ],
             &sync_check_setup,
         );
     }

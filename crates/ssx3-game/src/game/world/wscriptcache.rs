@@ -19239,10 +19239,13 @@ pub(crate) mod tests {
     /// boundary, shift-arm and -1 coordinates, levels 0..2.
     #[test]
     fn shp_calc_pixel_offset_matches() {
-        check_lohi(
+        check_paths_lohi(
             ee::s13::f_003b3e40__generated,
             shp_calc_pixel_offset,
             200,
+            &[
+                70, 75, 84, 85, 88, 90, 95, 98, 99, 103, 110, 112, 116, 123, 126, 141, 154,
+            ],
             &|c, seed| {
                 calc_pixel_setup(c, seed);
             },
