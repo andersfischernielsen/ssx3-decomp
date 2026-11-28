@@ -16352,6 +16352,38 @@ pub(crate) mod tests {
         );
     }
 
+    /// `PlatformOpen` edge fixture: host device, mode 1, a found lookup,
+    /// and an `sceOpen` fd at the sign boundary (`0`, success) or with
+    /// top-byte bits (`0x0200_0005`, overlapping `dev << 24`).
+    pub(crate) fn open_edge_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_3208, 0);
+        oc_open(c);
+        c.bus.write32(RET_RESOLVE_DEV, 2);
+        c.g[A0][0] = (DATA + 0x400) as u64;
+        c.bus.write32(DATA + 0x400, 0x3a6463);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = (DATA + 0x910) as u64;
+        c.bus.write32(DATA + 0x910, 0xa5a5_a5a5);
+        c.bus.write32(RET_CD_LOOKUP, DATA + 0x710);
+        c.bus.write32(DATA + 0x710, 0x51cd51);
+        c.bus
+            .write32(RET_SCE_OPEN, [0, 0x0200_0005][seed as usize % 2]);
+        c.pc = 0x003e_3208;
+    }
+
+    /// fd `0` pins the `< 0` failed-open boundary; `0x0200_0005` pins the
+    /// `|` in the handle build (its top byte overlaps `dev << 24`, where
+    /// `^` would clear it).
+    #[test]
+    fn ea_file_platform_open_edge_matches() {
+        check(
+            ee::s14::f_003e3208__generated,
+            ea_file_platform_open,
+            2,
+            &|c, seed| open_edge_setup(c, seed),
+        );
+    }
+
     /// Both callees ran on some seed (their return addresses in the fake
     /// log): the lookup on a cd seed, the open on a host seed.
     #[test]
@@ -16513,6 +16545,51 @@ pub(crate) mod tests {
             2,
             &[68, 81],
             &|c, seed| read_service_seek_setup(c, seed),
+        );
+    }
+
+    /// `HostReadService` off-by-one fixture: pending service, matching fd
+    /// and position (no seek), a short read returning exactly `len ^ 1`,
+    /// and a live completion. The read-xor-len is exactly 1, pinning the
+    /// `< 1` full-read compare.
+    pub(crate) fn read_service_xor1_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_33b0, 0);
+        oc_open(c);
+        const STATE: u32 = 0x0051_9c20;
+        const OFF: u32 = 0x100;
+        const LEN: u32 = 0x40;
+        c.bus.write32(STATE, 1);
+        c.bus.write32(STATE + 4, 5);
+        c.bus.write32(STATE + 8, DATA + 0x610);
+        c.bus.write32(STATE + 0xc, OFF);
+        c.bus.write32(STATE + 0x10, LEN);
+        for i in 0..16u32 {
+            c.bus.write32(DATA + 0x610 + 4 * i, 0xb5b5_0000 | i);
+        }
+        c.bus.write32(0x0045_0c40, 5);
+        c.bus.write32(0x0045_0c4c, OFF);
+        c.bus.write32(RET_SCE_READ, LEN ^ 1);
+        c.bus.write32(RET_SCE_LSEEK, 0x51ee51 + seed);
+        c.bus.write32(0x0051_9ab0 + 0x10, 5);
+        c.bus.write32(0x0051_9ab0 + 0x24, REQ);
+        for i in 0..12u32 {
+            c.bus.write32(REQ + 4 * i, 0);
+        }
+        c.bus.write32(REQ + 8, 0xa5a5_a5a5);
+        c.bus.write32(REQ, DATA + 0x610);
+        c.bus.write32(REQ + 0x14, DATA + 0x620);
+        c.pc = 0x003e_33b0;
+    }
+
+    /// A `len ^ 1` short read is not a full read (`read ^ len == 1` fails
+    /// the `< 1` ok compare, where `<= 1` would wrongly pass it).
+    #[test]
+    fn ea_file_host_read_service_xor1_matches() {
+        check(
+            ee::s14::f_003e33b0__generated,
+            ea_file_host_read_service,
+            2,
+            &|c, seed| read_service_xor1_setup(c, seed),
         );
     }
 
