@@ -26780,18 +26780,13 @@ pub fn net_rpc_alloc(c: &mut Cpu) {
 /// `Net_RpcFree` (0x00256bd8): Free the RPC block unless null. Straight-line dispatch.
 pub fn net_rpc_free(c: &mut Cpu) {
     guest(c, |c| {
-        'b_256bec: {
-            c.cycles += 3;
-            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
-            let t = c.g[A0][0] == 0u64;
-            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
-            if t {
-                break 'b_256bec;
-            } else {
-                c.cycles += 2;
-                callee::EA_MEM_FREE.call(c, 0x00256bec)?;
-                break 'b_256bec;
-            }
+        c.cycles += 3;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+        let t = c.g[A0][0] == 0u64;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        if !t {
+            c.cycles += 2;
+            callee::EA_MEM_FREE.call(c, 0x00256bec)?;
         }
         c.cycles += 3;
         c.g[RA][0] = c.ld(c.g[SP][0] as u32);
