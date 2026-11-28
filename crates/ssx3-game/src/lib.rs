@@ -363,6 +363,14 @@ pub mod oc1595;
 pub mod oc1596;
 #[cfg(feature = "oc1597")]
 pub mod oc1597;
+#[cfg(feature = "oc1598")]
+pub mod oc1598;
+#[cfg(feature = "oc1599")]
+pub mod oc1599;
+#[cfg(feature = "oc1600")]
+pub mod oc1600;
+#[cfg(feature = "oc1601")]
+pub mod oc1601;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -388,6 +396,14 @@ const CORE: &[(u32, GuestFn, &str)] = &[(
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
     v.extend(game::overrides());
+    #[cfg(feature = "oc1598")]
+    v.extend_from_slice(oc1598::OVERRIDES);
+    #[cfg(feature = "oc1599")]
+    v.extend_from_slice(oc1599::OVERRIDES);
+    #[cfg(feature = "oc1600")]
+    v.extend_from_slice(oc1600::OVERRIDES);
+    #[cfg(feature = "oc1601")]
+    v.extend_from_slice(oc1601::OVERRIDES);
     #[cfg(feature = "oc1561")]
     v.extend_from_slice(oc1561::OVERRIDES);
     #[cfg(feature = "oc1562")]

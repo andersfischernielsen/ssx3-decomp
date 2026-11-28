@@ -174,10 +174,13 @@ pub fn c_csi_cubic_spline_init_with_start_slope(c: &mut Cpu) {
         }
         .call(c, 0x0031_d75c)?;
         let spline = Addr(c.g[S0][0] as u32);
-        let flags = spline.lw(c) | 1;
-        let data = spline.off(0x8).lw(c);
+        c.g[V0][0] = spline.lw(c);
+        c.g[V1][0] = spline.off(0x8).lw(c);
+        c.g[V0][0] |= 1;
         frame.restore_ra(c, 0);
+        let flags = c.g[V0][0];
         spline.sw(c, flags);
+        let data = c.g[V1][0];
         c.swc1(20, (data as u32).wrapping_add(0x10));
         c.swc1(21, spline.off(0x4).0);
         frame.restore(c, S0, 0x10);

@@ -483,6 +483,18 @@ mod tests {
         });
     }
 
+    /// The `jump_out` hook for `cFEInput_getState`: the generated body leaves
+    /// through its switch (`jr` to a table label); run the label's real code
+    /// (the case blocks and the shared tail) instead of logging a fake call.
+    fn oc1494_jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
+        if (0x0017_fe2c..0x0017_fe68).contains(&pc) {
+            c.pc = pc;
+            call_indirect(c, pc);
+        } else {
+            fakes::fake_jump_out(c, pc, start, end);
+        }
+    }
+
     #[test]
     fn cfe_input_get_state_matches() {
         fakes::hook(
@@ -497,6 +509,24 @@ mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0017_fdf0, 1);
                 c.bus.write32(OC1494_INPUT_GATE, OC1494_MAGIC);
+                c.hooks.jump_out = oc1494_jump_out;
+                // The game's switch jump table (0x45d530) is data the generated body
+                // reads; the test RAM does not hold it, so install the real labels.
+                for (i, label) in [
+                    0x0017_fe2c_u32,
+                    0x0017_fe34,
+                    0x0017_fe3c,
+                    0x0017_fe44,
+                    0x0017_fe4c,
+                    0x0017_fe54,
+                    0x0017_fe5c,
+                    0x0017_fe64,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    c.bus.write32(0x0045_d530 + 4 * i as u32, label);
+                }
                 // Keys -2..=9: negative, the eight table cases, and the default.
                 let key = (seed % 12) as i32 - 2;
                 let a1 = (r.next_u32() & !0xff) | (key as u8 as u32);

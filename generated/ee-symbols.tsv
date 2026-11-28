@@ -12406,7 +12406,7 @@ s15	003fd558	003fd65c	o	DnasRel_ElfOpen
 s15	003fd660	003fd6dc	o	DnasRel_RelocateAll
 s15	003fd6e0	003fd754	o	DnasRel_GetSymbol
 s15	003fd758	003fd80c	o	DnasRel_FindSymbol
-s15	003fd810	003fd8b8	o	-
+s15	003fd810	003fd8b8	-	-
 s15	003fd908	003fd910	o	-
 s15	003fd910	003fdaa0	o	sceGsResetGraph
 s15	003fdaa0	003fdaac	o	sceGsGetGParam
