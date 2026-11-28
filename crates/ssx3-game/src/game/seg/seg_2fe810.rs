@@ -18147,7 +18147,7 @@ pub(crate) mod tests {
         libmpeg_bs_setup(c, seed, 0x0040_72e8);
         ipu_feed_bs(c, 1);
         let state = DATA + 0x4000;
-        match seed % 3 {
+        match seed % 4 {
             0 => {
                 c.bus.write32(state + 0x818, 0x00c0_ffee);
                 c.bus.write32(state + 0x838, 0x00c0_ffee);
@@ -18158,10 +18158,17 @@ pub(crate) mod tests {
                 c.bus.write32(state + 0x838, 0xff00_ff00);
                 c.bus.write32(state + 0x83c, 64);
             }
-            _ => {
+            2 => {
                 c.bus.write32(state + 0x818, 0);
                 c.bus.write32(state + 0x838, 0xff00_ff00);
                 c.bus.write32(state + 0x83c, 4);
+            }
+            _ => {
+                // Boundary class: the remaining count equals the request
+                // (`A1` = 8), so `<` and `<=` take different arms.
+                c.bus.write32(state + 0x818, 0);
+                c.bus.write32(state + 0x838, 0xff00_ff00);
+                c.bus.write32(state + 0x83c, 8);
             }
         }
         c.g[A1][0] = 8;
@@ -18234,8 +18241,8 @@ pub(crate) mod tests {
     /// Events on the ShowBits busy-wait loop (`0x00407150`): the wedged FDEC
     /// keeps `IPU_CTRL` busy, so every spinning seed runs ~5001 polls to the
     /// nodata timeout, which fires the clearing fake and exits the loop.
-    /// Class 1 (`seed % 3 == 1`) takes the direct-consume arm and returns
-    /// without reaching the loop, so 21 of 32 seeds spin. Structured loop:
+    /// Classes 1 and 3 (`seed % 4`) take the direct-consume arm and return
+    /// without reaching the loop, so 16 of 32 seeds spin. Structured loop:
     /// no resumes; the fired count proves the bound on both sides.
     #[test]
     fn libmpeg_show_bits_busy_events() {
@@ -18247,7 +18254,7 @@ pub(crate) mod tests {
         });
         let fires = BUSY_FIRES.with(|f| f.get());
         assert_eq!(
-            fires, 63,
+            fires, 48,
             "clearing fake fired {fires} times, want one per run (gen, hand, verification) per spinning seed"
         );
     }
@@ -18815,6 +18822,9 @@ pub(crate) mod tests {
     fn libmpeg_load_iq_matrix_matches() {
         let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
             libmpeg_seq_setup(c, seed, 0x0040_3ad0);
+            // Non-zero sentinel at RAM word 0: a write redirected there by
+            // an address mutant shows in the RAM comparison.
+            c.bus.write32(0, 0x100);
             ipu_feed_bs(c, 1);
             c.g[A1][0] = (0x0010_0000 | (seed & 0xffff)) as u64;
             c.g[A2][0] = (0x0020_0000 | (seed & 0xffff)) as u64;
@@ -19479,8 +19489,11 @@ pub(crate) mod tests {
         let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
             libmpeg_pic_setup(c, seed, 0x0040_61e8);
             fake_on_4(c);
+            // Third class is the slice-boundary start code `0x1b0`
+            // (`code - 0x101 == 0xaf`), steering the error arm under `<`
+            // and the slice arm under `<=`.
             c.bus
-                .write32(FAKE_SHOWCODES_2, if seed % 2 == 0 { 0x150 } else { 0x500 });
+                .write32(FAKE_SHOWCODES_2, [0x150, 0x500, 0x1b0][(seed % 3) as usize]);
             for i in 1..8u32 {
                 c.bus.write32(FAKE_SHOWCODES_2 + 4 * i, 0);
             }
@@ -20834,6 +20847,79 @@ pub(crate) mod tests {
         );
     }
 
+    /// IpuVdec busy-spin `check`: the starved VDEC keeps `IPU_CTRL` busy, so
+    /// both sides spin the second wait loop ~5001 times to the nodata
+    /// timeout (the clearing fake fires once per side). Full-state equality
+    /// on the starvation path.
+    #[test]
+    fn libmpeg_ipu_vdec_busy_matches() {
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            &libmpeg_ipu_vdec_busy_setup,
+        );
+    }
+
+    /// IpuVdec first-loop fixture: fed FIFO with a wedged FDEC, so the entry
+    /// poll loop spins ~5001 times to the nodata timeout (the clearing fake
+    /// fires once), then the VDEC runs to completion off the re-fed FIFO.
+    pub(crate) fn libmpeg_ipu_vdec_wait_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_ipu_setup(c, seed, 0x0040_6f78);
+        c.bus.write32(FAKE_BUSY_ON, FAKE_BUSY_MAGIC);
+        wedge_ipu_busy(c);
+        c.g[A1][0] = [0u64, 2, 3, 0][(seed % 4) as usize];
+        c.pc = 0x0040_6f78;
+    }
+
+    /// IpuVdec first-loop `check`: full-state equality, cycles included,
+    /// catches first-loop mutants the fire-count test cannot tell apart
+    /// (skipping the first spin still fires exactly once, via the second
+    /// loop, but with a different cycle total).
+    #[test]
+    fn libmpeg_ipu_vdec_wait_matches() {
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            &libmpeg_ipu_vdec_wait_setup,
+        );
+    }
+
+    /// IpuVdec tail fixture: a single fed quadword, so the VDEC's result
+    /// word varies with the command class. The class spans the full low
+    /// nibble, so `|`/`^` on the command word differ.
+    pub(crate) fn libmpeg_ipu_vdec_tail_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_6f78, 0);
+        fake_on_6(c);
+        elf_image(c);
+        ipu_feed_n(c, 1, 1);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x200);
+        c.bus.write32(state + 0x858, 0);
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = (seed % 16) as u64;
+        c.pc = 0x0040_6f78;
+    }
+
+    #[test]
+    fn libmpeg_ipu_vdec_tail_matches() {
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            &libmpeg_ipu_vdec_tail_setup,
+        );
+        require_paths(
+            ee::s15::f_00406f78__generated,
+            32,
+            &[57],
+            &libmpeg_ipu_vdec_tail_setup,
+        );
+    }
+
     /// IpuCommand fixture: `A1` (command word, top nibble steers the
     /// rodata table slot); the table comes from the game image.
     #[test]
@@ -21303,16 +21389,26 @@ pub(crate) mod tests {
     /// count, `+ 0x4` prefilled non-zero status, `+ 0x8`/`+ 0xc` address
     /// words, `+ 0x10` remaining). IPU status words read zero, so the busy
     /// exits never run headless. Steers count vs remaining: `(0, 0)` takes
-    /// the skip arm, `(3, 9)` the setup arm.
+    /// the skip arm, `(3, 9)` the setup arm, `(2, 4)` the skip arm into the
+    /// transfer-programming block (`count + 1 == remaining - 1`, with a
+    /// non-zero programmed count). RAM word 0 is a non-zero sentinel so a
+    /// redirected MMIO access (`&` mutants) shows in the RAM comparison;
+    /// the class-2 address word carries high bits for the `^` mutant.
     pub(crate) fn libmpeg_dma_desc_setup(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x0040_8ca8, 0);
         scramble(c, &mut r);
         c.g[SP][0] = (DATA + 0x7000) as u64;
+        c.bus.write32(0, 0x100);
         let desc = DATA + 0x4000;
-        let (count, remaining) = if seed % 2 == 0 { (0, 0) } else { (3, 9) };
+        let (count, remaining) = [(0, 0), (3, 9), (2, 4)][(seed % 3) as usize];
         c.bus.write32(desc + 0x0, count);
         c.bus.write32(desc + 0x4, 0x0a0a_0a0a ^ seed);
-        c.bus.write32(desc + 0x8, 0x0020_0000 | (seed & 0xffff));
+        let a8 = if seed % 3 == 2 {
+            0x7020_0000 | (seed & 0xffff)
+        } else {
+            0x0020_0000 | (seed & 0xffff)
+        };
+        c.bus.write32(desc + 0x8, a8);
         c.bus.write32(desc + 0xc, 0x0030_0000 | (seed & 0xffff));
         c.bus.write32(desc + 0x10, remaining);
         c.g[A0][0] = (seed as u64) ^ 0x1234_5678;
@@ -21321,14 +21417,72 @@ pub(crate) mod tests {
         c.pc = 0x0040_8ca8;
     }
 
+    /// IPU command-class counts after a run: observes the handler's MMIO
+    /// command words, which the RAM/register comparison cannot see.
+    pub(crate) fn ipu_commands_of(c: &Cpu) -> [u64; 16] {
+        let any: &dyn std::any::Any = &*c.bus.plat;
+        any.downcast_ref::<ssx3_ps2::platform::Machine>()
+            .expect("test machine")
+            .hw
+            .ipu
+            .stats
+            .commands
+    }
+
+    /// Full IPU stats after a run: command classes plus stalls and error
+    /// flags, which distinguish a starved command from a completed one.
+    pub(crate) fn ipu_stats_of(c: &Cpu) -> (Vec<u64>, u64, u64, u64) {
+        let any: &dyn std::any::Any = &*c.bus.plat;
+        let st = &any
+            .downcast_ref::<ssx3_ps2::platform::Machine>()
+            .expect("test machine")
+            .hw
+            .ipu
+            .stats;
+        (st.commands.to_vec(), st.stalls, st.out_qwords, st.bad_codes)
+    }
+
+    /// FROM-IPU DMA channel registers after a run: observes the programmed
+    /// transfer (MADR/QWC/CHCR), which the RAM/register comparison cannot
+    /// see (the channel only moves data when the IPU has output pending).
+    pub(crate) fn from_ipu_channel_of(c: &Cpu) -> (u32, u32, u32, u32, u32) {
+        let any: &dyn std::any::Any = &*c.bus.plat;
+        let ch = &any
+            .downcast_ref::<ssx3_ps2::platform::Machine>()
+            .expect("test machine")
+            .hw
+            .ch[3];
+        (ch.chcr, ch.madr, ch.qwc, ch.tadr, ch.sadr)
+    }
+
     #[test]
     fn libmpeg_ipu_from_dma_handler_matches() {
-        check(
-            ee::s15::f_00408ca8__generated,
-            crate::game::seg::seg_2fe810::libmpeg_ipu_from_dma_handler,
-            32,
-            &libmpeg_dma_desc_setup,
-        );
+        use crate::difftest::compare_with;
+        use crate::difftest::seed_count;
+        use crate::difftest::strict_ok;
+        for seed in 0..seed_count(32) {
+            let r = compare_with(
+                ee::s15::f_00408ca8__generated,
+                crate::game::seg::seg_2fe810::libmpeg_ipu_from_dma_handler,
+                &|c| libmpeg_dma_desc_setup(c, seed),
+                |a, b, hard| {
+                    let (ca, cb) = (ipu_commands_of(a), ipu_commands_of(b));
+                    if ca != cb {
+                        hard.push(format!("ipu commands: {ca:x?} vs {cb:x?}"));
+                    }
+                    let (sa, sb) = (ipu_stats_of(a), ipu_stats_of(b));
+                    if sa != sb {
+                        hard.push(format!("ipu stats: {sa:x?} vs {sb:x?}"));
+                    }
+                    let (cha, chb) = (from_ipu_channel_of(a), from_ipu_channel_of(b));
+                    if cha != chb {
+                        hard.push(format!("from-ipu ch: {cha:x?} vs {chb:x?}"));
+                    }
+                },
+            );
+            assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+            assert!(strict_ok(&r.soft), "seed {seed} (scratch): {:#?}", r.soft);
+        }
         // Skip vs setup arms (the HW-busy exits read zero headless).
         require_paths(
             ee::s15::f_00408ca8__generated,
@@ -21338,14 +21492,15 @@ pub(crate) mod tests {
         );
     }
 
-    /// TO-DMA count fixture: `+ 0x0` is 0 (early exit), 5 (setup arm) or
-    /// 70000 (skip arm, past the 0xffff cut).
+    /// TO-DMA count fixture: `+ 0x0` is 0 (early exit), 5 (setup arm),
+    /// 70000 (skip arm, past the 0xffff cut) or 0xffff (boundary: `<` skips
+    /// like 0, `<=` programs).
     pub(crate) fn libmpeg_to_dma_setup(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x0040_8fb0, 0);
         scramble(c, &mut r);
         c.g[SP][0] = (DATA + 0x7000) as u64;
         let desc = DATA + 0x4000;
-        let count = [0, 5, 70000][(seed % 3) as usize];
+        let count = [0, 5, 70000, 0xffff][(seed % 4) as usize];
         c.bus.write32(desc + 0x0, count);
         c.bus.write32(desc + 0x4, 0x0b0b_0b0b ^ seed);
         c.bus.write32(desc + 0x8, 0x0020_0000 | (seed & 0xffff));
@@ -21673,19 +21828,34 @@ pub(crate) mod tests {
         1
     );
 
-    fixed_fake_8!(
-        fake_outframe,
-        PREV_OUTFRAME,
-        ee::s15::f_004086c0__generated,
-        1
-    );
+    /// Marker word distinguishing the frame/pair dispatch fakes: the two
+    /// arms are cycle-identical, so the marker (compared RAM) is what
+    /// observes which callee ran.
+    pub(crate) const OUT_MARK: u32 = DATA + 0xf0c8;
 
-    fixed_fake_8!(
-        fake_outpair,
-        PREV_OUTPAIR,
-        ee::s15::f_004087d0__generated,
-        1
-    );
+    pub(crate) static PREV_OUTFRAME: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_outframe(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_8) != FAKE_MAGIC_8 {
+            return fakes::fall_back(c, &PREV_OUTFRAME, ee::s15::f_004086c0__generated);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 7;
+        c.bus.write32(OUT_MARK, 0x0F4A11);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) static PREV_OUTPAIR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_outpair(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_8) != FAKE_MAGIC_8 {
+            return fakes::fall_back(c, &PREV_OUTPAIR, ee::s15::f_004087d0__generated);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 7;
+        c.bus.write32(OUT_MARK, 0x9A12);
+        c.pc = c.g[RA][0] as u32;
+    }
 
     pub(crate) fn install_fakes_8() {
         fakes::hook(
@@ -21779,6 +21949,15 @@ pub(crate) mod tests {
             let state = DATA + 0x4000;
             let prom = DATA + 0x4800;
             fill(c, &mut Rng(seed as u64 ^ 0x0040_86c1), prom, 0x60);
+            // Distinct table words (the pts-derived index reads the table at
+            // 0x004532e8): without the image every entry reads zero and any
+            // index computation is unobservable.
+            for i in 0..16u32 {
+                c.bus.write32(
+                    0x0045_32e8 + 4 * i,
+                    0x1111_1111u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
             c.bus.write32(state + 0x858, prom);
             c.bus.write32(state + 0xb0, (seed & 1) as u32);
             let out = DATA + 0x5000;
@@ -21830,7 +22009,17 @@ pub(crate) mod tests {
             fill(c, &mut Rng(seed as u64 ^ 0x0040_87d3), s5, 0x80);
             c.bus.write32(s2 + 0x28, (seed / 4 % 2) as u32);
             c.bus.write32(s2 + 0x10, 0x00d0_0000 | (seed & 0xffff));
-            c.bus.write32(s5 + 0x28, 0x00e0_0000 | (seed & 0xffff));
+            // Every third seed steers `s5 + 0x28` onto `s2 + 0x28`, reaching
+            // the CSC-vs-raw dispatch (otherwise the buffer check always
+            // exits early on the mismatch).
+            c.bus.write32(
+                s5 + 0x28,
+                if seed % 3 == 0 {
+                    seed / 4 % 2
+                } else {
+                    0x00e0_0000 | (seed & 0xffff)
+                },
+            );
             let s3 = DATA + 0x5400;
             let s4 = DATA + 0x5600;
             fill(c, &mut Rng(seed as u64 ^ 0x0040_87d4), s3, 0x80);
