@@ -42818,36 +42818,6 @@ pub(crate) mod tests {
     #[test]
     fn ioctl2_matches() {
         hook_call_rpc();
-        let setup = &|c: &mut Cpu, seed: u32| {
-            machine(c, seed, 1_363_012, 1);
-            c.pc = 0x0042_8c38;
-            c.g[A1][0] = 0x1111_1100 + seed as u64;
-            c.g[T0][0] = 0x3333_3300 + seed as u64;
-            // Length digits: in range runs the copy and the RPC,
-            // out of range reports -22 before any copy.
-            c.g[A3][0] = [0x10, 0x500][seed as usize % 2] as u64;
-            c.g[T1][0] = [0x10, 0x500][seed as usize / 2 % 2] as u64;
-            // Buffer digit: null writes a zero word, otherwise the
-            // length is copied from here into the packet.
-            c.g[A2][0] = [0, (DATA + 0x1000) as u64][seed as usize / 4 % 2];
-            // Fd digit: claimed, out of range, free.
-            let mode = seed / 8 % 3;
-            c.g[A0][0] = [3, 0x20, 3][mode as usize] as u64;
-            fd_slot(c, 3, mode != 2);
-            c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
-            c.bus.write32(RPC_GATE, GATE_MAGIC);
-            c.bus.write32(RPC_RESULT, 0);
-            // Reply-flag digit: set takes the wait arm, clear the
-            // DeleteSema arm (-11) at 0x428dcc.
-            let reply_set = seed / 48 % 2 == 0;
-            c.bus.write32(
-                IO_REPLY_FLAG,
-                if reply_set { 0x0101_0100 + seed } else { 0 },
-            );
-            let sp = c.g[SP][0] as u32;
-            c.bus
-                .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 24 % 2]);
-        };
         check_reaching(
             ee::s15::f_00428c38__generated,
             sce_ioctl2,
@@ -44218,32 +44188,6 @@ pub(crate) mod tests {
     #[test]
     fn devctl_matches() {
         hook_call_rpc();
-        let setup = &|c: &mut Cpu, seed: u32| {
-            machine(c, seed, 1_365_019, 1);
-            c.pc = 0x0042_a538;
-            c.g[A0][0] = (DATA + 0x500) as u64;
-            c.g[A1][0] = 0x1111_1100 + seed as u64;
-            c.g[A2][0] = (DATA + 0x1000) as u64;
-            c.g[T0][0] = 0x2222_2200 + seed as u64;
-            // Length digits: empty (skip the copy), short (copy
-            // it), over-long (report -22).
-            c.g[A3][0] = [0, 5, 0x500][seed as usize % 3] as u64;
-            c.g[T1][0] = [0, 5, 0x500][seed as usize / 3 % 3] as u64;
-            path_bytes(c, [0, 5, 1024][seed as usize / 9 % 3]);
-            c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
-            c.bus.write32(RPC_GATE, GATE_MAGIC);
-            c.bus.write32(RPC_RESULT, 0);
-            // Reply-flag digit: set takes the wait arm, clear the
-            // DeleteSema arm (-11) at 0x42a724.
-            let reply_set = seed / 54 % 2 == 0;
-            c.bus.write32(
-                IO_REPLY_FLAG,
-                if reply_set { 0x0101_0100 + seed } else { 0 },
-            );
-            let sp = c.g[SP][0] as u32;
-            c.bus
-                .write32(sp - 0xe0 + 0x30, [0, 5][seed as usize / 27 % 2]);
-        };
         check_reaching(
             ee::s15::f_0042a538__generated,
             sce_devctl,
@@ -44461,29 +44405,6 @@ pub(crate) mod tests {
     #[test]
     fn readlink_matches() {
         hook_call_rpc();
-        let setup = &|c: &mut Cpu, seed: u32| {
-            machine(c, seed, 1_365_025, 1);
-            c.pc = 0x0042_a950;
-            c.g[A0][0] = (DATA + 0x500) as u64;
-            c.g[A1][0] = (DATA + 0x1000) as u64;
-            // Length digit: short (staged as-is), over-long
-            // (capped at 0x3ff).
-            c.g[A2][0] = [5, 0x500][seed as usize % 2] as u64;
-            path_bytes(c, [0, 5, 1024][seed as usize / 2 % 3]);
-            c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
-            c.bus.write32(RPC_GATE, GATE_MAGIC);
-            c.bus.write32(RPC_RESULT, 0);
-            // Reply-flag digit: set takes the wait arm, clear the
-            // DeleteSema arm (-11) at 0x42aad0.
-            let reply_set = seed / 12 % 2 == 0;
-            c.bus.write32(
-                IO_REPLY_FLAG,
-                if reply_set { 0x0101_0100 + seed } else { 0 },
-            );
-            let sp = c.g[SP][0] as u32;
-            c.bus
-                .write32(sp - 0xd0 + 0x30, [0, 5][seed as usize / 6 % 2]);
-        };
         check_reaching(
             ee::s15::f_0042a950__generated,
             sce_readlink,
