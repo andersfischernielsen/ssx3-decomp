@@ -1960,7 +1960,8 @@ pub fn c_game_comm_ctor(c: &mut Cpu) {
         c.sw((c.g[S0][0] as u32).wrapping_add(0xb8), 0u64);
         c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), 0u64);
         c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), 0u64);
-        'l_256dc8: loop {
+        // 0x256dc8: clear loop over the register window.
+        loop {
             c.cycles += 7;
             c.sw(c.g[V1][0] as u32, 0u64);
             c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
@@ -1970,93 +1971,86 @@ pub fn c_game_comm_ctor(c: &mut Cpu) {
                 if event_due(c) {
                     deliver_event_here(c, 0x00256dc8);
                 }
-                continue 'l_256dc8;
-            } else {
-                'b_256e0c: {
-                    c.cycles += 10;
-                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
-                    c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x36c));
-                    c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x410));
-                    c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x500));
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
-                    c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14c));
-                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
-                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x144));
-                    if c.g[V0][0] == 0u64 {
-                        break 'b_256e0c;
-                    } else {
-                        break 'b_256e0c;
+                continue;
+            }
+            // 0x256e0c: both arms rejoin here, then the window setup.
+            c.cycles += 10;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x36c));
+            c.g[S5][0] = sx((c.g[S0][0] as u32).wrapping_add(0x410));
+            c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x500));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+            c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x14c));
+            c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x144));
+            c.cycles += 9;
+            c.g[S3][0] = 0x3;
+            c.div(0, 3, 2);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x38), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x3c), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x138), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x140), 0u64);
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x13c), 0u64);
+            c.g[V1][0] = c.lo[0];
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[V1][0]);
+            // 0x256e30: memset loop over the register windows.
+            loop {
+                c.cycles += 10;
+                c.sw(c.g[S1][0] as u32, 0u64);
+                c.g[A0][0] = c.g[S2][0];
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
+                c.g[A1][0] = 0u64;
+                c.g[A2][0] = 0x80;
+                c.g[RA][0] = sx(0x00256e4c);
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x88));
+                callee::EA_MEMSET.call(c, 0x00256e4c)?;
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
+                let t = (c.g[S3][0] as i64) >= 0;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x88));
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00256e30);
                     }
+                    continue;
                 }
-                c.cycles += 9;
-                c.g[S3][0] = 0x3;
-                c.div(0, 3, 2);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x38), 0u64);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x3c), 0u64);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x138), 0u64);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x140), 0u64);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x13c), 0u64);
-                c.g[V1][0] = c.lo[0];
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[V1][0]);
-                'l_256e30: loop {
-                    c.cycles += 10;
-                    c.sw(c.g[S1][0] as u32, 0u64);
-                    c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), 0u64);
-                    c.g[A1][0] = 0u64;
-                    c.g[A2][0] = 0x80;
-                    c.g[RA][0] = sx(0x00256e4c);
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x88));
-                    callee::EA_MEMSET.call(c, 0x00256e4c)?;
-                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
-                    let t = (c.g[S3][0] as i64) >= 0;
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x88));
-                    if t {
-                        if event_due(c) {
-                            deliver_event_here(c, 0x00256e30);
-                        }
-                        continue 'l_256e30;
-                    } else {
-                        c.cycles += 33;
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x364), 0u64);
-                        c.g[A0][0] = c.g[S4][0];
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x368), 0u64);
-                        c.g[A1][0] = 0u64;
-                        c.g[RA][0] = sx(0x00256e70);
-                        c.g[A2][0] = 0x80;
-                        callee::EA_MEMSET.call(c, 0x00256e70)?;
-                        c.g[V0][0] = 0xffffffffffffffff;
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x400), 0u64);
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x404), 0u64);
-                        c.g[A0][0] = c.g[S5][0];
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x40c), c.g[V0][0]);
-                        c.g[A1][0] = 0u64;
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x408), c.g[V0][0]);
-                        c.g[RA][0] = sx(0x00256e94);
-                        c.g[A2][0] = 0xf0;
-                        callee::EA_MEMSET.call(c, 0x00256e94)?;
-                        c.g[A0][0] = c.g[S6][0];
-                        c.g[A1][0] = 0u64;
-                        c.g[RA][0] = sx(0x00256ea4);
-                        c.g[A2][0] = 0xf0;
-                        callee::EA_MEMSET.call(c, 0x00256ea4)?;
-                        callee::PROTO_PING_CREATE.call(c, 0x00256eac)?;
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x140), c.g[V0][0]);
-                        c.g[V0][0] = c.g[S0][0];
-                        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
-                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
-                        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
-                        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
-                        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
-                        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
-                        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x10));
-                        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
-                        let t = c.g[RA][0] as u32;
-                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
-                        c.pc = t;
-                        return Ok(());
-                    }
-                }
+                c.cycles += 33;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x364), 0u64);
+                c.g[A0][0] = c.g[S4][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x368), 0u64);
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x00256e70);
+                c.g[A2][0] = 0x80;
+                callee::EA_MEMSET.call(c, 0x00256e70)?;
+                c.g[V0][0] = 0xffffffffffffffff;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x400), 0u64);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x404), 0u64);
+                c.g[A0][0] = c.g[S5][0];
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x40c), c.g[V0][0]);
+                c.g[A1][0] = 0u64;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x408), c.g[V0][0]);
+                c.g[RA][0] = sx(0x00256e94);
+                c.g[A2][0] = 0xf0;
+                callee::EA_MEMSET.call(c, 0x00256e94)?;
+                c.g[A0][0] = c.g[S6][0];
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x00256ea4);
+                c.g[A2][0] = 0xf0;
+                callee::EA_MEMSET.call(c, 0x00256ea4)?;
+                callee::PROTO_PING_CREATE.call(c, 0x00256eac)?;
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x140), c.g[V0][0]);
+                c.g[V0][0] = c.g[S0][0];
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x60));
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x70));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x50));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                c.pc = t;
+                return Ok(());
             }
         }
     })
@@ -2762,175 +2756,157 @@ pub fn c_game_comm_tick_countdowns(c: &mut Cpu) {
 /// status and the timeout/countdown guards, ending the session when down. Straight-line dispatch.
 pub fn c_game_comm_check_connection(c: &mut Cpu) {
     guest(c, |c| {
-        'b_2578e8: {
-            'b_2577f4: {
-                c.cycles += 7;
-                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sd(c.g[SP][0] as u32, c.g[RA][0]);
-                c.g[S0][0] = c.g[A0][0];
-                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
-                if (c.g[V0][0] as i64) <= 0 {
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                    break 'b_2577f4;
-                } else {
-                    c.cycles += 4;
-                    callee::C_GAME_COMM_TICK_QUIT_COUNTDOWN.call(c, 0x002577ec)?;
-                    c.g[V0][0] = 0x1;
-                    break 'b_2578e8;
-                }
-            }
+        // 0x2577f4: the +0x8 guard; a live board ticks and exits, a quiet
+        // one runs the chain below.
+        c.cycles += 7;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+        if (c.g[V0][0] as i64) <= 0 {
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
             c.cycles += 2;
             let t = c.g[V0][0] != 0u64;
             c.g[V0][0] = 0x1;
-            if t {
-                break 'b_2578e8;
-            } else {
-                'b_2578e4: {
-                    'b_2578d4: {
-                        c.cycles += 3;
-                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8c));
-                        let t = c.g[V0][0] != 0u64;
-                        c.g[A0][0] = c.g[S0][0];
-                        if t {
-                            break 'b_2578d4;
-                        } else {
-                            'b_2578c8: {
-                                c.cycles += 5;
-                                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
-                                c.g[RA][0] = sx(0x00257814);
-                                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
-                                callee::C_COMM_SYSTEM_GET_CHANNEL_STATUS.call(c, 0x00257814)?;
-                                let t = c.g[V0][0] != 0u64;
-                                c.g[A0][0] = c.g[S0][0];
-                                if t {
-                                    break 'b_2578c8;
-                                } else {
-                                    'b_25783c: {
-                                        c.cycles += 4;
-                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
-                                        c.g[V0][0] = ((c.g[V0][0] as i64) < 3i64) as u64;
-                                        if c.g[V0][0] != 0u64 {
+            if !t {
+                // 0x2578d4: a set +0x8c skips the chain; either way the
+                // shared epilogue below runs.
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8c));
+                let t = c.g[V0][0] != 0u64;
+                c.g[A0][0] = c.g[S0][0];
+                // The countdown's zero paths exit through the shared tail
+                // below, skipping the epilogue. A busy channel and the
+                // chain's latch paths rejoin at the latch below.
+                let mut zero = false;
+                let mut latch = false;
+                if !t {
+                    // 0x2578c8: channel-status and countdown chain; any
+                    // miss exits to the shared epilogue below.
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x238));
+                    c.g[RA][0] = sx(0x00257814);
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
+                    callee::C_COMM_SYSTEM_GET_CHANNEL_STATUS.call(c, 0x00257814)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[A0][0] = c.g[S0][0];
+                    if !t {
+                        // 0x25783c: +0x54 under 3 rejoins the chain,
+                        // otherwise stores 3 at +0x24 and exits.
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 3i64) as u64;
+                        if c.g[V0][0] != 0u64 {
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4c));
+                            // 0x257858: the +0x4c value under 6 rejoins
+                            // the chain, otherwise stores 2 at +0x24.
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < 6i64) as u64;
+                            if c.g[V0][0] != 0u64 {
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
+                                // 0x257874: +0x50 under 3 rejoins the
+                                // chain, otherwise stores 3 at +0x28.
+                                c.cycles += 3;
+                                c.g[V0][0] = ((c.g[V0][0] as i64) < 3i64) as u64;
+                                if c.g[V0][0] != 0u64 {
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
+                                    // 0x257890: the +0x50 value under 6
+                                    // runs the float compare below,
+                                    // otherwise stores 2 at +0x28.
+                                    c.cycles += 3;
+                                    c.g[V0][0] = ((c.g[V0][0] as i64) < 6i64) as u64;
+                                    if c.g[V0][0] != 0u64 {
+                                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0xb0));
+                                        // Float compare and +0x94
+                                        // countdown; the countdown's zero
+                                        // paths exit below.
+                                        c.cycles += 6;
+                                        c.g[AT][0] = 0x45610000;
+                                        c.mtc1(1, 0);
+                                        c.c_le_s(0, 1);
+                                        let t = c.fcc();
+                                        c.g[A0][0] = c.g[S0][0];
+                                        if !t {
+                                            c.cycles += 3;
                                             c.g[V0][0] =
-                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x4c));
-                                            break 'b_25783c;
-                                        } else {
-                                            c.cycles += 4;
-                                            c.g[V0][0] = 0x3;
-                                            c.g[A0][0] = c.g[S0][0];
-                                            c.sw(
-                                                (c.g[S0][0] as u32).wrapping_add(0x24),
-                                                c.g[V0][0],
-                                            );
-                                            break 'b_2578d4;
-                                        }
-                                    }
-                                    'b_257858: {
-                                        c.cycles += 3;
-                                        c.g[V0][0] = ((c.g[V0][0] as i64) < 6i64) as u64;
-                                        if c.g[V0][0] != 0u64 {
-                                            c.g[V0][0] =
-                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x58));
-                                            break 'b_257858;
-                                        } else {
-                                            c.cycles += 4;
-                                            c.g[V0][0] = 0x2;
-                                            c.g[A0][0] = c.g[S0][0];
-                                            c.sw(
-                                                (c.g[S0][0] as u32).wrapping_add(0x24),
-                                                c.g[V0][0],
-                                            );
-                                            break 'b_2578d4;
-                                        }
-                                    }
-                                    'b_257874: {
-                                        c.cycles += 3;
-                                        c.g[V0][0] = ((c.g[V0][0] as i64) < 3i64) as u64;
-                                        if c.g[V0][0] != 0u64 {
-                                            c.g[V0][0] =
-                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
-                                            break 'b_257874;
-                                        } else {
-                                            c.cycles += 4;
-                                            c.g[V0][0] = 0x3;
-                                            c.g[A0][0] = c.g[S0][0];
-                                            c.sw(
-                                                (c.g[S0][0] as u32).wrapping_add(0x28),
-                                                c.g[V0][0],
-                                            );
-                                            break 'b_2578d4;
-                                        }
-                                    }
-                                    'b_257890: {
-                                        c.cycles += 3;
-                                        c.g[V0][0] = ((c.g[V0][0] as i64) < 6i64) as u64;
-                                        if c.g[V0][0] != 0u64 {
-                                            c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0xb0));
-                                            break 'b_257890;
-                                        } else {
-                                            c.cycles += 4;
-                                            c.g[V0][0] = 0x2;
-                                            c.g[A0][0] = c.g[S0][0];
-                                            c.sw(
-                                                (c.g[S0][0] as u32).wrapping_add(0x28),
-                                                c.g[V0][0],
-                                            );
-                                            break 'b_2578d4;
-                                        }
-                                    }
-                                    c.cycles += 6;
-                                    c.g[AT][0] = 0x45610000;
-                                    c.mtc1(1, 0);
-                                    c.c_le_s(0, 1);
-                                    let t = c.fcc();
-                                    c.g[A0][0] = c.g[S0][0];
-                                    if t {
-                                        break 'b_2578c8;
-                                    } else {
-                                        c.cycles += 3;
-                                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x94));
-                                        let t = (c.g[V0][0] as i64) <= 0;
-                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
-                                        if t {
-                                            break 'b_2578e4;
-                                        } else {
-                                            c.cycles += 2;
-                                            let t = (c.g[V0][0] as i64) > 0;
-                                            c.sw(
-                                                (c.g[S0][0] as u32).wrapping_add(0x94),
-                                                c.g[V0][0],
-                                            );
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x94));
+                                            let t = (c.g[V0][0] as i64) <= 0;
+                                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
                                             if t {
-                                                break 'b_2578e4;
+                                                zero = true;
                                             } else {
-                                                c.cycles += 3;
-                                                c.g[V0][0] = 0x1;
-                                                c.g[A0][0] = c.g[S0][0];
+                                                c.cycles += 2;
+                                                let t = (c.g[V0][0] as i64) > 0;
                                                 c.sw(
-                                                    (c.g[S0][0] as u32).wrapping_add(0x2c),
+                                                    (c.g[S0][0] as u32).wrapping_add(0x94),
                                                     c.g[V0][0],
                                                 );
-                                                break 'b_2578c8;
+                                                if t {
+                                                    zero = true;
+                                                } else {
+                                                    c.cycles += 3;
+                                                    c.g[V0][0] = 0x1;
+                                                    c.g[A0][0] = c.g[S0][0];
+                                                    c.sw(
+                                                        (c.g[S0][0] as u32).wrapping_add(0x2c),
+                                                        c.g[V0][0],
+                                                    );
+                                                }
                                             }
                                         }
+                                        if !zero {
+                                            latch = true;
+                                        }
+                                    } else {
+                                        c.cycles += 4;
+                                        c.g[V0][0] = 0x2;
+                                        c.g[A0][0] = c.g[S0][0];
+                                        c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[V0][0]);
                                     }
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = 0x3;
+                                    c.g[A0][0] = c.g[S0][0];
+                                    c.sw((c.g[S0][0] as u32).wrapping_add(0x28), c.g[V0][0]);
                                 }
+                            } else {
+                                c.cycles += 4;
+                                c.g[V0][0] = 0x2;
+                                c.g[A0][0] = c.g[S0][0];
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V0][0]);
                             }
-                            c.cycles += 3;
-                            callee::C_GAME_COMM_LATCH_RESULT_FLAGS.call(c, 0x002578d0)?;
+                        } else {
+                            c.cycles += 4;
+                            c.g[V0][0] = 0x3;
                             c.g[A0][0] = c.g[S0][0];
-                            break 'b_2578d4;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), c.g[V0][0]);
                         }
+                    } else {
+                        // 0x2578c8: a busy channel latches and rejoins below.
+                        latch = true;
                     }
+                }
+                if latch {
+                    c.cycles += 3;
+                    callee::C_GAME_COMM_LATCH_RESULT_FLAGS.call(c, 0x002578d0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                }
+                // 0x2578d4 / 0x2578e4: the countdown's zero paths exit
+                // here with V0 clear; everything else rejoins below.
+                if zero {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0u64;
+                } else {
                     c.cycles += 4;
                     callee::C_GAME_COMM_END_SESSION.call(c, 0x002578dc)?;
                     c.g[V0][0] = 0x1;
-                    break 'b_2578e8;
                 }
-                c.cycles += 1;
-                c.g[V0][0] = 0u64;
-                break 'b_2578e8;
             }
+        } else {
+            c.cycles += 4;
+            callee::C_GAME_COMM_TICK_QUIT_COUNTDOWN.call(c, 0x002577ec)?;
+            c.g[V0][0] = 0x1;
         }
         c.cycles += 4;
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
@@ -6065,133 +6041,139 @@ pub fn c_game_comm_send_sync_check(c: &mut Cpu) {
         frame.save_ra(c, SYNC_CHECK_RA);
         c.g[A3][0] = c.g[A1][0];
         c.g[S0][0] = c.g[A0][0];
-        'b_259084: {
-            'b_258f68: {
-                let app = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
-                c.g[V0][0] = app;
-                c.g[V1][0] = 0x5;
-                c.g[A1][0] = Addr(app as u32).off(0x84).lw(c);
-                let mgr = c.g[A1][0];
-                c.g[V0][0] = Addr(mgr as u32).off(0xc).lw(c);
-                c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
-                c.g[V0][0] = 0x3;
-                if c.g[A0][0] == c.g[V1][0] {
-                    break 'b_258f68;
-                }
-                c.cycles += 2;
-                if c.g[A0][0] != c.g[V0][0] {
-                    frame.restore(c, S0, SYNC_CHECK_S0);
-                    break 'b_259084;
-                }
+        // 0x258f68: the app word must name a live plug; anything else
+        // restores S0 and exits through the shared tail below.
+        let app = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[V0][0] = app;
+        c.g[V1][0] = 0x5;
+        c.g[A1][0] = Addr(app as u32).off(0x84).lw(c);
+        let mgr = c.g[A1][0];
+        c.g[V0][0] = Addr(mgr as u32).off(0xc).lw(c);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V0][0] = 0x3;
+        let mut ok = c.g[A0][0] == c.g[V1][0];
+        if !ok {
+            c.cycles += 2;
+            if c.g[A0][0] != c.g[V0][0] {
+                frame.restore(c, S0, SYNC_CHECK_S0);
+            } else {
                 c.cycles += 3;
                 c.g[V0][0] = Addr(mgr as u32).off(0x214).lw(c);
                 if c.g[V0][0] != c.g[A0][0] {
                     frame.restore(c, S0, SYNC_CHECK_S0);
-                    break 'b_259084;
+                } else {
+                    ok = true;
                 }
             }
-            let comm = Addr(r32(c, S0));
+        }
+        // The comm word; pure address math, hoisted for the guards below.
+        let comm = Addr(r32(c, S0));
+        if ok {
             c.cycles += 3;
             c.g[V0][0] = comm.off(SYNC_CHECK_READY).lw(c);
             if c.g[V0][0] == 0u64 {
                 frame.restore(c, S0, SYNC_CHECK_S0);
-                break 'b_259084;
+                ok = false;
             }
+        }
+        if ok {
             c.cycles += 3;
             c.g[V0][0] = comm.off(SYNC_CHECK_CLOSED).lw(c);
             if c.g[V0][0] != 0u64 {
                 frame.restore(c, S0, SYNC_CHECK_S0);
-                break 'b_259084;
+                ok = false;
             }
+        }
+        if ok {
             c.cycles += 3;
             c.g[V0][0] = comm.off(0x0).lw(c);
             if c.g[V0][0] == 0u64 {
                 frame.restore(c, S0, SYNC_CHECK_S0);
-                break 'b_259084;
+                ok = false;
             }
+        }
+        if ok {
             c.cycles += 3;
             c.g[V0][0] = comm.off(SYNC_CHECK_DESYNCED).lw(c);
             if c.g[V0][0] != 0u64 {
                 frame.restore(c, S0, SYNC_CHECK_S0);
-                break 'b_259084;
+                ok = false;
             }
+        }
+        if ok {
             // Ring slot ((frame / 60) % 60): two divides, quotient then
-            // remainder, through LO/HI exactly as the original. The first
-            // divide sits in its own +5 block; both generated arms break
-            // out of it, so only the break is kept.
-            'b_258fac: {
-                c.cycles += 5;
-                c.g[A0][0] = SYNC_CHECK_RING_LEN as u64;
-                c.g[V1][0] = SYNC_CHECK_RING_LEN as u64;
-                c.div(0, A3, A0);
-                break 'b_258fac;
-            }
-            'b_259020: {
-                'b_25901c: {
-                    'b_258ff4: {
-                        c.cycles += 12;
-                        c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(SYNC_CHECK_RING));
-                        c.g[S1][0] = c.g[A1][0];
-                        c.g[V1][0] = c.lo[0];
-                        c.div(0, V1, A0);
-                        c.g[V0][0] = c.hi[0];
-                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                        let slot = Addr(c.g[A1][0] as u32);
-                        slot.sw(c, c.g[A2][0]);
-                        comm.off(SYNC_CHECK_FRAME_NO).sw(c, c.g[A3][0]);
-                        c.g[V0][0] = comm.off(SYNC_CHECK_SENT).lw(c);
-                        let need_send = c.g[V0][0] == 0u64;
-                        c.g[V0][0] = 0x4;
-                        if need_send {
-                            break 'b_258ff4;
-                        }
-                        c.cycles += 3;
-                        c.g[V0][0] = comm.off(SYNC_CHECK_REPLIED).lw(c);
-                        if c.g[V0][0] == 0u64 {
-                            c.g[A0][0] = comm.off(SYNC_CHECK_FRAME_NO).lw(c);
-                            break 'b_259020;
-                        }
-                        c.cycles += 3;
-                        comm.off(SYNC_CHECK_REPLIED).sw(c, 0u64);
-                        comm.off(SYNC_CHECK_SENT).sw(c, 0u64);
-                        break 'b_25901c;
-                    }
-                    c.cycles += 10;
-                    Addr(sp(c).wrapping_add(0x4)).sw(c, c.g[A3][0]);
-                    Addr(sp(c).wrapping_add(0x8)).sw(c, c.g[A2][0]);
-                    c.g[A0][0] = c.g[S0][0];
-                    Addr(sp(c)).sb(c, c.g[V0][0]);
-                    c.g[A1][0] = 0x3;
-                    c.g[A2][0] = sx(sp(c));
-                    c.g[A3][0] = 0xc;
-                    callee::C_GAME_COMM_SEND_PACKET_2.call(c, 0x0025_9014)?;
-                    c.g[V1][0] = 0x1;
-                    comm.off(SYNC_CHECK_SENT).sw(c, c.g[V1][0]);
+            // remainder, through LO/HI exactly as the original.
+            c.cycles += 5;
+            c.g[A0][0] = SYNC_CHECK_RING_LEN as u64;
+            c.g[V1][0] = SYNC_CHECK_RING_LEN as u64;
+            c.div(0, A3, A0);
+        }
+        if ok {
+            c.cycles += 12;
+            c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(SYNC_CHECK_RING));
+            c.g[S1][0] = c.g[A1][0];
+            c.g[V1][0] = c.lo[0];
+            c.div(0, V1, A0);
+            c.g[V0][0] = c.hi[0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            let slot = Addr(c.g[A1][0] as u32);
+            slot.sw(c, c.g[A2][0]);
+            comm.off(SYNC_CHECK_FRAME_NO).sw(c, c.g[A3][0]);
+            c.g[V0][0] = comm.off(SYNC_CHECK_SENT).lw(c);
+            let need_send = c.g[V0][0] == 0u64;
+            c.g[V0][0] = 0x4;
+            // The send arm runs the packet below; otherwise the reply
+            // word decides. Only the send arm and the reply-stored arm
+            // take the +1; the zero arm rejoins at the frame reload.
+            let mut proceed = need_send;
+            if need_send {
+                c.cycles += 10;
+                Addr(sp(c).wrapping_add(0x4)).sw(c, c.g[A3][0]);
+                Addr(sp(c).wrapping_add(0x8)).sw(c, c.g[A2][0]);
+                c.g[A0][0] = c.g[S0][0];
+                Addr(sp(c)).sb(c, c.g[V0][0]);
+                c.g[A1][0] = 0x3;
+                c.g[A2][0] = sx(sp(c));
+                c.g[A3][0] = 0xc;
+                callee::C_GAME_COMM_SEND_PACKET_2.call(c, 0x0025_9014)?;
+                c.g[V1][0] = 0x1;
+                comm.off(SYNC_CHECK_SENT).sw(c, c.g[V1][0]);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = comm.off(SYNC_CHECK_REPLIED).lw(c);
+                if c.g[V0][0] != 0u64 {
+                    c.cycles += 3;
+                    comm.off(SYNC_CHECK_REPLIED).sw(c, 0u64);
+                    comm.off(SYNC_CHECK_SENT).sw(c, 0u64);
+                    proceed = true;
                 }
-                c.cycles += 1;
-                c.g[A0][0] = comm.off(SYNC_CHECK_FRAME_NO).lw(c);
             }
+            if proceed {
+                c.cycles += 1;
+            }
+            // Reload the frame number for the check below; all three arms
+            // converge here with the same address (the zero arm's load
+            // moved down from above; no write intervenes).
+            c.g[A0][0] = comm.off(SYNC_CHECK_FRAME_NO).lw(c);
+        }
+        if ok {
             c.cycles += 2;
             if (c.g[A0][0] as i64) < 0 {
                 frame.restore(c, S0, SYNC_CHECK_S0);
-                break 'b_259084;
+                ok = false;
             }
-            'b_259080: {
-                c.cycles += 3;
-                c.g[V1][0] = comm.off(SYNC_CHECK_MIN_FRAME).lw(c);
-                let min_pending = (c.g[V1][0] as i64) < 0;
-                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
-                if min_pending {
-                    break 'b_259080;
-                }
-                'b_259044: {
-                    c.cycles += 4;
-                    c.g[A1][0] = SYNC_CHECK_RING_LEN as u64;
-                    if c.g[V0][0] == 0 {
-                        c.g[V1][0] = c.g[A0][0];
-                    }
-                    break 'b_259044;
+        }
+        if ok {
+            c.cycles += 3;
+            c.g[V1][0] = comm.off(SYNC_CHECK_MIN_FRAME).lw(c);
+            let min_pending = (c.g[V1][0] as i64) < 0;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            if !min_pending {
+                c.cycles += 4;
+                c.g[A1][0] = SYNC_CHECK_RING_LEN as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = c.g[A0][0];
                 }
                 c.cycles += 14;
                 c.div(0, V1, A1);
@@ -6208,13 +6190,14 @@ pub fn c_game_comm_send_sync_check(c: &mut Cpu) {
                 c.g[V1][0] = Addr(c.g[V0][0] as u32).off(SYNC_CHECK_PEER_RING).lw(c);
                 let same = c.g[A1][0] == c.g[V1][0];
                 c.g[V0][0] = 0x1;
-                if same {
-                    break 'b_259080;
+                if !same {
+                    c.cycles += 1;
+                    comm.off(SYNC_CHECK_DESYNCED).sw(c, c.g[V0][0]);
                 }
-                c.cycles += 1;
-                comm.off(SYNC_CHECK_DESYNCED).sw(c, c.g[V0][0]);
-                break 'b_259080;
             }
+        }
+        // Shared tail: completing paths restore S0 and rejoin here.
+        if ok {
             c.cycles += 1;
             frame.restore(c, S0, SYNC_CHECK_S0);
         }
@@ -6231,6 +6214,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_paths;
+    use crate::difftest::require_paths;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
@@ -8322,6 +8306,18 @@ pub(crate) mod tests {
             SEEDS,
             &|c, seed| ctor_fixture(c, seed),
         );
+        require_paths(
+            c_game_comm_ctor_generated,
+            SEEDS,
+            &[
+                2671, 2672, 2673, 2674, 2675, 2676, 2677, 2678, 2679, 2680, 2681, 2682, 2683, 2684,
+                2685, 2686, 2687, 2688, 2689, 2690, 2691, 2692, 2693, 2694, 2695, 2696, 2697, 2698,
+                2699, 2700, 2701, 2703, 2704,
+            ],
+            &|c, seed| {
+                ctor_fixture(c, seed);
+            },
+        );
     }
 
     /// `dtor` fixture: the constructed block; the free-list head, the
@@ -9588,10 +9584,14 @@ pub(crate) mod tests {
     /// mismatch between the two rings.
     #[test]
     fn c_game_comm_send_sync_check_matches() {
-        check(
+        check_paths(
             ee::s06::f_00258f20__generated,
             c_game_comm_send_sync_check,
             300,
+            &[
+                19, 20, 22, 23, 25, 26, 28, 31, 51, 55, 56, 59, 60, 64, 74, 78, 79, 83, 233, 237,
+                239, 243, 256, 262,
+            ],
             &sync_check_setup,
         );
     }

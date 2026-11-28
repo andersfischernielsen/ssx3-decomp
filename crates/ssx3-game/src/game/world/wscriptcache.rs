@@ -12878,60 +12878,62 @@ pub fn shp_calc_pixel_offset(c: &mut Cpu) {
             c.g[S6][0] = sx(((c.g[A0][0] as u32) as i32 >> 2) as u32);
             c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x20));
         }
-        'b_3b3fe0: {
-            'b_3b3fdc: {
-                'b_3b3fc0: {
-                    'b_3b3f9c: {
-                        c.cycles += 3;
-                        c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
-                        let wide = c.g[V0][0] == 0u64;
-                        c.g[V0][0] = c.g[T3][0] & 0x2000;
-                        if wide {
-                            break 'b_3b3f9c;
-                        }
-                        c.cycles += 2;
-                        let plain = c.g[V0][0] == 0u64;
-                        c.g[A2][0] = c.g[S6][0];
-                        if plain {
-                            break 'b_3b3fc0;
-                        }
-                        c.cycles += 8;
-                        'b_3b3f94: {
-                            'b_3b3f88: {
-                                c.g[V1][0] = 0xf;
-                                c.g[V0][0] = c.g[A2][0] & 0x1f;
-                                c.g[A1][0] = c.g[A2][0] ^ 0x18;
-                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
-                                c.g[A0][0] = 0x21;
-                                c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
-                                let other = c.g[A3][0] != c.g[A0][0];
-                                if c.g[V1][0] == 0 {
-                                    c.g[A2][0] = c.g[A1][0];
-                                }
-                                if other {
-                                    break 'b_3b3f88;
-                                }
-                                c.cycles += 2;
-                                c.g[A2][0] = sx((c.g[A2][0] as u32) << 5);
-                                break 'b_3b3f94;
-                            }
-                            c.cycles += 3;
-                            c.g[V1][0] = c.g[A3][0] ^ 0x20;
-                            c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
-                            if c.g[V1][0] == 0 {
-                                c.g[A2][0] = c.g[V0][0];
-                            }
-                            c.cycles += 2;
-                            c.g[V0][0] = c.g[A2][0];
-                            break 'b_3b3fe0;
-                        }
+        // 0x3b3fe0 / 0x3b3fdc / 0x3b3fc0 / 0x3b3f9c: fold the plane
+        // size into the offset; a plain format multiplies below, a
+        // swizzled one calls out below, and a pre-shifted one rejoins
+        // at the tail below.
+        let mut need_mult = false;
+        let mut done = false;
+        c.cycles += 3;
+        c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+        let wide = c.g[V0][0] == 0u64;
+        c.g[V0][0] = c.g[T3][0] & 0x2000;
+        if !wide {
+            c.cycles += 2;
+            let plain = c.g[V0][0] == 0u64;
+            c.g[A2][0] = c.g[S6][0];
+            if plain {
+                need_mult = true;
+            } else {
+                c.cycles += 8;
+                // 0x3b3f94 / 0x3b3f88: shift the plane size for the
+                // small swizzled formats.
+                c.g[V1][0] = 0xf;
+                c.g[V0][0] = c.g[A2][0] & 0x1f;
+                c.g[A1][0] = c.g[A2][0] ^ 0x18;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
+                c.g[A0][0] = 0x21;
+                c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                let other = c.g[A3][0] != c.g[A0][0];
+                if c.g[V1][0] == 0 {
+                    c.g[A2][0] = c.g[A1][0];
+                }
+                if other {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.g[A3][0] ^ 0x20;
+                    c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+                    if c.g[V1][0] == 0 {
+                        c.g[A2][0] = c.g[V0][0];
                     }
                     c.cycles += 2;
-                    let swizzled = c.g[V0][0] == 0u64;
-                    c.g[A2][0] = c.g[S0][0];
-                    if swizzled {
-                        break 'b_3b3fc0;
-                    }
+                    c.g[V0][0] = c.g[A2][0];
+                    done = true;
+                } else {
+                    c.cycles += 2;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 5);
+                }
+            }
+        }
+        if !done {
+            if !need_mult {
+                // 0x3b3fc0: swizzled planes call out; the multiply
+                // below handles the plain ones.
+                c.cycles += 2;
+                let swizzled = c.g[V0][0] == 0u64;
+                c.g[A2][0] = c.g[S0][0];
+                if swizzled {
+                    need_mult = true;
+                } else {
                     c.cycles += 7;
                     c.g[A0][0] = c.g[S6][0];
                     c.g[A1][0] = c.g[S7][0];
@@ -12939,8 +12941,9 @@ pub fn shp_calc_pixel_offset(c: &mut Cpu) {
                     c.g[T0][0] = c.g[T1][0];
                     callee::SHP_SWIZZLE_ADDR.call(c, 0x003b_3fb8)?;
                     c.g[A2][0] = c.g[V0][0];
-                    break 'b_3b3fdc;
                 }
+            }
+            if need_mult {
                 c.cycles += 7;
                 c.mult(0, 2, 16, 9);
                 c.g[V1][0] = 0xfffffffffffffff0;
@@ -12949,11 +12952,9 @@ pub fn shp_calc_pixel_offset(c: &mut Cpu) {
                 c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
                 c.mult(0, 2, 23, 2);
                 c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                break 'b_3b3fdc;
             }
             c.cycles += 1;
             c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[S3][0] as u32));
-            break 'b_3b3fe0;
         }
         c.cycles += 12;
         frame.restore(c, S0, 0x90);
@@ -19484,10 +19485,13 @@ pub(crate) mod tests {
     /// boundary, shift-arm and -1 coordinates, levels 0..2.
     #[test]
     fn shp_calc_pixel_offset_matches() {
-        check_lohi(
+        check_paths_lohi(
             ee::s13::f_003b3e40__generated,
             shp_calc_pixel_offset,
             200,
+            &[
+                70, 75, 84, 85, 88, 90, 95, 98, 99, 103, 110, 112, 116, 123, 126, 141, 154,
+            ],
             &|c, seed| {
                 calc_pixel_setup(c, seed);
             },
