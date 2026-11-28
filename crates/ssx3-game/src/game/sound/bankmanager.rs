@@ -5071,7 +5071,7 @@ fn ssx_audio_system_set_fe_music_screen_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[A2][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x6290));
                     let t = c.g[A1][0] == c.g[V0][0];
                     c.g[V0][0] = (c.g[A1][0] < 0xau64) as u64;
@@ -5098,8 +5098,8 @@ fn ssx_audio_system_set_fe_music_screen_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2a70));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5218,7 +5218,7 @@ fn ssx_audio_system_set_fe_music_screen_resume(c: &mut Cpu) {
                 0x0028f1d4 => {
                     c.cycles += 2;
                     let t = (c.g[A1][0] as i64) < 0;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0028f1f8;
                         continue;
@@ -5234,14 +5234,14 @@ fn ssx_audio_system_set_fe_music_screen_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0028f1f4);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0028f1f4)?;
                     pc = 0x0028f1f4;
                     continue;
                 }
                 0x0028f1f4 => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x0028f1f8;
                     continue;
                 }
@@ -7759,7 +7759,7 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x0028ce20);
                     c.g[S5][0] = c.g[A0][0];
                     Callee {
@@ -7793,7 +7793,7 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A0][0] = 0x3;
                     c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc0));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
                     if t {
@@ -7821,7 +7821,7 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6708));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = (c.g[V1][0] < 0xau64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -7838,8 +7838,8 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2a10));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7973,7 +7973,7 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.lh((c.g[S3][0] as u32).wrapping_add(0x10));
                     c.g[A2][0] = 0u64;
                     c.g[RA][0] = sx(0x0028cf18);
-                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     Callee {
                         addr: 0x00287968,
                         f: ee::s07::SSXAudioSystem_GetChannelGainPtr,
@@ -7998,7 +7998,7 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0028cf58);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0028cf58)?;
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x0028cf64);
@@ -8029,7 +8029,7 @@ fn ssx_audio_system_play_character_tune_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -8549,7 +8549,7 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x1c));
                     let t = c.g[V1][0] != 0u64;
                     c.g[S1][0] = c.g[A0][0];
@@ -8605,7 +8605,7 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0028e5d4);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00144bc0, 0x0028e5d4)?;
-                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[RA][0] = sx(0x0028e5e0);
                     c.g[A0][0] = c.g[S1][0];
                     call_ptr(c, 0x002a1e20, 0x0028e5e0)?;
@@ -8886,7 +8886,7 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0028e75c);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00144bc0, 0x0028e75c)?;
-                    c.g[S0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x0028e76c);
                     c.g[A1][0] = c.g[S0][0];
@@ -8907,8 +8907,8 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x579c));
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[S4][0] = c.g[V0][0];
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[S2][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[S2][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[S2][0] != c.g[A0][0];
                     c.g[S5][0] = c.g[V1][0];
                     if t {
@@ -8940,7 +8940,7 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     call_ptr(c, 0x002a4158, 0x0028e7b8)?;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S5][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S5][0] as u32));
                     if t {
                         pc = 0x0028e7c8;
                         continue;
@@ -8956,13 +8956,13 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                 }
                 0x0028e7c4 => {
                     c.cycles += 1;
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S5][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S5][0] as u32));
                     pc = 0x0028e7c8;
                     continue;
                 }
                 0x0028e7c8 => {
                     c.cycles += 1;
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     pc = 0x0028e7cc;
                     continue;
                 }
@@ -9037,7 +9037,7 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0028e844);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00144bc0, 0x0028e844)?;
-                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[RA][0] = sx(0x0028e850);
                     c.g[A0][0] = c.g[S1][0];
                     call_ptr(c, 0x002a1e20, 0x0028e850)?;
@@ -9076,7 +9076,7 @@ fn ssx_audio_system_on_music_cue_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;

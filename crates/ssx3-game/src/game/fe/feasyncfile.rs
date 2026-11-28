@@ -90334,8 +90334,8 @@ fn cfe_state_net_news_v31_resume(c: &mut Cpu) {
                 0x001c5490 => {
                     c.cycles += 5;
                     c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     let t = c.g[V1][0] != c.g[S1][0];
                     c.g[A0][0] = c.g[SP][0];
                     if t {
@@ -90386,7 +90386,7 @@ fn cfe_state_net_news_v31_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00318c18, 0x001c54dc)?;
                     c.g[A1][0] = c.g[V0][0];
                     let t = c.g[A1][0] != c.g[S3][0];
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x001c5490) {
                             return Ok(());
@@ -90399,7 +90399,7 @@ fn cfe_state_net_news_v31_resume(c: &mut Cpu) {
                 }
                 0x001c54e8 => {
                     c.cycles += 8;
-                    c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[RA][0] = sx(0x001c54f4);
                     c.g[A0][0] = c.g[S2][0];
                     call_ptr(c, 0x003a19f8, 0x001c54f4)?;
@@ -91263,14 +91263,14 @@ fn c_fe_state_stats_on_widget_created_resume(c: &mut Cpu) {
                     c.mtc1(1, 0);
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.lh((c.g[A2][0] as u32).wrapping_add(0x58));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c2f98);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c2f98)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -91567,7 +91567,7 @@ fn c_fe_state_stats_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c3134);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3134)?;
                     let t = true;
                     c.sw((c.g[S2][0] as u32).wrapping_add(0x6d0), c.g[S1][0]);
@@ -91671,7 +91671,7 @@ fn c_fe_state_stats_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c31cc);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c31cc)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -91705,7 +91705,7 @@ fn c_fe_state_stats_on_widget_created_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c31ec);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c31ec)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -91821,7 +91821,7 @@ fn c_fe_state_stats_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3290);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3290)?;
                     pc = 0x001c3290;
                     continue;
@@ -93774,7 +93774,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                 0x001a59fc => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001a5a04);
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     call_ptr(c, 0x00262468, 0x001a5a04)?;
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[A0][0] = 0x4;
@@ -93801,7 +93801,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6f0));
                     c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6e4));
                     let t = c.g[A1][0] == c.g[V0][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x001a5a5c;
                         continue;
@@ -93814,7 +93814,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
 
                     if c.g[A0][0] != 0u64 {
-                        c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                        c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                         pc = 0x001a5a4c;
                         continue;
                     }
@@ -93914,7 +93914,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc0));
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xbc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                     c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
                     c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
                     let t = c.g[V0][0] != 0u64;
@@ -94217,7 +94217,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
 
                     if c.g[A0][0] != 0u64 {
-                        c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                        c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                         pc = 0x001a5c24;
                         continue;
                     }
@@ -94540,7 +94540,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
 
                     if c.g[A0][0] != 0u64 {
-                        c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                        c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                         pc = 0x001a5d9c;
                         continue;
                     }
@@ -94877,7 +94877,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
 
                     if c.g[A0][0] != 0u64 {
-                        c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                        c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                         pc = 0x001a5f28;
                         continue;
                     }
@@ -94950,7 +94950,7 @@ fn c_fe_state_net_messenger_build_buddy_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6e8));
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6ec));
                     c.g[A0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0x96));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                     c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
                     let t = c.g[A0][0] == c.g[V0][0];
                     c.g[A0][0] = c.g[A1][0];
@@ -95585,8 +95585,8 @@ fn cfe_state_net_messenger_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x15c0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -95602,7 +95602,7 @@ fn cfe_state_net_messenger_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a43ac);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a43ac)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -95802,7 +95802,7 @@ fn cfe_state_net_messenger_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 20;
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x001a44c8);
-                    c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     Callee {
                         addr: 0x001a6070,
                         f: ee::s03::cFEStateNetMessenger_ShowBuddyInfo,
@@ -95820,8 +95820,8 @@ fn cfe_state_net_messenger_on_widget_action_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6e8));
                     c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6f4));
-                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[RA][0] = sx(0x001a44f4);
                     c.g[A2][0] = sx(((c.g[A2][0] as u32) as i32 >> 2) as u32);
                     Callee {
@@ -95965,7 +95965,7 @@ fn cfe_state_net_messenger_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a45cc);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a45cc)?;
                     pc = 0x001a45cc;
                     continue;
@@ -95982,7 +95982,7 @@ fn cfe_state_net_messenger_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a45f4);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a45f4)?;
                     c.g[A1][0] = c.g[S2][0];
                     c.g[A0][0] = c.g[S1][0];
@@ -96814,7 +96814,7 @@ fn cfe_state_net_messenger_add_new_buddies_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6f0));
                     c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6e4));
                     let t = c.g[A1][0] == c.g[V0][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x001a5650;
                         continue;
@@ -96827,7 +96827,7 @@ fn cfe_state_net_messenger_add_new_buddies_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
 
                     if c.g[A0][0] != 0u64 {
-                        c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                        c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                         pc = 0x001a5640;
                         continue;
                     }
@@ -97107,7 +97107,7 @@ fn fe_state_net_messenger_show_buddy_info_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x40));
                     let t = c.g[V0][0] == 0u64;
                     c.g[S1][0] = c.g[A1][0];
@@ -97162,7 +97162,7 @@ fn fe_state_net_messenger_show_buddy_info_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6ec));
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6e8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A0][0] as u32));
                     c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
@@ -97370,9 +97370,9 @@ fn fe_state_net_messenger_show_buddy_info_resume(c: &mut Cpu) {
                 0x001a61e8 => {
                     c.cycles += 4;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = c.g[V1][0] != 0u64;
-                    c.g[S1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[V0][0] as u32);
                     if t {
                         pc = 0x001a6200;
                         continue;
@@ -97529,7 +97529,7 @@ fn fe_state_net_messenger_show_buddy_info_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a62c0);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a62c0)?;
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x1;
@@ -97537,7 +97537,7 @@ fn fe_state_net_messenger_show_buddy_info_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a62d8);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a62d8)?;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
                     let t = c.g[V0][0] != 0u64;
@@ -97723,7 +97723,7 @@ fn fe_state_net_messenger_show_buddy_info_resume(c: &mut Cpu) {
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
                     c.pc = t;

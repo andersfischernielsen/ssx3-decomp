@@ -11380,21 +11380,21 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x120));
                     c.g[V0][0] = c.g[V0][0] | 0x8000;
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x110));
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x100));
                     c.g[T2][0] = 0x180;
                     c.g[T9][0] = c.g[T0][0];
                     c.g[T3][0] = c.g[A3][0];
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1cc0));
                     c.g[T0][0] = 0x60000;
-                    c.g[T1][0] = c.lw((c.g[T9][0] as u32));
+                    c.g[T1][0] = c.lw(c.g[T9][0] as u32);
                     c.g[T0][0] = c.g[T0][0] | 0x9cd0;
                     c.mult(0, 3, 3, 10);
                     c.g[V0][0] = (c.g[A1][0] < 0x9u64) as u64;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xf0), c.g[T1][0]);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
                     let t = c.g[V0][0] == 0u64;
-                    c.g[T8][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[T8][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         pc = 0x00365e20;
                         continue;
@@ -11407,8 +11407,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2040));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -11460,7 +11460,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4f80));
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.g[A1][0] = c.g[A1][0] << 32;
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = 0x30000000;
                     c.g[V1][0] = c.g[V1][0] | 0xc;
                     c.g[A1][0] = c.g[A1][0] | c.g[V1][0];
@@ -11483,7 +11483,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.g[V1][0] | 0x7;
                     c.g[A1][0] = 0xd80c;
                     c.g[A1][0] = c.g[A1][0] << 47;
-                    c.sd((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -11565,7 +11565,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.g[A3][0] = 0xd816;
                     c.g[A3][0] = c.g[A3][0] << 47;
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[T0][0] = 0x80;
                     c.g[T0][0] = c.g[T0][0] << 32;
                     c.g[T0][0] = c.g[T0][0] | 0x80;
@@ -11680,7 +11680,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[T7][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
-                    c.swc1(2, (c.g[SP][0] as u32));
+                    c.swc1(2, c.g[SP][0] as u32);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
@@ -11688,12 +11688,12 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x10), c.g[S0][0]);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x18), 0u64);
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.g[V1][0] = c.g[V0][0] << 32;
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
-                    c.g[V1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.g[V0][0] = c.g[V1][0] << 32;
                     c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
@@ -11742,7 +11742,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.g[V1][0] | 0x7;
                     c.g[A1][0] = 0xd80c;
                     c.g[A1][0] = c.g[A1][0] << 47;
-                    c.sd((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -11823,7 +11823,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x4ec0));
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.g[A1][0] = c.g[A1][0] << 32;
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[A2][0] = 0x10000000;
                     c.g[A2][0] = c.g[A2][0] | 0x8;
                     c.g[V0][0] = 0x30000000;
@@ -11884,7 +11884,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.g[V1][0] | 0x7;
                     c.g[A1][0] = 0xd80c;
                     c.g[A1][0] = c.g[A1][0] << 47;
-                    c.sd((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -11965,7 +11965,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.g[A2][0] = 0xd80e;
                     c.g[A2][0] = c.g[A2][0] << 47;
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[T2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.g[A3][0] = sx((c.g[T8][0] as u32).wrapping_add(0x80));
                     c.g[T3][0] = c.g[T2][0];
@@ -11996,8 +11996,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x003653b0 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A3][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A3][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
@@ -12015,8 +12015,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.cycles += 12;
                     c.lq(2, (c.g[T8][0] as u32).wrapping_add(0xc0));
                     c.g[A1][0] = c.g[SP][0];
-                    c.sw((c.g[T2][0] as u32), c.g[V1][0]);
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sw(c.g[T2][0] as u32, c.g[V1][0]);
+                    c.sq(2, c.g[SP][0] as u32);
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
                     c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
@@ -12039,8 +12039,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365400 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A1][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A1][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
@@ -12056,7 +12056,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x0036541c => {
                     c.cycles += 12;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[T0][0];
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
@@ -12082,8 +12082,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365450 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A0][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
@@ -12099,7 +12099,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x0036546c => {
                     c.cycles += 11;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[T1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -12119,8 +12119,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365498 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A0][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
@@ -12137,7 +12137,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 0x003654b4 => {
                     c.cycles += 2;
                     let t = true;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x00365e20;
                         continue;
@@ -12153,7 +12153,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A0][0] = 0xd80e;
                     c.g[A0][0] = c.g[A0][0] << 47;
                     c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A1][0] = sx((c.g[T8][0] as u32).wrapping_add(0x120));
                     c.g[T3][0] = c.g[A2][0];
                     c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
@@ -12179,8 +12179,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365518 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A1][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A1][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
@@ -12198,8 +12198,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.cycles += 12;
                     c.lq(2, (c.g[T8][0] as u32).wrapping_add(0x160));
                     c.g[A1][0] = c.g[SP][0];
-                    c.sw((c.g[A2][0] as u32), c.g[V1][0]);
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sw(c.g[A2][0] as u32, c.g[V1][0]);
+                    c.sq(2, c.g[SP][0] as u32);
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
                     c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
@@ -12222,8 +12222,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365568 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A1][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A1][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
@@ -12239,7 +12239,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365584 => {
                     c.cycles += 12;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[T0][0];
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
@@ -12265,8 +12265,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x003655b8 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A0][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
@@ -12282,7 +12282,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x003655d4 => {
                     c.cycles += 11;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[T1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -12302,8 +12302,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365600 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A0][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
@@ -12320,7 +12320,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 0x0036561c => {
                     c.cycles += 2;
                     let t = true;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x00365e20;
                         continue;
@@ -12374,7 +12374,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.g[A2][0] = 0xd806;
                     c.g[A2][0] = c.g[A2][0] << 47;
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[T2][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
@@ -12394,7 +12394,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x28), c.g[A2][0]);
                     c.lq(2, (c.g[T8][0] as u32).wrapping_add(0x160));
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x40));
                     c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
@@ -12417,8 +12417,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x003656e0 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A3][0] as u32));
-                    c.sq(2, (c.g[A0][0] as u32));
+                    c.lq(2, c.g[A3][0] as u32);
+                    c.sq(2, c.g[A0][0] as u32);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
                     let t = c.g[A0][0] != c.g[A1][0];
                     c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
@@ -12436,7 +12436,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.cycles += 12;
                     c.lq(2, (c.g[T8][0] as u32).wrapping_add(0x170));
                     c.g[A1][0] = c.g[T0][0];
-                    c.sw((c.g[T2][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[T2][0] as u32, c.g[A0][0]);
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
@@ -12460,8 +12460,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365730 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A1][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A1][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
@@ -12477,7 +12477,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x0036574c => {
                     c.cycles += 11;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[T1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -12497,8 +12497,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365778 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A0][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
@@ -12515,7 +12515,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 0x00365794 => {
                     c.cycles += 2;
                     let t = true;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x00365e20;
                         continue;
@@ -12532,7 +12532,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[A0][0] << 47;
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.g[A2][0] = c.g[SP][0];
                     c.g[T3][0] = c.g[A3][0];
@@ -12546,7 +12546,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A0][0]);
                     c.lq(2, (c.g[T8][0] as u32).wrapping_add(0x160));
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
                     c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
@@ -12569,8 +12569,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365818 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A2][0] as u32));
-                    c.sq(2, (c.g[A0][0] as u32));
+                    c.lq(2, c.g[A2][0] as u32);
+                    c.sq(2, c.g[A0][0] as u32);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
                     let t = c.g[A0][0] != c.g[A1][0];
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
@@ -12588,7 +12588,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.cycles += 12;
                     c.lq(2, (c.g[T8][0] as u32).wrapping_add(0x170));
                     c.g[A1][0] = c.g[T0][0];
-                    c.sw((c.g[A3][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[A3][0] as u32, c.g[A0][0]);
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[AT][0] = 0x3d800000;
                     c.mtc1(1, 1);
@@ -12612,8 +12612,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365868 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A1][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A1][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
@@ -12629,7 +12629,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x00365884 => {
                     c.cycles += 11;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[T1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -12649,8 +12649,8 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 }
                 0x003658b0 => {
                     c.cycles += 7;
-                    c.lq(2, (c.g[A0][0] as u32));
-                    c.sq(2, (c.g[V1][0] as u32));
+                    c.lq(2, c.g[A0][0] as u32);
+                    c.sq(2, c.g[V1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
@@ -12667,7 +12667,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                 0x003658cc => {
                     c.cycles += 2;
                     let t = true;
-                    c.sw((c.g[T3][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T3][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x00365e20;
                         continue;
@@ -12765,7 +12765,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | c.g[T4][0];
                     c.g[A1][0] = 0xd80c;
                     c.g[A1][0] = c.g[A1][0] << 47;
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A3][0] = 0x10000000;
                     c.g[A3][0] = c.g[A3][0] | 0x5;
                     c.g[T0][0] = 0x6c040000;
@@ -12817,11 +12817,11 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sd((c.g[V1][0] as u32).wrapping_add(0xb0), c.g[T1][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0xb8), c.g[T2][0]);
-                    c.lqc2(1, (c.g[T8][0] as u32));
+                    c.lqc2(1, c.g[T8][0] as u32);
                     c.lqc2(2, (c.g[T8][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[T8][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[T8][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A2][0] as u32));
+                    c.sqc2(1, c.g[A2][0] as u32);
                     c.sqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
@@ -12829,11 +12829,11 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x480));
                     c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb0));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(8, (c.g[A2][0] as u32));
+                    c.lqc2(8, c.g[A2][0] as u32);
                     c.lqc2(9, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.lqc2(10, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.lqc2(11, (c.g[A2][0] as u32).wrapping_add(0x30));
@@ -12853,23 +12853,23 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
                     c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
                     c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
-                    c.sqc2(12, (c.g[V1][0] as u32));
+                    c.sqc2(12, c.g[V1][0] as u32);
                     c.sqc2(13, (c.g[V1][0] as u32).wrapping_add(0x10));
                     c.sqc2(14, (c.g[V1][0] as u32).wrapping_add(0x20));
                     c.sqc2(15, (c.g[V1][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[V1][0] as u32));
+                    c.lqc2(1, c.g[V1][0] as u32);
                     c.lqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A0][0] as u32));
+                    c.sqc2(1, c.g[A0][0] as u32);
                     c.sqc2(2, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[A0][0] as u32));
+                    c.lqc2(1, c.g[A0][0] as u32);
                     c.lqc2(2, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[A0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A2][0] as u32));
+                    c.sqc2(1, c.g[A2][0] as u32);
                     c.sqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
@@ -12915,7 +12915,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[A0][0] << 47;
                     c.g[A1][0] = 0x10000000;
                     c.g[A1][0] = c.g[A1][0] | 0x5;
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A2][0] = 0x6c040000;
                     c.g[A2][0] = c.g[A2][0] | 0x392;
                     c.g[A2][0] = c.g[A2][0] << 32;
@@ -12960,11 +12960,11 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.sd((c.g[V1][0] as u32).wrapping_add(0xa0), c.g[A3][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0xa8), c.g[T0][0]);
-                    c.lqc2(1, (c.g[T8][0] as u32));
+                    c.lqc2(1, c.g[T8][0] as u32);
                     c.lqc2(2, (c.g[T8][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[T8][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[T8][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[SP][0] as u32));
+                    c.sqc2(1, c.g[SP][0] as u32);
                     c.sqc2(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -12972,11 +12972,11 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x480));
                     c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(8, (c.g[SP][0] as u32));
+                    c.lqc2(8, c.g[SP][0] as u32);
                     c.lqc2(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.lqc2(10, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lqc2(11, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -12996,28 +12996,28 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
                     c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
                     c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
-                    c.sqc2(12, (c.g[V1][0] as u32));
+                    c.sqc2(12, c.g[V1][0] as u32);
                     c.sqc2(13, (c.g[V1][0] as u32).wrapping_add(0x10));
                     c.sqc2(14, (c.g[V1][0] as u32).wrapping_add(0x20));
                     c.sqc2(15, (c.g[V1][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[V1][0] as u32));
+                    c.lqc2(1, c.g[V1][0] as u32);
                     c.lqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A0][0] as u32));
+                    c.sqc2(1, c.g[A0][0] as u32);
                     c.sqc2(2, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[A0][0] as u32));
+                    c.lqc2(1, c.g[A0][0] as u32);
                     c.lqc2(2, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[A0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[SP][0] as u32));
+                    c.sqc2(1, c.g[SP][0] as u32);
                     c.sqc2(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
-                    c.lq(2, (c.g[SP][0] as u32));
+                    c.lq(2, c.g[SP][0] as u32);
                     c.sq(2, (c.g[V1][0] as u32).wrapping_add(0xb0));
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
@@ -13125,7 +13125,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[A3][0] = 0x50000000;
                     c.g[V0][0] = c.g[V0][0] << 32;
                     c.g[V0][0] = c.g[V0][0] | c.g[A3][0];
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xf0));
@@ -13168,7 +13168,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x50000000;
                     c.g[V0][0] = c.g[T3][0] << 32;
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     pc = 0x00365e0c;
                     continue;
                 }
@@ -13203,7 +13203,7 @@ fn defer_man_emit_material_setup_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x110));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x100));
-                    c.sw((c.g[T9][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[T9][0] as u32, c.g[V0][0]);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x130));
                     c.pc = t;
@@ -15906,12 +15906,12 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
                     c.g[A2][0] = 0u64;
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S0][0] = c.g[A0][0];
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x20), 0u64);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x94));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = (c.g[V1][0] as i64) <= 0;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
                     if t {
@@ -15954,7 +15954,7 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x94));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     pc = 0x0035f26c;
                     continue;
                 }
@@ -15976,7 +15976,7 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                 }
                 0x0035f27c => {
                     c.cycles += 2;
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V0][0]);
                     pc = 0x0035f284;
                     continue;
@@ -16020,7 +16020,7 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[A0][0] = sx((c.g[A2][0] as u32) << 2);
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x94));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
                     let t = c.g[V0][0] == 0u64;
@@ -16034,14 +16034,14 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                 }
                 0x0035f2dc => {
                     c.cycles += 11;
-                    c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
                     c.g[T2][0] = 0xffffffffffffffff;
                     c.g[A1][0] = sx((c.g[T5][0] as u32).wrapping_add(0x2));
                     c.g[A3][0] = 0x2;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x48));
-                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0xc));
                     c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
                     pc = 0x0035f308;
@@ -16049,7 +16049,7 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                 }
                 0x0035f308 => {
                     c.cycles += 7;
-                    c.sh((c.g[A1][0] as u32), c.g[T2][0]);
+                    c.sh(c.g[A1][0] as u32, c.g[T2][0]);
                     c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
                     let t = (c.g[A3][0] as i64) >= 0;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
@@ -16068,9 +16068,9 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                     c.mult(0, 2, 6, 12);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
-                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x4));
                     let t = true;
                     c.sh((c.g[A1][0] as u32).wrapping_add(0x48), c.g[V1][0]);
@@ -16083,9 +16083,9 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                 }
                 0x0035f348 => {
                     c.cycles += 3;
-                    c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[T1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[V0][0] as u32), c.g[T0][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[T0][0]);
                     pc = 0x0035f354;
                     continue;
                 }
@@ -16109,7 +16109,7 @@ fn tex_flip_modifier_init_resume(c: &mut Cpu) {
                 0x0035f368 => {
                     c.cycles += 4;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -16539,8 +16539,8 @@ fn gs_pkt_add_alpha_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1fb0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -16692,7 +16692,7 @@ fn gs_pkt_add_alpha_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     let t = true;
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x003625a0;
                         continue;
@@ -16747,19 +16747,19 @@ fn gs_pkt_add_alpha_resume(c: &mut Cpu) {
                 }
                 0x0036259c => {
                     c.cycles += 1;
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     pc = 0x003625a0;
                     continue;
                 }
                 0x003625a0 => {
                     c.cycles += 7;
                     c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                    c.g[V1][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[T0][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     c.sw((c.g[T0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     let t = c.g[RA][0] as u32;
-                    c.sw((c.g[T0][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[T0][0] as u32, c.g[V1][0]);
                     c.pc = t;
                     return Ok(());
                 }

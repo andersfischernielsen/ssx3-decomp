@@ -46,7 +46,6 @@ pub(crate) use crate::game::visualfx::boardwakefx::LENS_CAMERA_GP;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -4453,7 +4452,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1f38));
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xda0));
                     let t = c.g[V1][0] == 0u64;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x0022f76c;
                         continue;
@@ -4556,7 +4555,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0022f804);
                     c.g[A1][0] = 0x2;
                     call_ptr(c, 0x00318260, 0x0022f804)?;
-                    c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0022f814);
                     c.g[A2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x20));
@@ -4618,7 +4617,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                 }
                 0x0022f8ac => {
                     c.cycles += 50;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     c.g[S0][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x4b80));
                     c.g[RA][0] = sx(0x0022f8bc);
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x44));
@@ -4642,7 +4641,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S5][0];
                     c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[A1][0]);
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[RA][0] = sx(0x0022f908);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x3d4), 0u64);
                     call_ptr(c, 0x00144bc0, 0x0022f908)?;
@@ -4670,7 +4669,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0022f950);
                     c.g[A0][0] = c.g[S5][0];
                     call_ptr(c, 0x00144bc0, 0x0022f950)?;
-                    c.g[S0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[A2][0] = 0u64;
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x78));
                     c.g[RA][0] = sx(0x0022f964);
@@ -4729,7 +4728,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
                     c.g[A1][0] = 0x4a0000;
                     c.g[A2][0] = c.g[S6][0];
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2aa0));
                     c.g[A0][0] = c.g[S3][0];
                     c.g[S0][0] = 0x4c0000;
@@ -4772,7 +4771,7 @@ fn game_module_load_world_resume(c: &mut Cpu) {
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     c.g[V0][0] = 0xff;
                     c.g[RA][0] = sx(0x0022fa48);
-                    c.sw((c.g[S7][0] as u32), c.g[S0][0]);
+                    c.sw(c.g[S7][0] as u32, c.g[S0][0]);
                     call_ptr(c, 0x002ec3e0, 0x0022fa48)?;
                     c.g[RA][0] = sx(0x0022fa50);
                     c.sw((c.g[S4][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
@@ -6823,7 +6822,7 @@ fn game_module_load_state_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A1][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S1][0] = c.g[A0][0];
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x70));
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
@@ -6831,7 +6830,7 @@ fn game_module_load_state_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00231500);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00231500)?;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x74));
                     c.g[A1][0] = c.g[S0][0];
@@ -6840,43 +6839,43 @@ fn game_module_load_state_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0023151c);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0023151c)?;
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x214));
                     c.g[A2][0] = 0x4;
                     c.g[A0][0] = c.lh((c.g[A3][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00231538);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00231538)?;
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x218));
                     c.g[A2][0] = 0x4;
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00231554);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00231554)?;
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x210));
                     c.g[A2][0] = 0x4;
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00231570);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00231570)?;
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = 0x4;
                     c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x21c));
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0023158c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0023158c)?;
                     c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xb0));
                     c.g[RA][0] = sx(0x00231598);
@@ -7013,8 +7012,8 @@ fn game_module_load_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x47d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7247,8 +7246,8 @@ fn game_module_load_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4780));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7462,7 +7461,7 @@ fn game_module_load_state_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

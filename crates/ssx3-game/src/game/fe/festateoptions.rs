@@ -53,7 +53,6 @@ pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_3;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -3305,7 +3304,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00188ff8);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00188ff8)?;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x1;
@@ -3313,7 +3312,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00189010);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00189010)?;
                     c.g[A0][0] = 0x4a0000;
                     c.g[RA][0] = sx(0x0018901c);
@@ -3357,10 +3356,10 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xfd8));
                     c.g[S2][0] = 0x440000;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S3][0] = 0x440000;
                     c.g[RA][0] = sx(0x00189060);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x00317670, 0x00189060)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x0018906c);
@@ -3434,7 +3433,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 0x001890fc => {
                     c.cycles += 19;
                     c.ldl(5, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(5, (c.g[V1][0] as u32));
+                    c.ldr(5, c.g[V1][0] as u32);
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -3442,7 +3441,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(5, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(5, (c.g[A0][0] as u32));
+                    c.sdr(5, c.g[A0][0] as u32);
                     c.sdl(6, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -3481,11 +3480,11 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 }
                 0x00189154 => {
                     c.cycles += 11;
-                    c.g[A1][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A1][0] = c.ld(c.g[V1][0] as u32);
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[A1][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[A1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[T0][0]);
@@ -3505,9 +3504,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 0x00189180 => {
                     c.cycles += 12;
                     c.ldl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[V1][0] as u32));
+                    c.ldr(2, c.g[V1][0] as u32);
                     c.sdl(2, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[A0][0] as u32));
+                    c.sdr(2, c.g[A0][0] as u32);
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A2][0] = c.g[SP][0];
@@ -3516,7 +3515,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[A1][0] & 0x7;
                     call_ptr(c, 0x0039a768, 0x001891a8)?;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A1][0] = c.lbu((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lbu(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001891b8;
                         continue;
@@ -3537,9 +3536,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x48));
                     c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(0xfb8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x001891d0);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001891d0)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x001891dc);
@@ -3572,9 +3571,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x48));
                     c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0xff8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x00189214);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x00189214)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x00189220);
@@ -3619,10 +3618,10 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xfd8));
                     c.g[S2][0] = 0x440000;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S3][0] = 0x440000;
                     c.g[RA][0] = sx(0x00189268);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x00317670, 0x00189268)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x00189274);
@@ -3678,7 +3677,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 0x001892cc => {
                     c.cycles += 19;
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[V1][0] as u32));
+                    c.ldr(8, c.g[V1][0] as u32);
                     c.ldl(5, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(5, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -3686,7 +3685,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(7, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[A0][0] as u32));
+                    c.sdr(8, c.g[A0][0] as u32);
                     c.sdl(5, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(5, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(6, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -3725,11 +3724,11 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 }
                 0x00189324 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[V1][0] as u32);
                     c.g[A1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -3749,9 +3748,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 0x00189350 => {
                     c.cycles += 9;
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[V1][0] as u32));
+                    c.ldr(8, c.g[V1][0] as u32);
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[A0][0] as u32));
+                    c.sdr(8, c.g[A0][0] as u32);
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32) >> 19);
@@ -3766,9 +3765,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x49));
                     c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(0xfb8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x0018938c);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x0018938c)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x00189398);
@@ -3801,9 +3800,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x49));
                     c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0xff8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x001893d0);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001893d0)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x001893dc);
@@ -3848,10 +3847,10 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xfd8));
                     c.g[S2][0] = 0x440000;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S3][0] = 0x440000;
                     c.g[RA][0] = sx(0x00189424);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x00317670, 0x00189424)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x00189430);
@@ -3916,7 +3915,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 0x001894a4 => {
                     c.cycles += 19;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(5, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -3924,7 +3923,7 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(6, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(5, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -3963,11 +3962,11 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 }
                 0x001894fc => {
                     c.cycles += 11;
-                    c.g[A3][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A3][0] = c.ld(c.g[V1][0] as u32);
                     c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[A3][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[A1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[A2][0]);
@@ -3987,9 +3986,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                 0x00189528 => {
                     c.cycles += 9;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32) >> 20);
@@ -4004,9 +4003,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x4a));
                     c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(0xfb8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x00189564);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x00189564)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x00189570);
@@ -4039,9 +4038,9 @@ fn oc833_fe_state_options_game_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lb((c.g[S1][0] as u32).wrapping_add(0x4a));
                     c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0xff8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x001895a8);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001895a8)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x001895b4);

@@ -4073,7 +4073,7 @@ fn ssx_app_parse_command_line_resume(c: &mut Cpu) {
                 }
                 0x00227c40 => {
                     c.cycles += 21;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x00227c4c);
                     c.g[A0][0] = c.g[SP][0];
                     call_ptr(c, 0x003182d8, 0x00227c4c)?;
@@ -4101,7 +4101,7 @@ fn ssx_app_parse_command_line_resume(c: &mut Cpu) {
                         c.g[V1][0] = c.g[S1][0];
                     }
                     let t = (c.g[V1][0] as i64) < 0;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00227cc4;
                         continue;
@@ -4114,7 +4114,7 @@ fn ssx_app_parse_command_line_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[SP][0];
                     c.g[A0][0] = c.g[S5][0];
                     c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x8));
-                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x00227cac);
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
                     call_ptr(c, 0x00319028, 0x00227cac)?;
@@ -4211,7 +4211,7 @@ fn ssx_app_parse_command_line_resume(c: &mut Cpu) {
                 }
                 0x00227d44 => {
                     c.cycles += 5;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x00227d50);
                     c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0xc4));
                     call_ptr(c, 0x003184e8, 0x00227d50)?;
@@ -4254,7 +4254,7 @@ fn ssx_app_parse_command_line_resume(c: &mut Cpu) {
                 }
                 0x00227d7c => {
                     c.cycles += 5;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x00227d88);
                     c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(0xc8));
                     call_ptr(c, 0x003184e8, 0x00227d88)?;
@@ -4359,8 +4359,8 @@ fn ssx_app_parse_command_line_resume(c: &mut Cpu) {
                 }
                 0x00227dec => {
                     c.cycles += 4;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
-                    c.g[V0][0] = c.lb((c.g[A0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                    c.g[V0][0] = c.lb(c.g[A0][0] as u32);
 
                     if c.g[V0][0] != c.g[V1][0] {
                         c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4));

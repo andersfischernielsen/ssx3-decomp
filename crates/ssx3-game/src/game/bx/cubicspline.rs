@@ -7358,10 +7358,10 @@ fn dlheap_mallopt_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S0][0] = c.g[A1][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S1][0] = c.g[A2][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S2][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[S2][0] = c.lw(c.g[A0][0] as u32);
                     c.g[RA][0] = sx(0x0031fe58);
                     c.g[A1][0] = c.g[S2][0];
                     Callee {
@@ -7384,8 +7384,8 @@ fn dlheap_mallopt_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x24b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7405,7 +7405,7 @@ fn dlheap_mallopt_resume(c: &mut Cpu) {
                 }
                 0x0031fe8c => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     let t = c.g[S1][0] == 0u64;
                     c.g[A2][0] = c.g[V0][0] & 0x3;
                     if t {
@@ -7450,7 +7450,7 @@ fn dlheap_mallopt_resume(c: &mut Cpu) {
                 }
                 0x0031fec0 => {
                     c.cycles += 3;
-                    c.sw((c.g[S2][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[V0][0]);
                     let t = true;
                     c.g[V0][0] = 0x1;
                     if t {
@@ -7530,7 +7530,7 @@ fn dlheap_mallopt_resume(c: &mut Cpu) {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -8155,9 +8155,9 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
-                    c.g[S1][0] = c.lw((c.g[S2][0] as u32));
-                    c.sw((c.g[SP][0] as u32), c.g[A3][0]);
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S2][0] as u32);
+                    c.sw(c.g[SP][0] as u32, c.g[A3][0]);
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[FP][0] = c.g[A2][0];
                     if t {
@@ -8287,7 +8287,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 }
                 0x0031f90c => {
                     c.cycles += 4;
-                    c.g[V1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[V0][0] = c.g[V1][0] & 0x1;
                     let t = c.g[V0][0] == 0u64;
                     c.g[S4][0] = 0u64;
@@ -8300,7 +8300,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 }
                 0x0031f91c => {
                     c.cycles += 5;
-                    c.g[V0][0] = c.lw((c.g[FP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[FP][0] as u32);
                     c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13));
                     c.g[V1][0] = (c.g[A0][0] < 0x10u64) as u64;
                     let t = c.g[V1][0] != 0u64;
@@ -8355,7 +8355,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 }
                 0x0031f968 => {
                     c.cycles += 5;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13));
                     c.g[V1][0] = (c.g[V0][0] < 0x10u64) as u64;
 
@@ -8370,7 +8370,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 0x0031f97c => {
                     c.cycles += 2;
                     c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     pc = 0x0031f984;
                     continue;
                 }
@@ -8391,7 +8391,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 }
                 0x0031f990 => {
                     c.cycles += 9;
-                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S7][0] as u32)));
+                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S7][0] as u32));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x354), 0u64);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf));
                     c.g[RA][0] = sx(0x0031f9a4);
@@ -8416,7 +8416,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_sub(0x4));
                     c.g[V1][0] = 0xffffffffffff0000;
-                    c.g[A2][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[SP][0] as u32);
                     c.g[V1][0] = c.g[V1][0] | 0xfffc;
                     c.g[S2][0] = c.g[V0][0] & c.g[V1][0];
                     c.g[A0][0] = c.g[A2][0] & 0x2;
@@ -8433,7 +8433,7 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A2][0] = sx((c.g[S7][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.g[A1][0];
-                    c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_sub((c.g[A2][0] as u32)));
+                    c.g[A2][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[A2][0] as u32));
                     c.g[RA][0] = sx(0x0031f9e8);
                     c.g[A1][0] = 0u64;
                     call_ptr(c, 0x003e6448, 0x0031f9e8)?;
@@ -8453,8 +8453,8 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 }
                 0x0031f9f0 => {
                     c.cycles += 6;
-                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub((c.g[S0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[S0][0] as u32));
+                    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V0][0] = c.g[V0][0] | 0x1;
                     c.g[S2][0] = c.g[S0][0];
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
@@ -8483,9 +8483,9 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[A0][0] = sx((c.g[A2][0] as u32) << 2);
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S5][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S5][0] as u32));
                     let t = c.g[A2][0] == c.g[A1][0];
-                    c.sw((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x0031fa68;
                         continue;
@@ -8506,8 +8506,8 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 }
                 0x0031fa30 => {
                     c.cycles += 6;
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[FP][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[FP][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x13));
                     c.g[V0][0] = (c.g[V1][0] < 0x10u64) as u64;
 
@@ -8530,10 +8530,10 @@ fn dlheap_ialloc_resume(c: &mut Cpu) {
                 0x0031fa54 => {
                     c.cycles += 5;
                     c.g[V0][0] = c.g[V1][0] | 0x1;
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[V1][0] as u32));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     let t = true;
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x0031fa10) {
                             return Ok(());

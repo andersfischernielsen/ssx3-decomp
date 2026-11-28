@@ -10158,14 +10158,14 @@ fn input_preproc_directive_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0xc));
                     c.g[A1][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x003267d4);
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     Callee {
                         addr: 0x00326478,
                         f: ee::s10::InputPreproc_NextChar,
                     }
                     .call(c, 0x003267d4)?;
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub((c.g[SP][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[SP][0] as u32));
                     c.g[V0][0] = ((c.g[V0][0] as i64) < 15i64) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -10182,7 +10182,7 @@ fn input_preproc_directive_resume(c: &mut Cpu) {
                 0x003267e8 => {
                     c.cycles += 7;
                     c.g[A1][0] = 0x4a0000;
-                    c.sb((c.g[S0][0] as u32), 0u64);
+                    c.sb(c.g[S0][0] as u32, 0u64);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3fa8));
                     c.g[RA][0] = sx(0x003267fc);
                     c.g[A0][0] = c.g[SP][0];
@@ -10366,10 +10366,10 @@ fn input_preproc_directive_resume(c: &mut Cpu) {
                 }
                 0x003268ac => {
                     c.cycles += 9;
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     c.g[A0][0] = c.g[S1][0];
                     c.g[A1][0] = c.g[S2][0];
-                    c.sb((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x003268c4);
                     c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
                     Callee {
@@ -10394,10 +10394,10 @@ fn input_preproc_directive_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.g[S1][0];
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     c.g[A1][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x003268e8);
-                    c.sb((c.g[V0][0] as u32), 0u64);
+                    c.sb(c.g[V0][0] as u32, 0u64);
                     Callee {
                         addr: 0x00326478,
                         f: ee::s10::InputPreproc_NextChar,

@@ -2614,11 +2614,11 @@ fn rider_anim_update_seq_type0b_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[A0][0];
                     c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.g[S2][0] = c.g[A1][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.mov_s(22, 12);
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x48));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x129));
                     c.g[V0][0] = (c.g[V1][0] < 0x8u64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -2635,8 +2635,8 @@ fn rider_anim_update_seq_type0b_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x450000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x69c0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2731,7 +2731,7 @@ fn rider_anim_update_seq_type0b_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A1][0] = 0x1;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x001044b0);
                     c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1030));
                     call_ptr(c, 0x00313c50, 0x001044b0)?;
@@ -2846,7 +2846,7 @@ fn rider_anim_update_seq_type0b_resume(c: &mut Cpu) {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0x48));
                     c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x40));

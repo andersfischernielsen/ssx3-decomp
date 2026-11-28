@@ -61,7 +61,6 @@ use crate::ps2f::FpuF32;
 use crate::tick;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -2605,7 +2604,7 @@ fn visual_effects_man_ctor_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2a90));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7da0));
-                    c.sw((c.g[A0][0] as u32), 0u64);
+                    c.sw(c.g[A0][0] as u32, 0u64);
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x44), c.g[V0][0]);
                     c.g[T2][0] = 0x37;
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x4), 0u64);
@@ -2778,7 +2777,7 @@ fn world_painter_load_view_state_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5c90));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S1][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5a0));
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
                     pc = 0x002ef300;
@@ -2787,24 +2786,24 @@ fn world_painter_load_view_state_resume(c: &mut Cpu) {
                 0x002ef300 => {
                     c.cycles += 19;
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[A2][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x208));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002ef31c);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002ef31c)?;
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
                     c.g[A1][0] = c.g[S1][0];
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xf0));
-                    c.g[A2][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x208));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002ef340);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002ef340)?;
                     c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
 
@@ -2829,7 +2828,7 @@ fn world_painter_load_view_state_resume(c: &mut Cpu) {
                 }
                 0x002ef358 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -2984,7 +2983,7 @@ fn oc1074_world_painter_load_view_state_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5c90));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S1][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5a0));
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
                     pc = 0x002ef300;
@@ -2993,24 +2992,24 @@ fn oc1074_world_painter_load_view_state_resume(c: &mut Cpu) {
                 0x002ef300 => {
                     c.cycles += 19;
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[A2][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x208));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002ef31c);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002ef31c)?;
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
                     c.g[A1][0] = c.g[S1][0];
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0xf0));
-                    c.g[A2][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x208));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002ef340);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002ef340)?;
                     c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
 
@@ -3035,7 +3034,7 @@ fn oc1074_world_painter_load_view_state_resume(c: &mut Cpu) {
                 }
                 0x002ef358 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;

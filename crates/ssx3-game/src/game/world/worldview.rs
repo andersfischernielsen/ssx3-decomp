@@ -5086,11 +5086,11 @@ fn world_cache_streamer_request_section_resume(c: &mut Cpu) {
                 0x003a98e8 => {
                     c.cycles += 9;
                     c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x14));
-                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[A1][0] = c.g[V1][0];
                     c.swc1(12, (c.g[V0][0] as u32).wrapping_add(0x18));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = (c.g[V1][0] < 0x7u64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A3][0] = c.g[A0][0];
@@ -5106,8 +5106,8 @@ fn world_cache_streamer_request_section_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4f10));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5115,19 +5115,19 @@ fn world_cache_streamer_request_section_resume(c: &mut Cpu) {
                 }
                 0x003a9928 => {
                     c.cycles += 4;
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.g[V0][0] = 0x1;
                     let t = c.g[RA][0] as u32;
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     c.pc = t;
                     return Ok(());
                 }
                 0x003a9938 => {
                     c.cycles += 4;
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.g[V0][0] = 0x5;
                     let t = true;
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x003a9950;
                         continue;

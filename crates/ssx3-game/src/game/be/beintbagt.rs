@@ -1347,7 +1347,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[A1][0];
                     c.g[S1][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[A0][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x00150584);
                     c.g[A1][0] = 0u64;
@@ -1366,8 +1366,8 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5910));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1383,7 +1383,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x36), c.g[A0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A1][0]);
-                    c.sb((c.g[S0][0] as u32), c.g[A0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[A0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[A1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), 0u64);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x7), c.g[V1][0]);
@@ -1423,7 +1423,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x36), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A0][0]);
-                    c.sb((c.g[S0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[A0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x7), c.g[A0][0]);
@@ -1447,7 +1447,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x36), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A0][0]);
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), 0u64);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x7), c.g[A1][0]);
@@ -1474,7 +1474,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x36), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A1][0]);
                     let t = true;
-                    c.sb((c.g[S0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x001507cc;
                         continue;
@@ -1492,7 +1492,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[A1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x36), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A0][0]);
-                    c.sb((c.g[S0][0] as u32), 0u64);
+                    c.sb(c.g[S0][0] as u32, 0u64);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), 0u64);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x7), c.g[A1][0]);
@@ -1528,7 +1528,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[V1][0]);
-                    c.sb((c.g[S0][0] as u32), 0u64);
+                    c.sb(c.g[S0][0] as u32, 0u64);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), 0u64);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x7), c.g[V0][0]);
@@ -1554,7 +1554,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x13), c.g[A1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[A0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[V1][0]);
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[A1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), c.g[V0][0]);
                     let t = true;
@@ -1576,7 +1576,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x13), c.g[A1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A0][0]);
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x1), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x6), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x7), c.g[A1][0]);
@@ -1607,7 +1607,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x19), c.g[V0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x36), c.g[V1][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x37), c.g[A1][0]);
-                    c.sb((c.g[S0][0] as u32), 0u64);
+                    c.sb(c.g[S0][0] as u32, 0u64);
                     pc = 0x001507cc;
                     continue;
                 }
@@ -1642,9 +1642,9 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.mult(0, 2, 10, 24);
                     c.g[A3][0] = 0u64;
                     c.g[T4][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.mult(0, 2, 10, 13);
-                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V0][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0xc));
                     c.sh((c.g[V1][0] as u32).wrapping_add(0x4), 0u64);
                     let t = c.g[V0][0] == 0u64;
@@ -1661,8 +1661,8 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.mult(0, 2, 10, 15);
                     c.mult(0, 3, 10, 14);
                     c.g[T3][0] = 0x1;
-                    c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T9][0] as u32)));
+                    c.g[T0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T9][0] as u32));
                     c.g[A2][0] = c.lhu((c.g[T0][0] as u32).wrapping_add(0x2));
                     c.g[T1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0xc));
                     c.g[V1][0] = c.lhu((c.g[T0][0] as u32).wrapping_add(0x4));
@@ -1701,7 +1701,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.mult(0, 2, 10, 13);
                     c.g[T2][0] = c.g[T4][0];
                     c.g[A2][0] = ((c.g[T2][0] as i64) < 15i64) as u64;
-                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V0][0] = c.lbu((c.g[A1][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x2));
                     c.g[A0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x4));
@@ -1728,7 +1728,7 @@ fn bebagt_int_init_default_tricks_resume(c: &mut Cpu) {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;

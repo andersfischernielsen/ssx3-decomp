@@ -20525,12 +20525,12 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x5208), c.g[A1][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1c80));
                     c.g[A1][0] = 0x20000000;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[S0][0] = c.g[V1][0] | c.g[A1][0];
                     c.lwl(2, (c.g[S0][0] as u32).wrapping_add(0x3));
-                    c.lwr(2, (c.g[S0][0] as u32));
+                    c.lwr(2, c.g[S0][0] as u32);
                     c.swl(2, (c.g[SP][0] as u32).wrapping_add(0x3));
-                    c.swr(2, (c.g[SP][0] as u32));
+                    c.swr(2, c.g[SP][0] as u32);
                     c.lwl(6, (c.g[S0][0] as u32).wrapping_add(0x7));
                     c.lwr(6, (c.g[S0][0] as u32).wrapping_add(0x4));
                     c.swl(6, (c.g[SP][0] as u32).wrapping_add(0x7));
@@ -20543,7 +20543,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                     c.lwr(7, (c.g[S0][0] as u32).wrapping_add(0xc));
                     c.swl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.swr(7, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
                     if t {
@@ -20584,8 +20584,8 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5320));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -20620,22 +20620,22 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x00427678 => {
                     c.cycles += 2;
                     c.g[T1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x24));
-                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     pc = 0x00427680;
                     continue;
                 }
                 0x00427680 => {
                     c.cycles += 10;
-                    c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.g[V1][0] = c.lbu((c.g[V0][0] as u32));
-                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
-                    c.sb((c.g[A1][0] as u32), c.g[V1][0]);
-                    c.sb((c.g[A0][0] as u32), c.g[V1][0]);
-                    c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                    c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+                    c.sb(c.g[A0][0] as u32, c.g[V1][0]);
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                     c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
                     let t = c.g[V0][0] != 0u64;
-                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x00427680) {
                             return Ok(());
@@ -20674,22 +20674,22 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x004276c4 => {
                     c.cycles += 3;
                     c.g[T1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x50));
-                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     pc = 0x004276d0;
                     continue;
                 }
                 0x004276d0 => {
                     c.cycles += 10;
-                    c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.g[V1][0] = c.lbu((c.g[V0][0] as u32));
-                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[A1][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
-                    c.sb((c.g[A1][0] as u32), c.g[V1][0]);
-                    c.sb((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[A1][0] as u32, c.g[V1][0]);
+                    c.sb(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
                     let t = c.g[V0][0] != 0u64;
-                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x004276d0) {
                             return Ok(());
@@ -20703,7 +20703,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x004276f8 => {
                     c.cycles += 2;
                     let t = true;
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         pc = 0x004278b4;
                         continue;
@@ -20733,7 +20733,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x00427728 => {
                     c.cycles += 21;
                     c.ldl(8, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[A0][0] as u32));
+                    c.ldr(8, c.g[A0][0] as u32);
                     c.ldl(3, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.ldl(5, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -20741,7 +20741,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                     c.ldl(7, (c.g[A0][0] as u32).wrapping_add(0x1f));
                     c.ldr(7, (c.g[A0][0] as u32).wrapping_add(0x18));
                     c.sdl(8, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[A2][0] as u32));
+                    c.sdr(8, c.g[A2][0] as u32);
                     c.sdl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(5, (c.g[A2][0] as u32).wrapping_add(0x17));
@@ -20775,11 +20775,11 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 }
                 0x00427784 => {
                     c.cycles += 13;
-                    c.g[T0][0] = c.ld((c.g[A0][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A0][0] as u32);
                     c.g[V1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A2][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[A1][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -20800,10 +20800,10 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x004277b8 => {
                     c.cycles += 5;
                     c.lwl(8, (c.g[A0][0] as u32).wrapping_add(0x3));
-                    c.lwr(8, (c.g[A0][0] as u32));
+                    c.lwr(8, c.g[A0][0] as u32);
                     c.swl(8, (c.g[A2][0] as u32).wrapping_add(0x3));
                     let t = true;
-                    c.swr(8, (c.g[A2][0] as u32));
+                    c.swr(8, c.g[A2][0] as u32);
                     if t {
                         pc = 0x004278b0;
                         continue;
@@ -20827,7 +20827,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                     c.ldl(6, (c.g[S0][0] as u32).wrapping_add(0x37));
                     c.ldr(6, (c.g[S0][0] as u32).wrapping_add(0x30));
                     c.sdl(3, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[V0][0] as u32));
+                    c.sdr(3, c.g[V0][0] as u32);
                     c.sdl(4, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(4, (c.g[V0][0] as u32).wrapping_add(0x8));
                     c.sdl(5, (c.g[V0][0] as u32).wrapping_add(0x17));
@@ -20851,7 +20851,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                     c.sdl(6, (c.g[V0][0] as u32).wrapping_add(0x3f));
                     c.sdr(6, (c.g[V0][0] as u32).wrapping_add(0x38));
                     let t = true;
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         pc = 0x004278b4;
                         continue;
@@ -20903,7 +20903,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 }
                 0x004278b0 => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     pc = 0x004278b4;
                     continue;
                 }
@@ -20920,10 +20920,10 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 }
                 0x004278bc => {
                     c.cycles += 6;
-                    c.g[V0][0] = sx(0u32.wrapping_sub((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x5188));
                     c.g[A1][0] = c.g[V0][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     let t = c.g[V1][0] != c.g[A1][0];
                     c.g[A2][0] = 0u64;
                     if t {
@@ -20972,8 +20972,8 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x004278f8 => {
                     c.cycles += 5;
                     c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] != c.g[A1][0];
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
                     if t {
@@ -20989,7 +20989,7 @@ fn sce_fs_rcv_intr_handler_resume(c: &mut Cpu) {
                 0x0042790c => {
                     c.cycles += 4;
                     c.g[V0][0] = 0xffffffffffffffff;
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     let t = true;
                     c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
                     if t {
@@ -26201,8 +26201,8 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.g[FP][0] = c.g[A2][0];
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[A1][0]);
-                    c.g[A0][0] = c.ld((c.g[S2][0] as u32));
+                    c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+                    c.g[A0][0] = c.ld(c.g[S2][0] as u32);
                     pc = 0x003721e8;
                     continue;
                 }
@@ -26229,8 +26229,8 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x26d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -26244,11 +26244,11 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S2][0];
                     c.g[A2][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x00372244);
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     call_ptr(c, 0x003e6574, 0x00372244)?;
-                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     let t = true;
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     if t {
                         pc = 0x003722f0;
                         continue;
@@ -26258,7 +26258,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x00372250 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     let t = c.g[A2][0] != c.g[V0][0];
 
                     if t {
@@ -26270,7 +26270,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x0037225c => {
                     c.cycles += 5;
-                    c.sd((c.g[S1][0] as u32), 0u64);
+                    c.sd(c.g[S1][0] as u32, 0u64);
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     let t = true;
@@ -26295,7 +26295,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x00372278 => {
                     c.cycles += 5;
-                    c.sd((c.g[S1][0] as u32), 0u64);
+                    c.sd(c.g[S1][0] as u32, 0u64);
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     let t = true;
@@ -26326,7 +26326,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] << 16;
                     c.g[V0][0] = c.g[V0][0] | 0x1;
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
-                    c.sd((c.g[S1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[S1][0] as u32, c.g[V0][0]);
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     pc = 0x003722b8;
@@ -26334,7 +26334,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x003722b8 => {
                     c.cycles += 3;
-                    c.sd((c.g[S1][0] as u32), 0u64);
+                    c.sd(c.g[S1][0] as u32, 0u64);
                     let t = true;
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     if t {
@@ -26355,8 +26355,8 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[S3][0] as u32) << 4);
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S6][0] = 0x1;
                     pc = 0x003722f0;
                     continue;
@@ -26365,7 +26365,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[S6][0] == 0u64 {
-                        c.g[A0][0] = c.ld((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.ld(c.g[S2][0] as u32);
                         if back_edge_unwinds(c, 0x003721e8) {
                             return Ok(());
                         }
@@ -26377,7 +26377,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x003722f8 => {
                     c.cycles += 19;
-                    c.g[A0][0] = c.ld((c.g[S5][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[S5][0] as u32);
                     c.g[V0][0] = 0xffff;
                     c.g[V0][0] = c.g[V0][0] << 16;
                     c.g[V1][0] = c.g[S4][0] & 0xffff;
@@ -26386,7 +26386,7 @@ fn dma_chain_patch_ref_tags_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.sd((c.g[S5][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[S5][0] as u32, c.g[V0][0]);
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x50));
@@ -26631,9 +26631,9 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.g[FP][0] = c.g[A3][0];
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[A1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[A1][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A2][0]);
-                    c.g[V0][0] = c.ld((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.ld(c.g[S2][0] as u32);
                     pc = 0x003723a0;
                     continue;
                 }
@@ -26660,8 +26660,8 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x26f0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -26675,11 +26675,11 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S2][0];
                     c.g[A2][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x003723fc);
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     call_ptr(c, 0x003e6574, 0x003723fc)?;
-                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     let t = true;
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     if t {
                         pc = 0x003724c4;
                         continue;
@@ -26689,7 +26689,7 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x00372408 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     let t = c.g[A1][0] == c.g[V0][0];
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
                     if t {
@@ -26712,11 +26712,11 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                 }
                 0x0037241c => {
                     c.cycles += 7;
-                    c.sd((c.g[S1][0] as u32), 0u64);
+                    c.sd(c.g[S1][0] as u32, 0u64);
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[S1][0] as u32), 0u64);
+                    c.sd(c.g[S1][0] as u32, 0u64);
                     let t = true;
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     if t {
@@ -26741,16 +26741,16 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.sd((c.g[S5][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V0][0] = c.g[S4][0] | c.g[V0][0];
-                    c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                    c.sd((c.g[S5][0] as u32), c.g[V0][0]);
+                    c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.sd(c.g[S5][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.g[V1][0] << 32;
                     c.g[S4][0] = 0u64;
-                    c.g[V0][0] = c.lwu((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lwu(c.g[S2][0] as u32);
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
-                    c.sd((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[S1][0] as u32, c.g[V1][0]);
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[S1][0] as u32), 0u64);
+                    c.sd(c.g[S1][0] as u32, 0u64);
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[S5][0] = c.g[S1][0];
                     let t = true;
@@ -26777,7 +26777,7 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     c.sd((c.g[S5][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V0][0] = c.g[S4][0] | c.g[V0][0];
-                    c.sd((c.g[S5][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[S5][0] as u32, c.g[V0][0]);
                     c.g[S4][0] = 0u64;
                     pc = 0x00372498;
                     continue;
@@ -26793,8 +26793,8 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[S3][0] as u32) << 4);
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x10));
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S7][0] = 0x1;
                     pc = 0x003724c4;
                     continue;
@@ -26803,7 +26803,7 @@ fn dma_chain_split_at_ref_tags_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[S7][0] == 0u64 {
-                        c.g[V0][0] = c.ld((c.g[S2][0] as u32));
+                        c.g[V0][0] = c.ld(c.g[S2][0] as u32);
                         if back_edge_unwinds(c, 0x003723a0) {
                             return Ok(());
                         }
@@ -27093,7 +27093,7 @@ fn sce_pad_init_resume(c: &mut Cpu) {
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
                     c.g[S2][0] = c.g[A0][0];
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
-                    c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x15c8), c.g[V0][0]);
                     let t = true;
                     c.g[S1][0] = 0x520000;
@@ -27303,7 +27303,7 @@ fn sce_pad_init_resume(c: &mut Cpu) {
                     c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -27803,7 +27803,7 @@ fn sce_mc_init_resume(c: &mut Cpu) {
                     c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x7880));
                     c.g[T1][0] = c.g[S1][0];
                     c.g[A3][0] = sx((c.g[S6][0] as u32).wrapping_add(0x7240));
-                    c.sw((c.g[SP][0] as u32), 0u64);
+                    c.sw(c.g[SP][0] as u32, 0u64);
                     c.g[A0][0] = c.g[S3][0];
                     c.g[A1][0] = 0xfe;
                     c.g[A2][0] = 0u64;

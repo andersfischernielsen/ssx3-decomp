@@ -56,7 +56,6 @@ use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -6493,7 +6492,7 @@ fn c_fe_popup_confirm_on_widget_notify_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[A1][0];
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001ca274;
                         continue;
@@ -6506,8 +6505,8 @@ fn c_fe_popup_confirm_on_widget_notify_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6130));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -6566,7 +6565,7 @@ fn c_fe_popup_confirm_on_widget_notify_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ca214);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ca214)?;
                     let t = true;
                     c.g[V0][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(0x96));
@@ -6584,7 +6583,7 @@ fn c_fe_popup_confirm_on_widget_notify_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ca230);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ca230)?;
                     c.g[V0][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(0x96));
                     pc = 0x001ca234;
@@ -6670,7 +6669,7 @@ fn c_fe_popup_confirm_on_widget_notify_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -7062,7 +7061,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = (c.g[V1][0] < 0x9u64) as u64;
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     let t = c.g[V0][0] == 0u64;
                     c.g[S1][0] = c.g[A1][0];
                     if t {
@@ -7077,8 +7076,8 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6150));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7107,7 +7106,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x001ca2f8 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
 
                     if c.g[S1][0] != c.g[V0][0] {
                         c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
@@ -7119,7 +7118,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x001ca304 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
 
                     if c.g[V0][0] == 0u64 {
                         c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x20));
@@ -7156,7 +7155,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ca33c);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ca33c)?;
                     let t = true;
                     c.g[A2][0] = 0x1;
@@ -7296,7 +7295,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ca414);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ca414)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -7364,7 +7363,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x9c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ca474);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ca474)?;
                     pc = 0x001ca474;
                     continue;
@@ -7378,7 +7377,7 @@ fn c_fe_popup_confirm_on_widget_action_resume(c: &mut Cpu) {
                 0x001ca478 => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -7611,7 +7610,7 @@ fn c_fe_popup_confirm_on_child_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xf));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.g[A1][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = (c.g[V1][0] < 0x8u64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[S0][0] = c.g[A0][0];
@@ -7627,8 +7626,8 @@ fn c_fe_popup_confirm_on_child_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6180));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7763,7 +7762,7 @@ fn c_fe_popup_confirm_on_child_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ca68c);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ca68c)?;
                     pc = 0x001ca68c;
                     continue;
@@ -7776,7 +7775,7 @@ fn c_fe_popup_confirm_on_child_event_resume(c: &mut Cpu) {
                 }
                 0x001ca690 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -7972,7 +7971,7 @@ fn c_ui_state_buy_popup_set_reward_item_params_resume(c: &mut Cpu) {
                     c.g[A0][0] = 0x460000;
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S0][0] = c.g[A1][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S1][0] = c.g[A3][0];
                     c.g[S2][0] = c.g[T0][0];
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x61f8));
@@ -7987,7 +7986,7 @@ fn c_ui_state_buy_popup_set_reward_item_params_resume(c: &mut Cpu) {
                     c.sw((c.g[S3][0] as u32).wrapping_add(0x1c), c.g[V1][0]);
                     c.g[V0][0] = (c.g[S0][0] < 0x6u64) as u64;
                     c.sw((c.g[S3][0] as u32).wrapping_add(0x8), c.g[A0][0]);
-                    c.sw((c.g[S3][0] as u32), c.g[S1][0]);
+                    c.sw(c.g[S3][0] as u32, c.g[S1][0]);
                     let t = c.g[V0][0] == 0u64;
                     c.sw((c.g[S3][0] as u32).wrapping_add(0x4), c.g[S2][0]);
                     if t {
@@ -8002,8 +8001,8 @@ fn c_ui_state_buy_popup_set_reward_item_params_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x62a0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -8092,7 +8091,7 @@ fn c_ui_state_buy_popup_set_reward_item_params_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -9093,8 +9092,8 @@ fn c_keyboard_popup_press_key_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x63e0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -9150,9 +9149,9 @@ fn c_keyboard_popup_press_key_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x134));
                     c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x75));
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x74));
-                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[RA][0] = sx(0x001cc2d0);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, 0x004166f4, 0x001cc2d0)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x134));
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x138));
@@ -9245,8 +9244,8 @@ fn c_keyboard_popup_press_key_resume(c: &mut Cpu) {
                 0x001cc330 => {
                     c.cycles += 6;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x134));
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.sb((c.g[V0][0] as u32), 0u64);
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sb(c.g[V0][0] as u32, 0u64);
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x134));
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x13c), c.g[V1][0]);
@@ -9540,7 +9539,7 @@ fn c_keyboard_popup_press_key_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x9c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001cc4cc);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cc4cc)?;
                     let t = true;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x140));
@@ -9768,7 +9767,7 @@ fn c_keyboard_popup_press_key_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
@@ -10225,9 +10224,9 @@ fn c_keyboard_popup_get_key_widget_name_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x4a0000;
                     c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1368));
                     c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[A2][0] as u32));
+                    c.ldr(3, c.g[A2][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     let t = true;
                     c.g[V0][0] = (c.g[T0][0] < 0x54u64) as u64;
                     if t {
@@ -10242,11 +10241,11 @@ fn c_keyboard_popup_get_key_widget_name_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2ab0));
                     c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[A2][0] as u32));
+                    c.ldr(3, c.g[A2][0] as u32);
                     c.g[A0][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x9));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x9), c.g[A1][0]);
                     c.g[V0][0] = (c.g[T0][0] < 0x54u64) as u64;
@@ -10268,8 +10267,8 @@ fn c_keyboard_popup_get_key_widget_name_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[T0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x65b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -10493,10 +10492,10 @@ fn c_keyboard_popup_get_key_widget_name_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x440000;
                     c.g[A0][0] = 0x2a;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1390));
-                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     let t = c.g[V1][0] != c.g[A0][0];
-                    c.g[A1][0] = c.lbu((c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lbu(c.g[V0][0] as u32);
                     if t {
                         pc = 0x001cd2c8;
                         continue;
@@ -10980,7 +10979,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cd9f0);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cd9f0)?;
                     let t = true;
                     c.g[V0][0] = (c.g[S2][0] < 0x54u64) as u64;
@@ -10999,7 +10998,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cda10);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cda10)?;
                     c.g[V0][0] = (c.g[S2][0] < 0x54u64) as u64;
                     pc = 0x001cda14;
@@ -11020,8 +11019,8 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x67f0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -11073,7 +11072,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cda84);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cda84)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
@@ -11152,7 +11151,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001cdae0);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdae0)?;
                     let t = true;
                     c.g[A0][0] = 0x460000;
@@ -11170,7 +11169,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001cdafc);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdafc)?;
                     c.g[A0][0] = 0x460000;
                     pc = 0x001cdb00;
@@ -11219,7 +11218,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001cdb44);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdb44)?;
                     let t = true;
                     c.g[A1][0] = 0x4a0000;
@@ -11237,7 +11236,7 @@ fn c_keyboard_popup_set_special_key_label_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001cdb60);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdb60)?;
                     c.g[A1][0] = 0x4a0000;
                     pc = 0x001cdb64;
@@ -12437,7 +12436,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdbd4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdbd4)?;
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = 0x1;
@@ -12485,7 +12484,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
@@ -12503,7 +12502,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x9c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdc54);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdc54)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12540,7 +12539,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdc84);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdc84)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12577,7 +12576,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdcb4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdcb4)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12614,7 +12613,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x94));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdce4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdce4)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12651,7 +12650,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdd14);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdd14)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12688,7 +12687,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdd44);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdd44)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1680));
@@ -12875,7 +12874,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x34));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdebc);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdebc)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = 0x1;
@@ -12902,7 +12901,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x9c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001cdef8);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdef8)?;
                     let t = true;
                     c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x140));
@@ -12920,7 +12919,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xcc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdf14);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdf14)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12959,7 +12958,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xdc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdf4c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdf4c)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -12999,7 +12998,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdf88);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdf88)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[S5][0] = 0u64;
@@ -13017,7 +13016,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x154));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001cdfa4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001cdfa4)?;
                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x8));
                     c.g[V0][0] = (c.g[V1][0] < 0x72u64) as u64;
@@ -13034,8 +13033,8 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x69f0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -13339,7 +13338,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x154));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001ce10c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ce10c)?;
                     c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x6c));
                     c.g[A0][0] = c.g[S2][0];
@@ -13389,7 +13388,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x15c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001ce14c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ce14c)?;
                     c.g[V0][0] = ((c.g[V0][0] as i64) < 32i64) as u64;
                     let t = c.g[V0][0] != 0u64;
@@ -13408,7 +13407,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x15c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001ce16c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ce16c)?;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
                     c.g[A0][0] = c.g[S2][0];
@@ -13571,7 +13570,7 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x24), 0u64);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x28), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x2c), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
@@ -13611,12 +13610,12 @@ fn c_keyboard_popup_handle_input_resume(c: &mut Cpu) {
                 }
                 0x001ce26c => {
                     c.cycles += 5;
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ce280);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ce280)?;
                     pc = 0x001ce280;
                     continue;

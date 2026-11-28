@@ -3544,7 +3544,7 @@ fn be_new_player_int_set_event_type_flag_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[A3][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S1][0] = c.g[A2][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00146c38);
                     c.g[S2][0] = c.g[T0][0];
                     Callee {
@@ -3568,8 +3568,8 @@ fn be_new_player_int_set_event_type_flag_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5df0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -3691,8 +3691,8 @@ fn be_new_player_int_set_event_type_flag_resume(c: &mut Cpu) {
                 }
                 0x00146d64 => {
                     c.cycles += 6;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x278));
                     c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
                     c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
@@ -3705,7 +3705,7 @@ fn be_new_player_int_set_event_type_flag_resume(c: &mut Cpu) {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -4756,7 +4756,7 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A1][0];
                     c.g[S1][0] = c.g[A2][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00148178);
                     c.g[A0][0] = c.g[S0][0];
                     Callee {
@@ -4779,8 +4779,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5d70));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4794,8 +4794,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbdf));
                     if t {
@@ -4813,8 +4813,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbe0));
                     if t {
@@ -4832,8 +4832,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbe1));
                     if t {
@@ -4851,8 +4851,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbe2));
                     if t {
@@ -4870,8 +4870,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbe3));
                     if t {
@@ -4889,8 +4889,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbe4));
                     if t {
@@ -4908,8 +4908,8 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[V0][0] = 0x4a0000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0xbe5));
                     if t {
@@ -4929,7 +4929,7 @@ fn be_char_int_get_saved_attrib_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

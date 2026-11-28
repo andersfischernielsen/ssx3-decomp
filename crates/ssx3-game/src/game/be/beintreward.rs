@@ -7301,10 +7301,10 @@ fn beint_reward_on_event_result_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[A3][0];
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.g[S2][0] = c.g[A0][0];
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.g[S4][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[S4][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[S7][0] = c.g[T0][0];
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
                     c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -7325,7 +7325,7 @@ fn beint_reward_on_event_result_resume(c: &mut Cpu) {
                         f: ee::s01::BELibrary_GetInterface,
                     }
                     .call(c, 0x00159260)?;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[S4][0];
                     c.g[A1][0] = c.g[S7][0];
                     c.g[RA][0] = sx(0x00159274);
@@ -7437,7 +7437,7 @@ fn beint_reward_on_event_result_resume(c: &mut Cpu) {
                 0x001592e4 => {
                     c.cycles += 2;
                     let t = c.g[S1][0] != c.g[V0][0];
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001592f4;
                         continue;
@@ -7453,7 +7453,7 @@ fn beint_reward_on_event_result_resume(c: &mut Cpu) {
                 }
                 0x001592f0 => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     pc = 0x001592f4;
                     continue;
                 }
@@ -7483,8 +7483,8 @@ fn beint_reward_on_event_result_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5610));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7898,19 +7898,19 @@ fn beint_reward_on_event_result_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V1][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x18), c.g[V1][0]);
                     c.g[V1][0] = 0x460000;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x5528));
                     c.g[S3][0] = c.g[V0][0];
-                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     pc = 0x00159550;
                     continue;
                 }
                 0x00159550 => {
                     c.cycles += 7;
                     c.g[V0][0] = 0x460000;
-                    c.g[A3][0] = c.lb((c.g[S1][0] as u32));
+                    c.g[A3][0] = c.lb(c.g[S1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5528));
-                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     c.g[V0][0] = 0xffffffffffffffff;
                     let t = c.g[A3][0] != c.g[V0][0];
                     c.g[T0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x1));
@@ -9068,11 +9068,11 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.g[S2][0] = c.g[A3][0];
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.g[S1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00156cc0);
                     c.g[S0][0] = 0u64;
                     Callee {
@@ -9149,8 +9149,8 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x288));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lh((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lh(c.g[V0][0] as u32);
                     let t = (c.g[V0][0] as i64) >= 0;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     if t {
@@ -9227,8 +9227,8 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lh((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x288));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lh((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lh(c.g[V0][0] as u32);
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     if t {
@@ -9242,7 +9242,7 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x290));
                     let t = true;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     if t {
                         pc = 0x00156d90;
                         continue;
@@ -9369,8 +9369,8 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x288));
                     c.g[V0][0] = sx((c.g[A1][0] as u32) << 1);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lh((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lh(c.g[V0][0] as u32);
                     let t = (c.g[V0][0] as i64) >= 0;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     if t {
@@ -9447,8 +9447,8 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lh((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x288));
                     c.g[V0][0] = sx((c.g[A1][0] as u32) << 1);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lh((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lh(c.g[V0][0] as u32);
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     if t {
@@ -9462,7 +9462,7 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x290));
                     let t = true;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     if t {
                         pc = 0x00156e88;
                         continue;
@@ -9541,7 +9541,7 @@ fn be_reward_int_pick_random_bolt_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -9845,7 +9845,7 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[S4][0] = c.g[A2][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x001570b8);
                     c.g[A1][0] = c.g[S1][0];
                     Callee {
@@ -9880,7 +9880,7 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[RA][0] = sx(0x001570ec);
                     call_ptr(c, 0x003177f0, 0x001570ec)?;
-                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub((c.g[S0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(c.g[S0][0] as u32));
                     c.g[A0][0] = 0xf88;
                     c.divu(0, 2, 3);
                     c.g[A1][0] = 0x9b50;
@@ -9902,9 +9902,9 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.hi[0];
                     c.mult(0, 4, 20, 4);
                     c.mult(0, 5, 21, 5);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = c.g[V1][0] == 0u64;
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     if t {
                         pc = 0x00157170;
                         continue;
@@ -9917,8 +9917,8 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A3][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x56b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -9982,9 +9982,9 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                 }
                 0x00157178 => {
                     c.cycles += 8;
-                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[A0][0] = 0u64;
-                    c.g[V0][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[V1][0] as u32);
                     c.g[A3][0] = c.g[V1][0];
                     c.g[V0][0] = c.g[V0][0] ^ 0x1;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
@@ -10039,7 +10039,7 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                 }
                 0x001571b8 => {
                     c.cycles += 6;
-                    c.g[V0][0] = c.lb((c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[A3][0] as u32);
                     c.g[V0][0] =
                         sx(((c.g[V0][0] as u32) as i32 >> ((c.g[A0][0] as u32) & 31)) as u32);
                     c.g[V0][0] = c.g[V0][0] ^ 0x1;
@@ -10073,7 +10073,7 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                 0x001571d8 => {
                     c.cycles += 2;
                     c.g[V0][0] = sx((c.g[A1][0] as u32) << 3);
-                    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[S3][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     pc = 0x001571e0;
                     continue;
                 }
@@ -10105,7 +10105,7 @@ fn be_reward_int_pick_random_locked_reward_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -10309,7 +10309,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x3));
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[A3][0] = c.g[T0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[T2][0] = c.g[A0][0];
                     c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -10326,8 +10326,8 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5630));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -10343,7 +10343,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00157f64)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00157fc8;
                         continue;
@@ -10361,7 +10361,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00157f74)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00157fc8;
                         continue;
@@ -10379,7 +10379,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00157f84)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00157fc8;
                         continue;
@@ -10397,7 +10397,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00157f94)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00157fc8;
                         continue;
@@ -10415,7 +10415,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00157fa4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00157fc8;
                         continue;
@@ -10434,7 +10434,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00157fb8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00157fc8;
                         continue;
@@ -10445,7 +10445,7 @@ fn be_reward_int_unlock_reward_resume(c: &mut Cpu) {
                 0x00157fc0 => {
                     c.cycles += 2;
                     c.g[V0][0] = 0u64;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x00157fc8;
                     continue;
                 }

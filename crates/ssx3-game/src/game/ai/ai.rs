@@ -21921,7 +21921,7 @@ fn rider_wipeout_sub_play_end_anim_b_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
                     c.g[A1][0] = 0x2;
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S0][0] = c.g[A0][0];
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x80));
                     c.g[RA][0] = sx(0x0012dea0);
@@ -21944,8 +21944,8 @@ fn rider_wipeout_sub_play_end_anim_b_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7f20));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -22081,7 +22081,7 @@ fn rider_wipeout_sub_play_end_anim_b_resume(c: &mut Cpu) {
                 0x0012df38 => {
                     c.cycles += 4;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -27729,7 +27729,7 @@ fn rider_board_press_sub_handle_airborne_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00130014);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     Callee {
@@ -27782,7 +27782,7 @@ fn rider_board_press_sub_handle_airborne_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x784));
                     call_ptr(c, 0x00312aa0, 0x00130050)?;
                     c.g[A0][0] = c.g[V0][0];
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[V0][0] = 0x2;
                     let t = c.g[V1][0] != c.g[V0][0];
                     c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x25));
@@ -28025,7 +28025,7 @@ fn rider_board_press_sub_handle_airborne_resume(c: &mut Cpu) {
                 0x001301bc => {
                     c.cycles += 2;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x0013020c;
                         continue;
@@ -28096,7 +28096,7 @@ fn rider_board_press_sub_handle_airborne_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

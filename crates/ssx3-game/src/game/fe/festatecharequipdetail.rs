@@ -6263,25 +6263,25 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                     c.cycles += 20;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[V0][0] = 0x10000;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.g[V0][0] | 0x2000;
                     c.g[T0][0] = 0x120;
                     c.g[A3][0] = 0x3;
-                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
-                    c.g[A2][0] = c.lhu((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                    c.g[A2][0] = c.lhu(c.g[A1][0] as u32);
                     c.g[A0][0] = sx(((c.g[V1][0] as u32) as i32 >> 16) as u32);
                     c.mult(0, 4, 4, 2);
                     c.g[V1][0] = c.g[V1][0] & 0xffff;
                     c.mult(0, 3, 3, 8);
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1784));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.mult(0, 3, 6, 8);
-                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
 
                     if c.g[V1][0] != c.g[A3][0] {
-                        c.g[A2][0] = c.lw((c.g[A1][0] as u32));
+                        c.g[A2][0] = c.lw(c.g[A1][0] as u32);
                         pc = 0x0019deb0;
                         continue;
                     }
@@ -6299,7 +6299,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0xb;
 
                     if c.g[A2][0] != c.g[V0][0] {
-                        c.g[A2][0] = c.lw((c.g[A1][0] as u32));
+                        c.g[A2][0] = c.lw(c.g[A1][0] as u32);
                         pc = 0x0019deb0;
                         continue;
                     }
@@ -6311,7 +6311,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x11c));
 
                     if c.g[V0][0] != 0u64 {
-                        c.g[A2][0] = c.lw((c.g[A1][0] as u32));
+                        c.g[A2][0] = c.lw(c.g[A1][0] as u32);
                         pc = 0x0019deb0;
                         continue;
                     }
@@ -6320,7 +6320,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                 }
                 0x0019de84 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     let t = c.g[V0][0] != c.g[V1][0];
                     c.g[V0][0] = 0xffffffffffffffff;
                     if t {
@@ -6357,7 +6357,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                 0x0019dea8 => {
                     c.cycles += 2;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0019df14;
                         continue;
@@ -6404,7 +6404,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                 }
                 0x0019ded8 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     let t = c.g[V0][0] != c.g[A2][0];
                     c.g[V0][0] = 0x1;
                     if t {
@@ -6445,7 +6445,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
                     call_ptr(c, 0x0041aa88, 0x0019df08)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0019df14;
                         continue;
@@ -6455,7 +6455,7 @@ fn bolt_file_compare_texture_slots_resume(c: &mut Cpu) {
                 }
                 0x0019df10 => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x0019df14;
                     continue;
                 }
@@ -6665,7 +6665,7 @@ fn bolt_file_prioritize_models_resume(c: &mut Cpu) {
                 0x0019df60 => {
                     c.cycles += 7;
                     c.g[V0][0] = c.g[A1][0] | c.g[A0][0];
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     c.g[V0][0] = ((c.g[A0][0] as i64) < 256i64) as u64;
                     let t = c.g[V0][0] != 0u64;
@@ -6692,20 +6692,20 @@ fn bolt_file_prioritize_models_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00418ef8, 0x0019df98)?;
                     c.g[S3][0] = 0u64;
                     c.g[V0][0] = 0x10000;
-                    c.g[A2][0] = c.lhu((c.g[SP][0] as u32));
+                    c.g[A2][0] = c.lhu(c.g[SP][0] as u32);
                     c.g[V0][0] = c.g[V0][0] | 0x2000;
                     c.g[V1][0] = 0xb0000;
                     c.mult(0, 4, 21, 2);
                     c.mult(0, 5, 6, 30);
-                    c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[S7][0] = 0x8;
                     c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4008));
                     c.g[S0][0] = c.g[SP][0];
-                    c.g[S4][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S6][0] as u32)));
+                    c.g[S4][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S6][0] as u32));
                     c.g[A0][0] = sx((c.g[S5][0] as u32) << 2);
-                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     let t = true;
-                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     if t {
                         pc = 0x0019e028;
                         continue;
@@ -6717,7 +6717,7 @@ fn bolt_file_prioritize_models_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x11c), c.g[V0][0]);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[S1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4004));
 
                     if (c.g[V1][0] as i64) > 0 {
@@ -6730,7 +6730,7 @@ fn bolt_file_prioritize_models_resume(c: &mut Cpu) {
                 }
                 0x0019dff0 => {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V1][0] = 0x3;
 
                     if c.g[V0][0] != c.g[V1][0] {
@@ -6769,9 +6769,9 @@ fn bolt_file_prioritize_models_resume(c: &mut Cpu) {
                 }
                 0x0019e01c => {
                     c.cycles += 3;
-                    c.g[A2][0] = c.lhu((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lhu(c.g[S0][0] as u32);
                     c.mult(0, 2, 6, 30);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S4][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
                     pc = 0x0019e028;
                     continue;
                 }
@@ -6792,7 +6792,7 @@ fn bolt_file_prioritize_models_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x110));
 
                     if c.g[V0][0] == c.g[S7][0] {
-                        c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                         if back_edge_unwinds(c, 0x0019dfd8) {
                             return Ok(());
                         }
@@ -7020,7 +7020,7 @@ fn bolt_file_prioritize_textures_resume(c: &mut Cpu) {
                 0x0019e0b0 => {
                     c.cycles += 7;
                     c.g[V0][0] = c.g[A1][0] | c.g[A0][0];
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     c.g[V0][0] = ((c.g[A0][0] as i64) < 256i64) as u64;
                     let t = c.g[V0][0] != 0u64;
@@ -7047,20 +7047,20 @@ fn bolt_file_prioritize_textures_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00418ef8, 0x0019e0e8)?;
                     c.g[S3][0] = 0u64;
                     c.g[V0][0] = 0x10000;
-                    c.g[A2][0] = c.lhu((c.g[SP][0] as u32));
+                    c.g[A2][0] = c.lhu(c.g[SP][0] as u32);
                     c.g[V0][0] = c.g[V0][0] | 0x2000;
                     c.g[V1][0] = 0xb0000;
                     c.mult(0, 4, 21, 2);
                     c.mult(0, 5, 6, 30);
-                    c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[S2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[S7][0] = 0xb;
                     c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x4008));
                     c.g[S0][0] = c.g[SP][0];
-                    c.g[S4][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S6][0] as u32)));
+                    c.g[S4][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S6][0] as u32));
                     c.g[A0][0] = sx((c.g[S5][0] as u32) << 2);
-                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     let t = true;
-                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     if t {
                         pc = 0x0019e178;
                         continue;
@@ -7072,7 +7072,7 @@ fn bolt_file_prioritize_textures_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x11c), c.g[V0][0]);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[S1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4004));
 
                     if (c.g[V1][0] as i64) > 0 {
@@ -7085,7 +7085,7 @@ fn bolt_file_prioritize_textures_resume(c: &mut Cpu) {
                 }
                 0x0019e140 => {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V1][0] = 0x3;
 
                     if c.g[V0][0] != c.g[V1][0] {
@@ -7124,9 +7124,9 @@ fn bolt_file_prioritize_textures_resume(c: &mut Cpu) {
                 }
                 0x0019e16c => {
                     c.cycles += 3;
-                    c.g[A2][0] = c.lhu((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lhu(c.g[S0][0] as u32);
                     c.mult(0, 2, 6, 30);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S4][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
                     pc = 0x0019e178;
                     continue;
                 }
@@ -7147,7 +7147,7 @@ fn bolt_file_prioritize_textures_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x110));
 
                     if c.g[V0][0] == c.g[S7][0] {
-                        c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                         if back_edge_unwinds(c, 0x0019e128) {
                             return Ok(());
                         }
@@ -7501,7 +7501,7 @@ fn cfestate_char_equip_ctor_resume(c: &mut Cpu) {
                     c.g[S3][0] = c.g[A3][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[S4][0] = c.g[T0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00198dec);
                     c.g[S0][0] = sx(((c.g[S0][0] as u32) as i32 >> 24) as u32);
                     call_ptr(c, 0x0039e2a0, 0x00198dec)?;
@@ -7534,7 +7534,7 @@ fn cfestate_char_equip_ctor_resume(c: &mut Cpu) {
                     c.sb((c.g[S1][0] as u32).wrapping_add(0x44), c.g[S0][0]);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x00198e64);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     Callee {
                         addr: 0x001a1cd0,
                         f: ee::s03::FEModule_GetPlayerPadMask,
@@ -7624,11 +7624,11 @@ fn cfestate_char_equip_ctor_resume(c: &mut Cpu) {
                 }
                 0x00198f38 => {
                     c.cycles += 8;
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
-                    c.sw((c.g[V1][0] as u32), 0u64);
+                    c.sw(c.g[V1][0] as u32, 0u64);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
-                    c.sw((c.g[A0][0] as u32), c.g[A2][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[A2][0]);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
                     let t = (c.g[A1][0] as i64) >= 0;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
@@ -7774,8 +7774,8 @@ fn cfestate_char_equip_ctor_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7878,7 +7878,7 @@ fn cfestate_char_equip_ctor_resume(c: &mut Cpu) {
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
                     c.pc = t;
@@ -11907,7 +11907,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7f8));
                     c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[RA][0] = sx(0x00199498);
                     c.g[S5][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x38));
@@ -12554,7 +12554,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x00199778 => {
                     c.cycles += 5;
-                    c.g[A0][0] = c.lw((c.g[S6][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S6][0] as u32);
                     c.g[RA][0] = sx(0x00199784);
                     c.g[S3][0] = sx((c.g[S4][0] as u32) << 2);
                     call_ptr(c, 0x00317670, 0x00199784)?;
@@ -12569,7 +12569,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x0019978c => {
                     c.cycles += 6;
-                    c.sw((c.g[S2][0] as u32), c.g[S1][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[S1][0]);
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x18), c.g[S4][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x958));
                     c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
@@ -12584,14 +12584,14 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001997a4 => {
                     c.cycles += 9;
-                    c.g[A2][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A1][0] = 0u64;
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001997c0);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001997c0)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -12605,7 +12605,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                 0x001997c8 => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001997d0);
-                    c.g[A0][0] = c.lw((c.g[S7][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S7][0] as u32);
                     call_ptr(c, 0x00317670, 0x001997d0)?;
 
                     if c.g[S5][0] != c.g[V0][0] {
@@ -12618,7 +12618,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001997d8 => {
                     c.cycles += 6;
-                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     c.sw((c.g[V1][0] as u32).wrapping_add(0xa4), c.g[S1][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x958));
                     c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
@@ -12688,7 +12688,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00199828);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00199828)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -12731,7 +12731,7 @@ fn cfe_state_char_equip_on_widget_created_resume(c: &mut Cpu) {
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
                     c.pc = t;

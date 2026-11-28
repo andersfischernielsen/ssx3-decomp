@@ -3910,7 +3910,7 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.g[FP][0] = c.g[A0][0];
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A2][0]);
                     c.g[S7][0] = 0x8;
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -3924,10 +3924,10 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A3][0]);
                     c.g[A1][0] = 0x1;
                     c.g[A3][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[V1][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[S1][0] as u32).wrapping_add(0x38));
                     c.g[A2][0] = 0xa;
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[V0][0] >> 26;
                     c.g[V1][0] = c.g[V0][0] >> 30;
                     c.g[V0][0] = c.g[V0][0] >> 20;
@@ -3943,7 +3943,7 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
                     c.g[T9][0] = sx((c.g[A1][0] as u32) << ((c.g[V1][0] as u32) & 31));
                     c.g[T8][0] = sx((c.g[A1][0] as u32) << ((c.g[A0][0] as u32) & 31));
-                    c.g[S0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[S5][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
                     let t = c.g[A3][0] != c.g[A2][0];
                     c.g[S4][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
@@ -4103,8 +4103,8 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[T0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x22c0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4192,7 +4192,7 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.por(3, 0, 0);
                     c.g[V1][0] = 0x10000000;
                     c.g[V1][0] = c.g[V1][0] | 0x6;
-                    c.sq(3, (c.g[S0][0] as u32));
+                    c.sq(3, c.g[S0][0] as u32);
                     c.g[V0][0] = 0xffffffffffffffff;
                     c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[T1][0] as i64)) as u64;
                     c.g[V1][0] = sx((c.g[T1][0] as u32).wrapping_add(0x7));
@@ -4210,7 +4210,7 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[A0][0] | 0x4;
                     c.g[A1][0] = 0x50;
                     c.g[A2][0] = 0x51;
-                    c.g[V0][0] = sx(0u32.wrapping_sub((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
                     c.g[T4][0] = 0x52;
                     c.g[T5][0] = 0x53;
                     c.g[T6][0] = 0x10000000;
@@ -4218,7 +4218,7 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A0][0]);
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x28), c.g[A1][0]);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x38), c.g[A2][0]);
                     c.g[A0][0] = 0x10000000;
                     c.g[A0][0] = c.g[A0][0] << 32;
@@ -4233,9 +4233,9 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                     c.g[V1][0] =
                         sx(((c.g[V1][0] as u32) as i32 >> ((c.g[S7][0] as u32) & 31)) as u32);
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x58), c.g[T5][0]);
-                    c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x60), c.g[T0][0]);
-                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x70), c.g[T3][0]);
                     c.g[T8][0] = sx(((c.g[T8][0] as u32) as i32 >> 1) as u32);
                     c.sd((c.g[S0][0] as u32).wrapping_add(0x80), c.g[T6][0]);
@@ -4280,13 +4280,13 @@ fn tex_man_emit_image_upload_resume(c: &mut Cpu) {
                         f: ee::s12::TexMan_EmitPath3Window,
                     }
                     .call(c, 0x003684ac)?;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x90));
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.sw((c.g[V0][0] as u32), c.g[S0][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[S0][0]);
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x70));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x60));

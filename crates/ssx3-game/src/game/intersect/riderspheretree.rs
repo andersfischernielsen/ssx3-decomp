@@ -9196,11 +9196,11 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
                     c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[S0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[A0][0] as u32);
                     if t {
                         pc = 0x0032e008;
                         continue;
@@ -9213,8 +9213,8 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xedc));
                     c.g[A1][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != c.g[S0][0];
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee0));
                     if t {
@@ -9228,7 +9228,7 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
                     let t = true;
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         pc = 0x0032e0e8;
                         continue;
@@ -9256,7 +9256,7 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                 }
                 0x0032df88 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     let t = c.g[V0][0] == c.g[S0][0];
                     c.g[A2][0] = sx((c.g[V1][0] as u32) << 2);
                     if t {
@@ -9288,17 +9288,17 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x0032dfc0);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x0032b620, 0x0032dfc0)?;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xedc));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.sw((c.g[V1][0] as u32), c.g[S0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[S0][0]);
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
-                    c.sw((c.g[S1][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee4));
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee0));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
@@ -9330,8 +9330,8 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xeec));
                     c.g[A1][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != c.g[S0][0];
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef0));
                     if t {
@@ -9345,7 +9345,7 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
                     let t = true;
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         pc = 0x0032e0e8;
                         continue;
@@ -9355,10 +9355,10 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                 }
                 0x0032e030 => {
                     c.cycles += 4;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xed8));
                     let t = true;
-                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         pc = 0x0032e0e8;
                         continue;
@@ -9368,10 +9368,10 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                 }
                 0x0032e040 => {
                     c.cycles += 4;
-                    c.sw((c.g[S1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V1][0]);
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
                     let t = true;
-                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         pc = 0x0032e0e8;
                         continue;
@@ -9399,7 +9399,7 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                 }
                 0x0032e060 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     let t = c.g[V0][0] == c.g[S0][0];
                     c.g[A2][0] = sx((c.g[V1][0] as u32) << 2);
                     if t {
@@ -9434,17 +9434,17 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xee8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x0032e098);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x0032b620, 0x0032e098)?;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xeec));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.sw((c.g[V1][0] as u32), c.g[S0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[S0][0]);
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
-                    c.sw((c.g[S1][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef4));
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xef0));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
@@ -9468,18 +9468,18 @@ fn sphere_tree_cache_get_masks_resume(c: &mut Cpu) {
                 }
                 0x0032e0dc => {
                     c.cycles += 3;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     pc = 0x0032e0e8;
                     continue;
                 }
                 0x0032e0e8 => {
                     c.cycles += 6;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

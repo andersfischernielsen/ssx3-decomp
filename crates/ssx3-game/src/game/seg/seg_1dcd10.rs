@@ -9,7 +9,6 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -288,6 +287,7 @@ pub fn fx_loader_ctor(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use ssx3_ee as ee;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::fakes;

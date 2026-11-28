@@ -6057,7 +6057,7 @@ fn event_select_update_confirm_popup_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2cc));
                     let t = c.g[V0][0] == 0u64;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2ec));
@@ -6278,7 +6278,7 @@ fn event_select_update_confirm_popup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00203bf0);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00203bf0)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x1;
@@ -6286,7 +6286,7 @@ fn event_select_update_confirm_popup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00203c08);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00203c08)?;
                     pc = 0x00203c08;
                     continue;
@@ -6347,7 +6347,7 @@ fn event_select_update_confirm_popup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00203c54);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00203c54)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0u64;
@@ -6355,7 +6355,7 @@ fn event_select_update_confirm_popup_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00203c6c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00203c6c)?;
                     pc = 0x00203c6c;
                     continue;
@@ -6395,7 +6395,7 @@ fn event_select_update_confirm_popup_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -6663,7 +6663,7 @@ fn event_select_init_peak_locks_resume(c: &mut Cpu) {
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S3][0] = 0x1;
                     c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00201784);
                     c.g[S5][0] = 0x2;
                     call_ptr(c, 0x0014dc80, 0x00201784)?;
@@ -6757,7 +6757,7 @@ fn event_select_init_peak_locks_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != 0u64 {
-                        c.sw((c.g[S2][0] as u32), 0u64);
+                        c.sw(c.g[S2][0] as u32, 0u64);
                         pc = 0x00201830;
                         continue;
                     }
@@ -6788,7 +6788,7 @@ fn event_select_init_peak_locks_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -8509,7 +8509,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00201004);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00201004)?;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0u64;
@@ -8517,21 +8517,21 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020101c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020101c)?;
                     pc = 0x0020101c;
                     continue;
                 }
                 0x00201000 => {
                     c.cycles += 7;
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0u64;
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020101c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020101c)?;
                     pc = 0x0020101c;
                     continue;
@@ -8579,7 +8579,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020107c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020107c)?;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0u64;
@@ -8587,7 +8587,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00201094);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00201094)?;
                     pc = 0x00201094;
                     continue;
@@ -8751,7 +8751,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.lo[0] = c.g[V0][0];
                     c.g[V0][0] = 0x6c;
                     c.madd(0, 3, 18, 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V0][0] = c.g[V1][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
@@ -8778,7 +8778,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x0020120c => {
                     c.cycles += 19;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -8786,7 +8786,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(6, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -8832,11 +8832,11 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 }
                 0x00201280 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[V1][0] as u32);
                     c.g[T1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -8856,10 +8856,10 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x002012ac => {
                     c.cycles += 8;
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[V1][0] as u32));
+                    c.ldr(8, c.g[V1][0] as u32);
                     c.g[T1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[A0][0] as u32));
+                    c.sdr(8, c.g[A0][0] as u32);
                     c.g[A3][0] = 0x1;
                     let t = c.g[S6][0] != c.g[A3][0];
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T1][0]);
@@ -8878,7 +8878,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.lo[0] = c.g[V0][0];
                     c.g[V0][0] = 0x6c;
                     c.madd(0, 3, 18, 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[V0][0] = c.g[V1][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A0][0] = c.g[FP][0];
@@ -8898,7 +8898,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x002012f8 => {
                     c.cycles += 19;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -8906,7 +8906,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(6, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -8945,11 +8945,11 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 }
                 0x00201350 => {
                     c.cycles += 11;
-                    c.g[A3][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A3][0] = c.ld(c.g[V1][0] as u32);
                     c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[A3][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[A2][0]);
@@ -8969,10 +8969,10 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x0020137c => {
                     c.cycles += 6;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     pc = 0x00201394;
                     continue;
@@ -8996,7 +8996,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.lo[0] = c.g[V0][0];
                     c.g[V0][0] = 0x6c;
                     c.madd(0, 3, 18, 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[V0][0] = c.g[V1][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A0][0] = c.g[FP][0];
@@ -9016,7 +9016,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x002013c8 => {
                     c.cycles += 19;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -9024,7 +9024,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(6, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -9063,11 +9063,11 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 }
                 0x00201420 => {
                     c.cycles += 11;
-                    c.g[A3][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A3][0] = c.ld(c.g[V1][0] as u32);
                     c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[A3][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[A2][0]);
@@ -9087,10 +9087,10 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x0020144c => {
                     c.cycles += 6;
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[A0][0] as u32));
+                    c.sdr(7, c.g[A0][0] as u32);
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     pc = 0x00201464;
                     continue;
@@ -9116,9 +9116,9 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                         f: ee::s05::EventSelect_IsEventCompleted,
                     }
                     .call(c, 0x00201478)?;
-                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S7][0] as u32)));
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x140), c.g[V0][0]);
                     pc = 0x00201488;
                     continue;
@@ -9153,7 +9153,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     if t {
                         pc = 0x00201514;
                         continue;
@@ -9163,10 +9163,10 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 }
                 0x002014cc => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S7][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = c.g[S1][0] == 0u64;
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     if t {
                         pc = 0x00201538;
                         continue;
@@ -9182,7 +9182,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002014f4);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002014f4)?;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x1;
@@ -9190,7 +9190,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020150c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020150c)?;
                     let t = true;
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x40));
@@ -9212,11 +9212,11 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                         f: ee::s05::EventSelect_IsEventUnlocked,
                     }
                     .call(c, 0x00201524)?;
-                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V0][0] = c.g[V0][0] ^ 0x1;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S7][0] as u32)));
-                    c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S7][0] as u32));
+                    c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
                     pc = 0x00201538;
                     continue;
                 }
@@ -9230,7 +9230,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = c.g[V0][0] ^ 0x17;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     if t {
                         pc = 0x00201560;
                         continue;
@@ -9241,11 +9241,11 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                 0x00201548 => {
                     c.cycles += 6;
                     c.g[A0][0] = c.g[S3][0];
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S7][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[RA][0] = sx(0x00201560);
-                    c.g[A2][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[V0][0] as u32);
                     Callee {
                         addr: 0x00208438,
                         f: ee::s05::EventSelect_SetUnlockedColor,
@@ -9399,7 +9399,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00201638);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00201638)?;
                     pc = 0x00201638;
                     continue;
@@ -9481,7 +9481,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002016a8);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002016a8)?;
                     pc = 0x002016a8;
                     continue;
@@ -9516,7 +9516,7 @@ fn event_select_setup_peak_texts_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002016ec);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002016ec)?;
                     pc = 0x002016ec;
                     continue;
@@ -12739,7 +12739,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x002054c0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x002054c0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -12843,8 +12843,8 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x7e30));
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x418));
                     c.mult(0, 2, 4, 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[V0][0] = c.g[V1][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x2b0));
@@ -12875,7 +12875,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                 0x00205600 => {
                     c.cycles += 19;
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(6, (c.g[V1][0] as u32));
+                    c.ldr(6, c.g[V1][0] as u32);
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -12883,7 +12883,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.ldl(4, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(4, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(6, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(6, (c.g[A1][0] as u32));
+                    c.sdr(6, c.g[A1][0] as u32);
                     c.sdl(7, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[A1][0] as u32).wrapping_add(0x17));
@@ -12934,11 +12934,11 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                 }
                 0x00205688 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[V1][0] as u32);
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T0][0]);
@@ -12958,10 +12958,10 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                 0x002056b4 => {
                     c.cycles += 9;
                     c.ldl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[V1][0] as u32));
+                    c.ldr(2, c.g[V1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[A1][0] as u32));
+                    c.sdr(2, c.g[A1][0] as u32);
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c0));
                     let t = c.g[V0][0] == 0u64;
@@ -13054,7 +13054,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205770);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205770)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13249,7 +13249,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205944);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205944)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13297,7 +13297,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x002059c4);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x002059c4)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13341,10 +13341,10 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x6c;
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 3, 4);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V0][0] = 0x480000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7920));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V0][0] = c.g[V1][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x438));
@@ -13365,7 +13365,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                 0x00205a6c => {
                     c.cycles += 19;
                     c.ldl(4, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(4, (c.g[V1][0] as u32));
+                    c.ldr(4, c.g[V1][0] as u32);
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x17));
@@ -13373,7 +13373,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0x1f));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x18));
                     c.sdl(4, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(4, (c.g[A1][0] as u32));
+                    c.sdr(4, c.g[A1][0] as u32);
                     c.sdl(6, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[A1][0] as u32).wrapping_add(0x17));
@@ -13413,11 +13413,11 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                 }
                 0x00205ac8 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[V1][0] as u32);
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T0][0]);
@@ -13437,10 +13437,10 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                 0x00205af4 => {
                     c.cycles += 9;
                     c.ldl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[V1][0] as u32));
+                    c.ldr(2, c.g[V1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[A1][0] as u32));
+                    c.sdr(2, c.g[A1][0] as u32);
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2a0));
                     let t = c.g[V0][0] == 0u64;
@@ -13684,7 +13684,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00205d1c);
-                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00205d1c)?;
                     c.g[A3][0] = 0x470000;
                     c.g[A2][0] = c.g[S2][0];
@@ -13728,7 +13728,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205d88);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205d88)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13776,7 +13776,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205e08);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205e08)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13811,7 +13811,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205e78);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205e78)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13870,7 +13870,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00205f14);
-                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00205f14)?;
                     let t = true;
 
@@ -13907,7 +13907,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205f58);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205f58)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13953,7 +13953,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00205fb8);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00205fb8)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -13998,7 +13998,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206014);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206014)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14043,7 +14043,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x0020607c);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x0020607c)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14126,7 +14126,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206130);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206130)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14216,7 +14216,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002061cc);
-                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002061cc)?;
                     let t = true;
 
@@ -14253,7 +14253,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206210);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206210)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14299,7 +14299,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206270);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206270)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14344,7 +14344,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x002062cc);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x002062cc)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14389,7 +14389,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206334);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206334)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14469,7 +14469,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x002063dc);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x002063dc)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14526,7 +14526,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206468);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206468)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -14565,7 +14565,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x002064e4);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x002064e4)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -14622,7 +14622,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.cycles += 52;
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206578);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206578)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -14668,7 +14668,7 @@ fn event_select_refresh_peak_goals_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00206604);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00206604)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -18917,7 +18917,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x002074a0);
-                    c.g[A0][0] = sx((c.g[S6][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002074a0)?;
                     pc = 0x002074a0;
                     continue;
@@ -19087,7 +19087,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 0x002075d0 => {
                     c.cycles += 19;
                     c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[A1][0] as u32));
+                    c.ldr(3, c.g[A1][0] as u32);
                     c.ldl(6, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[A1][0] as u32).wrapping_add(0x17));
@@ -19095,7 +19095,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.ldl(8, (c.g[A1][0] as u32).wrapping_add(0x1f));
                     c.ldr(8, (c.g[A1][0] as u32).wrapping_add(0x18));
                     c.sdl(3, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[A0][0] as u32));
+                    c.sdr(3, c.g[A0][0] as u32);
                     c.sdl(6, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -19134,11 +19134,11 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 }
                 0x00207628 => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A1][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A1][0] as u32);
                     c.g[V1][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[A1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A0][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -19165,10 +19165,10 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.cycles += 9;
                     c.g[S2][0] = 0u64;
                     c.ldl(8, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[A1][0] as u32));
+                    c.ldr(8, c.g[A1][0] as u32);
                     c.g[T1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[A0][0] as u32));
+                    c.sdr(8, c.g[A0][0] as u32);
                     c.g[V0][0] = 0x1;
                     let t = c.g[V1][0] == c.g[V0][0];
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[T1][0]);
@@ -19259,8 +19259,8 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x7e30));
                     c.mult(0, 3, 3, 5);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V0][0] = c.g[A0][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[S1][0];
@@ -19281,7 +19281,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 0x00207710 => {
                     c.cycles += 19;
                     c.ldl(8, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[A0][0] as u32));
+                    c.ldr(8, c.g[A0][0] as u32);
                     c.ldl(9, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.ldr(9, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -19289,7 +19289,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.ldl(6, (c.g[A0][0] as u32).wrapping_add(0x1f));
                     c.ldr(6, (c.g[A0][0] as u32).wrapping_add(0x18));
                     c.sdl(8, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[A1][0] as u32));
+                    c.sdr(8, c.g[A1][0] as u32);
                     c.sdl(9, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(9, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[A1][0] as u32).wrapping_add(0x17));
@@ -19329,11 +19329,11 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 }
                 0x0020776c => {
                     c.cycles += 11;
-                    c.g[A3][0] = c.ld((c.g[A0][0] as u32));
+                    c.g[A3][0] = c.ld(c.g[A0][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V1][0]);
@@ -19360,10 +19360,10 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.cycles += 15;
                     c.g[S1][0] = 0x4;
                     c.ldl(6, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(6, (c.g[A0][0] as u32));
+                    c.ldr(6, c.g[A0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(6, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(6, (c.g[A1][0] as u32));
+                    c.sdr(6, c.g[A1][0] as u32);
                     c.g[V1][0] = 0x3;
                     c.g[V0][0] = c.g[V0][0] ^ 0x2;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A3][0]);
@@ -19422,10 +19422,10 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xb50));
                     c.mult(0, 4, 4, 21);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] == 0u64;
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x2ec));
                     if t {
@@ -19544,8 +19544,8 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x480000;
                     c.mult(0, 4, 4, 5);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7920));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V0][0] = c.g[A0][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[S1][0];
@@ -19566,7 +19566,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 0x00207928 => {
                     c.cycles += 17;
                     c.ldl(6, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(6, (c.g[A0][0] as u32));
+                    c.ldr(6, c.g[A0][0] as u32);
                     c.ldl(7, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -19574,7 +19574,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.ldl(9, (c.g[A0][0] as u32).wrapping_add(0x1f));
                     c.ldr(9, (c.g[A0][0] as u32).wrapping_add(0x18));
                     c.sdl(6, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(6, (c.g[A1][0] as u32));
+                    c.sdr(6, c.g[A1][0] as u32);
                     c.sdl(7, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[A1][0] as u32).wrapping_add(0x17));
@@ -19619,11 +19619,11 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 }
                 0x00207984 => {
                     c.cycles += 11;
-                    c.g[V1][0] = c.ld((c.g[A0][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A0][0] as u32);
                     c.g[A2][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[A3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T0][0]);
@@ -19643,10 +19643,10 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 0x002079b0 => {
                     c.cycles += 10;
                     c.ldl(9, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[A0][0] as u32));
+                    c.ldr(9, c.g[A0][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[A1][0] as u32));
+                    c.sdr(9, c.g[A1][0] as u32);
                     c.g[S0][0] = 0u64;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[S3][0] = 0x60;
@@ -19700,10 +19700,10 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xb50));
                     c.mult(0, 4, 4, 19);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] == 0u64;
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x2ec));
                     if t {
@@ -19822,8 +19822,8 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x480000;
                     c.mult(0, 4, 4, 5);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x72c8));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V0][0] = c.g[A0][0] & 0x7;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A2][0] = c.g[S1][0];
@@ -19845,7 +19845,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 0x00207b2c => {
                     c.cycles += 19;
                     c.ldl(9, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[A0][0] as u32));
+                    c.ldr(9, c.g[A0][0] as u32);
                     c.ldl(3, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[A0][0] as u32).wrapping_add(0x17));
@@ -19853,7 +19853,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.ldl(8, (c.g[A0][0] as u32).wrapping_add(0x1f));
                     c.ldr(8, (c.g[A0][0] as u32).wrapping_add(0x18));
                     c.sdl(9, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[A2][0] as u32));
+                    c.sdr(9, c.g[A2][0] as u32);
                     c.sdl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[A2][0] as u32).wrapping_add(0x17));
@@ -19894,11 +19894,11 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 }
                 0x00207b8c => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A0][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A0][0] as u32);
                     c.g[V1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A2][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[A3][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[T0][0]);
@@ -19918,10 +19918,10 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                 0x00207bb8 => {
                     c.cycles += 10;
                     c.ldl(9, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[A0][0] as u32));
+                    c.ldr(9, c.g[A0][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[A2][0] as u32));
+                    c.sdr(9, c.g[A2][0] as u32);
                     c.g[S0][0] = c.g[A1][0];
                     c.sw((c.g[A2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[S1][0] = 0u64;
@@ -20101,9 +20101,9 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
                     c.mult(0, 4, 4, 5);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
 
                     if c.g[V1][0] != 0u64 {
@@ -20145,9 +20145,9 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
                     c.mult(0, 4, 4, 5);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
 
                     if c.g[V1][0] != 0u64 {
@@ -20189,9 +20189,9 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
                     c.mult(0, 4, 4, 5);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
                     let t = c.g[V1][0] != 0u64;
                     c.g[A0][0] = 0x470000;
@@ -20228,7 +20228,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00207e0c);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00207e0c)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -20278,9 +20278,9 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
                     c.mult(0, 4, 4, 5);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x20));
                     let t = c.g[V1][0] == 0u64;
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x3c0));
@@ -20345,7 +20345,7 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00207f00);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00207f00)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -20418,8 +20418,8 @@ fn event_select_refresh_event_list_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S7][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x17c0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;

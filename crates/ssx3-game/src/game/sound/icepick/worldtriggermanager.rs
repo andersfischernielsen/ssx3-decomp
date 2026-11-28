@@ -6744,7 +6744,7 @@ fn world_sound_unlink_emitter_resume(c: &mut Cpu) {
                     .call(c, 0x002b7454)?;
                     c.g[RA][0] = sx(0x002b745c);
                     call_ptr(c, 0x0028b1c8, 0x002b745c)?;
-                    c.lwc1(6, (c.g[SP][0] as u32));
+                    c.lwc1(6, c.g[SP][0] as u32);
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.lwc1(5, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -6795,7 +6795,7 @@ fn world_sound_unlink_emitter_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[S0][0];
                     call_ptr(c, 0x003284b8, 0x002b7504)?;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = 0u64;
                     if t {
@@ -6908,7 +6908,7 @@ fn world_sound_unlink_emitter_resume(c: &mut Cpu) {
                 }
                 0x002b7578 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     if t {

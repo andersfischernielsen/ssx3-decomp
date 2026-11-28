@@ -17119,7 +17119,7 @@ fn nash_probe_vertical_resume(c: &mut Cpu) {
                 }
                 0x00336a5c => {
                     c.cycles += 41;
-                    c.lwc1(0, (c.g[S2][0] as u32));
+                    c.lwc1(0, c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[SP][0];
                     c.lwc1(1, (c.g[S2][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0xb0));
@@ -17477,7 +17477,7 @@ fn nash_probe_vertical_resume(c: &mut Cpu) {
                 0x00336c84 => {
                     c.cycles += 4;
                     c.g[A0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x50));
-                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[SP][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[SP][0] as u32));
                     let t = c.g[A0][0] == 0u64;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xd0));
                     if t {
@@ -17572,13 +17572,13 @@ fn nash_probe_vertical_resume(c: &mut Cpu) {
                     c.cycles += 9;
                     c.g[V1][0] = sx((c.g[T0][0] as u32) << 7);
                     c.g[V0][0] = 0x1;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[SP][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[SP][0] as u32));
                     c.lq(4, (c.g[V1][0] as u32).wrapping_add(0xd0));
                     c.lq(5, (c.g[V1][0] as u32).wrapping_add(0xe0));
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20e0));
-                    c.sq(4, (c.g[V1][0] as u32));
+                    c.sq(4, c.g[V1][0] as u32);
                     c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20e4));
-                    c.sq(5, (c.g[A2][0] as u32));
+                    c.sq(5, c.g[A2][0] as u32);
                     pc = 0x00336d0c;
                     continue;
                 }
@@ -23503,7 +23503,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
@@ -23516,7 +23516,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033edec)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033ee64;
                         continue;
@@ -23539,7 +23539,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S3][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
@@ -23552,7 +23552,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033ee20)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033ee64;
                         continue;
@@ -23564,7 +23564,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033ee64;
                         continue;
                     }
@@ -23589,7 +23589,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033ee48 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S3][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033ee60);
@@ -23604,7 +23604,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033ee60 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033ee64;
                     continue;
                 }
@@ -23624,7 +23624,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033ee6c => {
                     c.cycles += 4;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[V0][0] = 0xb;
                     let t = c.g[A1][0] == c.g[V0][0];
                     c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7e));
@@ -23647,7 +23647,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cvt_s_w(0, 0);
                     c.mtc1(2, 1);
                     c.cvt_s_w(1, 1);
-                    c.lwc1(3, (c.g[S4][0] as u32));
+                    c.lwc1(3, c.g[S4][0] as u32);
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
@@ -23655,7 +23655,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.add_s(1, 1, 2);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
-                    c.sw((c.g[SP][0] as u32), c.g[A1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[A1][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), 0u64);
                     c.mul_s(15, 0, 4);
                     c.mul_s(16, 1, 4);
@@ -23701,7 +23701,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                     c.mtc1(2, 0);
                     c.cvt_s_w(0, 0);
-                    c.lwc1(2, (c.g[S4][0] as u32));
+                    c.lwc1(2, c.g[S4][0] as u32);
                     c.add_s(1, 1, 3);
                     c.mov_s(13, 2);
                     c.sub_s(0, 0, 3);
@@ -24166,7 +24166,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f1f8 => {
                     c.cycles += 3;
-                    c.g[S2][0] = c.lw((c.g[FP][0] as u32));
+                    c.g[S2][0] = c.lw(c.g[FP][0] as u32);
                     let t = c.g[S2][0] == 0u64;
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x14));
                     if t {
@@ -24247,7 +24247,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033f300;
                         continue;
                     }
@@ -24278,7 +24278,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -24291,7 +24291,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f27c)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f2f4;
                         continue;
@@ -24314,7 +24314,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -24327,7 +24327,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f2b0)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f2f4;
                         continue;
@@ -24339,7 +24339,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033f2f4;
                         continue;
                     }
@@ -24364,7 +24364,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033f2d8 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033f2f0);
@@ -24379,7 +24379,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f2f0 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033f2f4;
                     continue;
                 }
@@ -24399,7 +24399,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f2fc => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033f300;
                     continue;
                 }
@@ -24713,7 +24713,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033f4d8;
                         continue;
                     }
@@ -24744,7 +24744,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -24757,7 +24757,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f454)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f4cc;
                         continue;
@@ -24780,7 +24780,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -24793,7 +24793,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f488)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f4cc;
                         continue;
@@ -24805,7 +24805,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033f4cc;
                         continue;
                     }
@@ -24830,7 +24830,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033f4b0 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033f4c8);
@@ -24845,7 +24845,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f4c8 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033f4cc;
                     continue;
                 }
@@ -24865,7 +24865,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f4d4 => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033f4d8;
                     continue;
                 }
@@ -25179,7 +25179,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033f6b0;
                         continue;
                     }
@@ -25210,7 +25210,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -25223,7 +25223,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f62c)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f6a4;
                         continue;
@@ -25246,7 +25246,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -25259,7 +25259,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f660)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f6a4;
                         continue;
@@ -25271,7 +25271,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033f6a4;
                         continue;
                     }
@@ -25296,7 +25296,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033f688 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033f6a0);
@@ -25311,7 +25311,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f6a0 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033f6a4;
                     continue;
                 }
@@ -25331,7 +25331,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f6ac => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033f6b0;
                     continue;
                 }
@@ -25645,7 +25645,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033f888;
                         continue;
                     }
@@ -25676,7 +25676,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -25689,7 +25689,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f804)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f87c;
                         continue;
@@ -25712,7 +25712,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -25725,7 +25725,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f838)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033f87c;
                         continue;
@@ -25737,7 +25737,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033f87c;
                         continue;
                     }
@@ -25762,7 +25762,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033f860 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033f878);
@@ -25777,7 +25777,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f878 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033f87c;
                     continue;
                 }
@@ -25797,7 +25797,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033f884 => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033f888;
                     continue;
                 }
@@ -26111,7 +26111,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033fa60;
                         continue;
                     }
@@ -26142,7 +26142,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -26155,7 +26155,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033f9dc)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033fa54;
                         continue;
@@ -26178,7 +26178,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -26191,7 +26191,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033fa10)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033fa54;
                         continue;
@@ -26203,7 +26203,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033fa54;
                         continue;
                     }
@@ -26228,7 +26228,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033fa38 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033fa50);
@@ -26243,7 +26243,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033fa50 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033fa54;
                     continue;
                 }
@@ -26263,7 +26263,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033fa5c => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033fa60;
                     continue;
                 }
@@ -26577,7 +26577,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033fc38;
                         continue;
                     }
@@ -26608,7 +26608,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -26621,7 +26621,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033fbb4)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033fc2c;
                         continue;
@@ -26644,7 +26644,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -26657,7 +26657,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033fbe8)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033fc2c;
                         continue;
@@ -26669,7 +26669,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033fc2c;
                         continue;
                     }
@@ -26694,7 +26694,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033fc10 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033fc28);
@@ -26709,7 +26709,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033fc28 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033fc2c;
                     continue;
                 }
@@ -26729,7 +26729,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033fc34 => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033fc38;
                     continue;
                 }
@@ -27043,7 +27043,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033fe10;
                         continue;
                     }
@@ -27074,7 +27074,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -27087,7 +27087,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033fd8c)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033fe04;
                         continue;
@@ -27110,7 +27110,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -27123,7 +27123,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033fdc0)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033fe04;
                         continue;
@@ -27135,7 +27135,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S5][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033fe04;
                         continue;
                     }
@@ -27160,7 +27160,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033fde8 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033fe00);
@@ -27175,7 +27175,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033fe00 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033fe04;
                     continue;
                 }
@@ -27195,7 +27195,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033fe0c => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033fe10;
                     continue;
                 }
@@ -27509,7 +27509,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x28));
 
                     if c.g[S1][0] == 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                         pc = 0x0033ffe8;
                         continue;
                     }
@@ -27540,7 +27540,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -27553,7 +27553,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033ff64)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033ffdc;
                         continue;
@@ -27576,7 +27576,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A3][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -27589,7 +27589,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x0033ff98)?;
                     let t = true;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     if t {
                         pc = 0x0033ffdc;
                         continue;
@@ -27601,7 +27601,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                     c.cycles += 2;
 
                     if c.g[V0][0] != c.g[S3][0] {
-                        c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                        c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                         pc = 0x0033ffdc;
                         continue;
                     }
@@ -27626,7 +27626,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 0x0033ffc0 => {
                     c.cycles += 6;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A2][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A3][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x0033ffd8);
@@ -27641,7 +27641,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033ffd8 => {
                     c.cycles += 1;
-                    c.g[S1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[S1][0] as u32);
                     pc = 0x0033ffdc;
                     continue;
                 }
@@ -27661,7 +27661,7 @@ fn cell_find_rail_recursive_resume(c: &mut Cpu) {
                 }
                 0x0033ffe4 => {
                     c.cycles += 1;
-                    c.g[A0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S2][0] as u32);
                     pc = 0x0033ffe8;
                     continue;
                 }

@@ -23593,7 +23593,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 12);
                     c.ldl(2, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[V1][0] as u32));
+                    c.ldr(2, c.g[V1][0] as u32);
                     c.ldl(4, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(4, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
@@ -23610,7 +23610,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x3e4));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0037a6a8);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0037a6a8)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6b90));
                     let t = c.g[V0][0] != 0u64;
@@ -23639,23 +23639,23 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.cycles += 19;
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x20));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x30), 0u64);
-                    c.g[S4][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S4][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x13e8));
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x34), c.g[T0][0]);
                     c.g[V0][0] = c.lh((c.g[S4][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10b0));
                     c.sh((c.g[A1][0] as u32).wrapping_add(0x12), c.g[V1][0]);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = c.g[V0][0] | 0x30;
-                    c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                     c.lq(3, (c.g[T0][0] as u32).wrapping_add(0x30));
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6b90));
                     let t = c.g[V0][0] != 0u64;
-                    c.sq(3, (c.g[SP][0] as u32));
+                    c.sq(3, c.g[SP][0] as u32);
                     if t {
                         pc = 0x0037a714;
                         continue;
@@ -23679,8 +23679,8 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.cycles += 23;
                     c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x58a0));
                     c.lqc2(5, (c.g[S0][0] as u32).wrapping_add(0x5920));
-                    c.lqc2(10, (c.g[SP][0] as u32));
-                    c.lqc2(1, (c.g[S1][0] as u32));
+                    c.lqc2(10, c.g[SP][0] as u32);
+                    c.lqc2(1, c.g[S1][0] as u32);
                     c.lqc2(2, (c.g[S1][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[S1][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[S1][0] as u32).wrapping_add(0x30));
@@ -23736,7 +23736,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.cycles += 21;
                     c.lqc2(5, (c.g[S0][0] as u32).wrapping_add(0x5920));
                     c.lqc2(10, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.lqc2(1, (c.g[S1][0] as u32));
+                    c.lqc2(1, c.g[S1][0] as u32);
                     c.lqc2(2, (c.g[S1][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[S1][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[S1][0] as u32).wrapping_add(0x30));
@@ -23786,9 +23786,9 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
                     c.g[V1][0] = 0xfffffffff00f0000;
                     c.g[V1][0] = c.g[V1][0] | 0xffff;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
@@ -23926,7 +23926,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x2c));
 
                     if c.g[A2][0] != 0u64 {
-                        c.g[V1][0] = c.lw((c.g[S4][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[S4][0] as u32);
                         pc = 0x0037ab68;
                         continue;
                     }
@@ -23935,7 +23935,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037a970 => {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw((c.g[S4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S4][0] as u32);
                     c.g[V0][0] = c.g[V0][0] & 0x8000;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V1][0] = 0xffffffffffffff83;
@@ -23967,7 +23967,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A3][0] = c.g[A3][0] | 0xffff;
                     c.g[V1][0] = c.lbu((c.g[S4][0] as u32).wrapping_add(0xa));
                     c.g[T5][0] = 0x800000;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[T1][0] = 0xffffffffffcf0000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 20);
                     c.g[T1][0] = c.g[T1][0] | 0xffff;
@@ -23975,7 +23975,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[T4][0] = 0x300000;
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
                     c.g[A0][0] = 0xfffffffffffff07f;
-                    c.sw((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
                     c.g[T0][0] = 0xfffffffffff00000;
                     c.g[T0][0] = c.g[T0][0] | 0xfff;
                     c.g[A2][0] = 0x50000;
@@ -24028,9 +24028,9 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | 0x4;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
-                    c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1440));
                     let t = c.g[V1][0] != 0u64;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
@@ -24106,7 +24106,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 0x0037ab60 => {
                     c.cycles += 2;
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                    c.g[V1][0] = c.lw((c.g[S4][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S4][0] as u32);
                     pc = 0x0037ab68;
                     continue;
                 }
@@ -24134,11 +24134,11 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[A3][0] as u32) << 3);
                     c.g[A1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x28));
-                    c.g[T4][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[T4][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x3c));
                     c.g[V0][0] = sx((c.g[S4][0] as u32).wrapping_add(0x14));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V1][0]);
-                    c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     let t = c.g[A1][0] == c.g[T4][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x70), c.g[V0][0]);
                     if t {
@@ -24169,7 +24169,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037abf0 => {
                     c.cycles += 18;
-                    c.g[A3][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[T0][0] as u32);
                     c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[T3][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
@@ -24181,7 +24181,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = c.g[V1][0] | c.g[S6][0];
                     c.g[V0][0] = c.g[V0][0] | c.g[S3][0];
-                    c.sd((c.g[A2][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[V1][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[V0][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), 0u64);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[S5][0]);
@@ -24202,15 +24202,15 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037ac40 => {
                     c.cycles += 16;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x34));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-                    c.lqc2(1, (c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.lqc2(1, c.g[V0][0] as u32);
                     c.lqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A2][0] as u32));
+                    c.sqc2(1, c.g[A2][0] as u32);
                     c.sqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
@@ -24234,16 +24234,16 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[T5][0]);
                     c.g[V0][0] = c.g[V0][0] | c.g[S2][0];
                     c.g[T0][0] = c.g[T2][0];
-                    c.sd((c.g[A2][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[V0][0]);
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
-                    c.sw((c.g[T6][0] as u32), c.g[A2][0]);
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.sw(c.g[T6][0] as u32, c.g[A2][0]);
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[A1][0] = c.g[T3][0];
-                    c.g[V0][0] = c.lwu((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lwu(c.g[V1][0] as u32);
                     c.g[V0][0] = c.g[V0][0] << 32;
                     c.g[V0][0] = c.g[V0][0] | c.g[S1][0];
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -24269,7 +24269,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[T1][0] = c.g[V1][0] & c.g[V0][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x5a00), c.g[T1][0]);
-                    c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                     c.g[V0][0] = ((c.g[V0][0] as i64) < 2600i64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = 0x60000;
@@ -24285,7 +24285,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.g[A1][0] | 0x8000;
                     c.g[V1][0] = 0xffffffffffffffe0;
-                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[A0][0] = c.g[A0][0] & c.g[V1][0];
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1cc4));
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x80));
@@ -24294,19 +24294,19 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.g[A2][0] | c.g[V1][0];
                     c.g[A0][0] = c.g[A0][0] | c.g[V0][0];
                     c.sw((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
-                    c.g[V1][0] = c.lw((c.g[A3][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A3][0] as u32);
                     c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1cc0));
                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 7);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
                     c.ldl(5, (c.g[T0][0] as u32).wrapping_add(0x7));
-                    c.ldr(5, (c.g[T0][0] as u32));
+                    c.ldr(5, c.g[T0][0] as u32);
                     c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
                     c.sdl(5, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(5, (c.g[V0][0] as u32));
+                    c.sdr(5, c.g[V0][0] as u32);
                     c.sdl(6, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[V0][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
@@ -24363,7 +24363,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037add4 => {
                     c.cycles += 5;
-                    c.lwc1(1, (c.g[T4][0] as u32));
+                    c.lwc1(1, c.g[T4][0] as u32);
                     c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x276c));
                     c.c_lt_s(0, 1);
                     let t = true;
@@ -24390,8 +24390,8 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 0x0037adf4 => {
                     c.cycles += 5;
                     c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2768));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T4][0] as u32)));
-                    c.lwc1(0, (c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+                    c.lwc1(0, c.g[V0][0] as u32);
                     c.c_lt_s(1, 0);
                     pc = 0x0037ae08;
                     continue;
@@ -24433,11 +24433,11 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
                     c.g[A0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x3c));
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[T1][0] = c.g[V1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x54), c.g[V0][0]);
                     let t = c.g[T1][0] == c.g[V0][0];
-                    c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     if t {
                         pc = 0x0037b400;
                         continue;
@@ -24464,7 +24464,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037ae70 => {
                     c.cycles += 27;
-                    c.g[A3][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[T0][0] as u32);
                     c.g[V0][0] = 0x6c000000;
                     c.g[V0][0] = c.g[V0][0] | 0x11;
                     c.g[A0][0] = 0x10000000;
@@ -24481,7 +24481,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x8000;
                     c.g[V0][0] = c.g[V0][0] << 45;
                     c.g[A1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                    c.sd((c.g[A2][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[A0][0]);
                     c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x8));
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x74), c.g[T0][0]);
@@ -24507,15 +24507,15 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037aee8 => {
                     c.cycles += 16;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x34));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                    c.lqc2(1, (c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.lqc2(1, c.g[V0][0] as u32);
                     c.lqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A2][0] as u32));
+                    c.sqc2(1, c.g[A2][0] as u32);
                     c.sqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
@@ -24540,14 +24540,14 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | 0x3ff;
                     c.g[A3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
                     c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
-                    c.sd((c.g[A2][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[V1][0]);
                     c.g[T3][0] = 0u64;
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[A3][0]);
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x58));
-                    c.sw((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sw(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[T7][0] = c.lw((c.g[T1][0] as u32).wrapping_add(0x4));
-                    c.g[A2][0] = c.lw((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[T1][0] as u32);
                     c.g[S1][0] = c.g[T7][0] ^ 0x1;
                     let t = (c.g[T7][0] as i64) <= 0;
                     c.g[S1][0] = c.g[S1][0] & 0x1;
@@ -24573,7 +24573,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037af88 => {
                     c.cycles += 24;
-                    c.g[V0][0] = c.lwu((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lwu(c.g[A2][0] as u32);
                     c.g[A1][0] = 0x64010000;
                     c.g[A1][0] = c.g[A1][0] | 0x80b4;
                     c.g[A1][0] = c.g[A1][0] << 32;
@@ -24581,7 +24581,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] << 32;
                     c.g[T2][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.g[V0][0] | c.g[FP][0];
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[T2][0] << 32;
                     c.g[A0][0] = c.g[A0][0] | c.g[S7][0];
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
@@ -24592,7 +24592,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x18), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x20), c.g[A1][0]);
-                    c.lwc1(0, (c.g[T4][0] as u32));
+                    c.lwc1(0, c.g[T4][0] as u32);
                     c.c_lt_s(0, 2);
                     let t = !c.fcc();
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
@@ -24618,7 +24618,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037aff8 => {
                     c.cycles += 6;
-                    c.g[V0][0] = c.lw((c.g[T4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T4][0] as u32);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = 0x46480000;
                     c.g[V0][0] = c.g[V0][0] | c.g[S2][0];
@@ -24646,7 +24646,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = ((c.g[T3][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] == 0u64 {
-                        c.g[V0][0] = c.lwu((c.g[A2][0] as u32));
+                        c.g[V0][0] = c.lwu(c.g[A2][0] as u32);
                         pc = 0x0037b038;
                         continue;
                     }
@@ -24656,7 +24656,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 0x0037b030 => {
                     c.cycles += 2;
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = c.lwu((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lwu(c.g[A2][0] as u32);
                     pc = 0x0037b038;
                     continue;
                 }
@@ -24671,7 +24671,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] << 32;
                     c.g[T0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.g[V0][0] | c.g[FP][0];
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[T0][0] << 32;
                     c.g[A0][0] = c.g[A0][0] | c.g[S7][0];
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
@@ -24682,7 +24682,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x18), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x20), c.g[A1][0]);
-                    c.lwc1(0, (c.g[T4][0] as u32));
+                    c.lwc1(0, c.g[T4][0] as u32);
                     c.c_lt_s(0, 2);
                     let t = !c.fcc();
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
@@ -24707,7 +24707,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037b0a8 => {
                     c.cycles += 5;
-                    c.g[V0][0] = c.lw((c.g[T4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T4][0] as u32);
                     c.g[V1][0] = c.g[A3][0] << 32;
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
@@ -24749,17 +24749,17 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037b108 => {
                     c.cycles += 11;
-                    c.g[V0][0] = c.lhu((c.g[T2][0] as u32));
-                    c.g[V1][0] = c.lhu((c.g[T0][0] as u32));
-                    c.lwc1(0, (c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lhu(c.g[T2][0] as u32);
+                    c.g[V1][0] = c.lhu(c.g[T0][0] as u32);
+                    c.lwc1(0, c.g[A2][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
                     c.c_lt_s(1, 0);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 4);
-                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = !c.fcc();
-                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     if t {
                         pc = 0x0037b1a0;
                         continue;
@@ -24773,13 +24773,13 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[T2][0] << 32;
                     c.g[V0][0] = c.g[V0][0] | c.g[T6][0];
                     c.g[A1][0] = c.g[T0][0] << 32;
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A1][0] = c.g[A1][0] | c.g[T6][0];
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x10), c.g[T5][0]);
-                    c.g[A0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[A0][0] | c.g[T3][0];
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -24789,7 +24789,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x28), 0u64);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x30), c.g[T5][0]);
-                    c.g[V1][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[V1][0] = c.g[V1][0] | c.g[A3][0];
                     c.sd((c.g[A0][0] as u32).wrapping_add(0x38), c.g[V1][0]);
@@ -24821,7 +24821,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] | 0x1;
                     c.g[T3][0] = c.g[T8][0];
                     c.g[A2][0] = c.g[T9][0];
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A1][0] = ((c.g[T3][0] as i64) < (c.g[T7][0] as i64)) as u64;
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
@@ -24876,10 +24876,10 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x3c));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
-                    c.g[T5][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[T5][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A3][0] = c.g[V1][0];
                     let t = c.g[A3][0] == c.g[T5][0];
-                    c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     if t {
                         pc = 0x0037b400;
                         continue;
@@ -24914,7 +24914,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037b278 => {
                     c.cycles += 18;
-                    c.g[A2][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[T0][0] as u32);
                     c.g[T3][0] = sx((c.g[T0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[T4][0] = sx((c.g[A3][0] as u32).wrapping_add(0x8));
@@ -24926,7 +24926,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = c.g[V1][0] | c.g[T8][0];
                     c.g[V0][0] = c.g[V0][0] | c.g[S6][0];
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), 0u64);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[S7][0]);
@@ -24947,15 +24947,15 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037b2c8 => {
                     c.cycles += 16;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x34));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-                    c.lqc2(1, (c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.lqc2(1, c.g[V0][0] as u32);
                     c.lqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A1][0] as u32));
+                    c.sqc2(1, c.g[A1][0] as u32);
                     c.sqc2(2, (c.g[A1][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A1][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A1][0] as u32).wrapping_add(0x30));
@@ -24978,19 +24978,19 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[A2][0] << 32;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T6][0]);
                     c.g[V0][0] = c.g[V0][0] | c.g[S5][0];
-                    c.sd((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V0][0]);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
-                    c.sw((c.g[T7][0] as u32), c.g[A1][0]);
-                    c.g[A1][0] = c.lw((c.g[A3][0] as u32));
+                    c.sw(c.g[T7][0] as u32, c.g[A1][0]);
+                    c.g[A1][0] = c.lw(c.g[A3][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
-                    c.g[V0][0] = c.lwu((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lwu(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 3);
                     c.g[V0][0] = c.g[V0][0] << 32;
-                    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V0][0] = c.g[V0][0] | c.g[S3][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V1][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
@@ -25016,12 +25016,12 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                 }
                 0x0037b378 => {
                     c.cycles += 16;
-                    c.g[V1][0] = c.lwu((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lwu(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.g[V1][0] << 32;
                     c.g[V1][0] = c.g[V1][0] | c.g[T1][0];
-                    c.sd((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
@@ -25050,7 +25050,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x8800;
                     c.g[A1][0] = c.g[A1][0] << 45;
                     c.g[T0][0] = c.g[T3][0];
-                    c.sd((c.g[V1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[V1][0] as u32, c.g[V0][0]);
                     c.g[A3][0] = c.g[T4][0];
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x24));
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), 0u64);
@@ -25086,7 +25086,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[T1][0] = c.g[V1][0] & c.g[V0][0];
                     c.g[T0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xe84));
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x5a00), c.g[T1][0]);
-                    c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                     c.g[V0][0] = ((c.g[V0][0] as i64) < 2600i64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = 0x60000;
@@ -25102,7 +25102,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = c.g[A1][0] | 0x8000;
                     c.g[V1][0] = 0xffffffffffffffe0;
-                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[A0][0] = c.g[A0][0] & c.g[V1][0];
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1cc4));
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x80));
@@ -25111,19 +25111,19 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.g[A2][0] | c.g[V1][0];
                     c.g[A0][0] = c.g[A0][0] | c.g[V0][0];
                     c.sw((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
-                    c.g[V1][0] = c.lw((c.g[A3][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A3][0] as u32);
                     c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1cc0));
                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 7);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.sw((c.g[A3][0] as u32), c.g[V1][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
                     c.ldl(5, (c.g[T0][0] as u32).wrapping_add(0x7));
-                    c.ldr(5, (c.g[T0][0] as u32));
+                    c.ldr(5, c.g[T0][0] as u32);
                     c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x8));
                     c.g[A3][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x10));
                     c.sdl(5, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.sdr(5, (c.g[V0][0] as u32));
+                    c.sdr(5, c.g[V0][0] as u32);
                     c.sdl(6, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[V0][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[A3][0]);
@@ -25155,7 +25155,7 @@ fn ps2_graphics_man_v99_resume(c: &mut Cpu) {
                     c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[V0][0] = c.lh((c.g[A2][0] as u32).wrapping_add(0x48));
                     c.g[S1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x7c));
-                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[S4][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
                     let t = c.g[V0][0] != 0u64;

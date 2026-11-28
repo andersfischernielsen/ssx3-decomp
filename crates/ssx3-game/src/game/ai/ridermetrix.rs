@@ -7788,7 +7788,7 @@ fn rider_metrix_award_points_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.g[S3][0] = c.g[A1][0];
                     let t = c.g[S1][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x0011a068;
                         continue;
@@ -7801,7 +7801,7 @@ fn rider_metrix_award_points_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
-                    c.g[A0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[A0][0] as u32);
                     let t = c.g[A0][0] == 0u64;
                     c.g[A1][0] = 0u64;
                     if t {
@@ -7844,7 +7844,7 @@ fn rider_metrix_award_points_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00119f78);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     call_ptr(c, t, 0x00119f78)?;
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x00119f84);
@@ -7857,7 +7857,7 @@ fn rider_metrix_award_points_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00119fa0);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     call_ptr(c, t, 0x00119fa0)?;
                     c.g[A1][0] = c.g[V0][0];
                     c.g[A0][0] = c.g[S0][0];
@@ -7889,8 +7889,8 @@ fn rider_metrix_award_points_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7870));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7986,7 +7986,7 @@ fn rider_metrix_award_points_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;

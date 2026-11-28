@@ -1723,8 +1723,8 @@ fn be_new_race_int_map_event_type_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5eb0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1946,7 +1946,7 @@ fn be_new_race_int_get_target_score_resume(c: &mut Cpu) {
                     c.g[T1][0] = 0x1;
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[T0][0] = c.g[A2][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 1);
                     let t = c.g[A3][0] != 0u64;
@@ -1986,8 +1986,8 @@ fn be_new_race_int_get_target_score_resume(c: &mut Cpu) {
                 0x00145408 => {
                     c.cycles += 17;
                     c.g[A0][0] = 0x64;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
-                    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+                    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x4));
                     c.mult(0, 2, 2, 4);
                     c.mtc1(2, 0);
@@ -2019,11 +2019,11 @@ fn be_new_race_int_get_target_score_resume(c: &mut Cpu) {
                     c.mul_s(0, 0, 1);
                     c.cvt_w_s(1, 0);
                     c.mfc1(2, 1);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.div(0, 16, 5);
                     c.g[V0][0] = c.hi[0];
                     let t = true;
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     if t {
                         pc = 0x001454e4;
                         continue;
@@ -2078,7 +2078,7 @@ fn be_new_race_int_get_target_score_resume(c: &mut Cpu) {
                 }
                 0x001454b8 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lh((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lh(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != c.g[A1][0];
                     c.g[A2][0] = sx((c.g[A0][0] as u32) << 4);
                     if t {
@@ -2128,7 +2128,7 @@ fn be_new_race_int_get_target_score_resume(c: &mut Cpu) {
                 0x001454e4 => {
                     c.cycles += 4;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;

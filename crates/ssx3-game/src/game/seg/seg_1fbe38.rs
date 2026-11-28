@@ -13016,7 +13016,7 @@ fn w_script_fn_next_task_resume(c: &mut Cpu) {
                 }
                 0x00302e34 => {
                     c.cycles += 1;
-                    c.sb((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
                     pc = 0x00302e38;
                     continue;
                 }
@@ -13047,12 +13047,12 @@ fn w_script_fn_next_task_resume(c: &mut Cpu) {
                 }
                 0x00302e60 => {
                     c.cycles += 8;
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] == c.g[V0][0] {
                         c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
@@ -13078,7 +13078,7 @@ fn w_script_fn_next_task_resume(c: &mut Cpu) {
                     c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
                     c.cvt_s_w(0, 0);
                     let t = true;
-                    c.swc1(0, (c.g[A0][0] as u32));
+                    c.swc1(0, c.g[A0][0] as u32);
                     if t {
                         pc = 0x00302e9c;
                         continue;
@@ -13088,7 +13088,7 @@ fn w_script_fn_next_task_resume(c: &mut Cpu) {
                 }
                 0x00302e98 => {
                     c.cycles += 1;
-                    c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                     pc = 0x00302e9c;
                     continue;
                 }
@@ -13109,7 +13109,7 @@ fn w_script_fn_next_task_resume(c: &mut Cpu) {
                 }
                 0x00302ea8 => {
                     c.cycles += 20;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A2][0] = 0x2;
                     c.g[RA][0] = sx(0x00302eb8);
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xce8));
@@ -13122,10 +13122,10 @@ fn w_script_fn_next_task_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[S3][0];
                     c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
                     c.ldl(4, (c.g[A3][0] as u32).wrapping_add(0x7));
-                    c.ldr(4, (c.g[A3][0] as u32));
+                    c.ldr(4, c.g[A3][0] as u32);
                     c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
                     c.sdl(4, (c.g[S3][0] as u32).wrapping_add(0x7));
-                    c.sdr(4, (c.g[S3][0] as u32));
+                    c.sdr(4, c.g[S3][0] as u32);
                     c.sw((c.g[S3][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
@@ -13990,7 +13990,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0xc));
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x274c), c.g[A0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x4), c.g[A0][0]);
-                    c.sb((c.g[SP][0] as u32), c.g[A1][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[A1][0]);
                     pc = 0x0030516c;
                     continue;
                 }
@@ -14025,12 +14025,12 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                 }
                 0x003051a8 => {
                     c.cycles += 8;
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] == c.g[V0][0] {
                         c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
@@ -14056,7 +14056,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
                     c.cvt_s_w(0, 0);
                     let t = true;
-                    c.swc1(0, (c.g[A0][0] as u32));
+                    c.swc1(0, c.g[A0][0] as u32);
                     if t {
                         pc = 0x003051e4;
                         continue;
@@ -14066,7 +14066,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                 }
                 0x003051e0 => {
                     c.cycles += 1;
-                    c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                     pc = 0x003051e4;
                     continue;
                 }
@@ -14126,10 +14126,10 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V0][0] = c.g[A2][0] & 0xff;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] == 0u64;
                     c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
                     if t {
@@ -14143,8 +14143,8 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -14170,8 +14170,8 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                 }
                 0x00305260 => {
                     c.cycles += 4;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
-                    c.g[S3][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                    c.g[S3][0] = c.lw(c.g[A0][0] as u32);
                     let t = c.g[A1][0] != 0u64;
                     c.lwc1(20, (c.g[S0][0] as u32).wrapping_add(0xc));
                     if t {
@@ -14218,7 +14218,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.cycles += 14;
                     c.g[A0][0] = sx((c.g[S3][0] as u32) << 2);
                     c.g[S1][0] = c.g[A0][0];
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x40));
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
@@ -14227,7 +14227,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003052c4);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     call_ptr(c, t, 0x003052c4)?;
                     c.g[A1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0xc));
                     let t = c.g[A1][0] == 0u64;
@@ -14246,7 +14246,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003052e4);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003052e4)?;
                     let t = true;
                     c.lq(2, (c.g[V0][0] as u32).wrapping_add(0x30));
@@ -14267,7 +14267,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                 0x003052f4 => {
                     c.cycles += 24;
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.lqc2(3, (c.g[S0][0] as u32));
+                    c.lqc2(3, c.g[S0][0] as u32);
                     c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
@@ -14284,7 +14284,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.cfc2(3, 22);
                     c.mtc1(3, 13);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x87c));
@@ -14302,8 +14302,8 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x84));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.mul_s(13, 13, 20);
-                    c.g[A1][0] = c.lw((c.g[S6][0] as u32));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A1][0] = c.lw(c.g[S6][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 12);
                     c.g[RA][0] = sx(0x00305378);
@@ -14360,7 +14360,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                 0x003053a0 => {
                     c.cycles += 12;
                     c.g[S1][0] = sx((c.g[S0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
@@ -14369,7 +14369,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003053c8);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     call_ptr(c, t, 0x003053c8)?;
                     let t = c.g[V0][0] != c.g[S3][0];
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
@@ -14383,7 +14383,7 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                 0x003053d0 => {
                     c.cycles += 7;
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x87c));
@@ -14400,8 +14400,8 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.cycles += 11;
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x84));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[A1][0] = c.lw((c.g[S5][0] as u32));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A1][0] = c.lw(c.g[S5][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 12);
                     c.mtc1(0, 13);
@@ -14443,10 +14443,10 @@ fn wscript_fn_camera_shake_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[S7][0];
                     c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
                     c.ldl(4, (c.g[A3][0] as u32).wrapping_add(0x7));
-                    c.ldr(4, (c.g[A3][0] as u32));
+                    c.ldr(4, c.g[A3][0] as u32);
                     c.g[A1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
                     c.sdl(4, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(4, (c.g[S7][0] as u32));
+                    c.sdr(4, c.g[S7][0] as u32);
                     c.sw((c.g[S7][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xe0));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xd0));
@@ -15843,7 +15843,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc0));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0xc8), 0u64);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0xd0), c.g[A0][0]);
-                    c.sb((c.g[SP][0] as u32), c.g[A1][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[A1][0]);
                     pc = 0x002fe9a0;
                     continue;
                 }
@@ -15890,12 +15890,12 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                 }
                 0x002fe9f8 => {
                     c.cycles += 8;
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S3][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] == c.g[V0][0] {
                         c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
@@ -15921,7 +15921,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.lwc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
                     c.cvt_s_w(0, 0);
                     let t = true;
-                    c.swc1(0, (c.g[A0][0] as u32));
+                    c.swc1(0, c.g[A0][0] as u32);
                     if t {
                         pc = 0x002fea34;
                         continue;
@@ -15931,7 +15931,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                 }
                 0x002fea30 => {
                     c.cycles += 1;
-                    c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                     pc = 0x002fea34;
                     continue;
                 }
@@ -15993,10 +15993,10 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V0][0] = c.g[A2][0] & 0xff;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] != 0u64 {
                         c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
@@ -16021,8 +16021,8 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V0][0] = sx((c.g[A2][0] as u32) >> 8);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -16070,7 +16070,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002feae4);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002feae4)?;
                     let t = c.g[V0][0] == 0u64;
 
@@ -16088,7 +16088,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002feb00);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x002feb00)?;
                     c.lq(3, (c.g[V0][0] as u32).wrapping_add(0x30));
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
@@ -16141,7 +16141,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
                     c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
@@ -16150,10 +16150,10 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002feb70);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     call_ptr(c, t, 0x002feb70)?;
                     c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -16222,7 +16222,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x70));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
@@ -16231,10 +16231,10 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002fec18);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     call_ptr(c, t, 0x002fec18)?;
                     c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -16311,7 +16311,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                 0x002fec90 => {
                     c.cycles += 6;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x84c));
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x550));
                     c.g[V1][0] = c.g[V1][0] ^ 0x2;
                     let t = c.g[V1][0] == 0u64;
@@ -16361,7 +16361,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
                     c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
@@ -16370,10 +16370,10 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002fed00);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     call_ptr(c, t, 0x002fed00)?;
-                    c.lqc2(3, (c.g[S2][0] as u32));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(3, c.g[S2][0] as u32);
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -16442,7 +16442,7 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x70));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
                     c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
@@ -16451,10 +16451,10 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x002feda8);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     call_ptr(c, t, 0x002feda8)?;
-                    c.lqc2(3, (c.g[S2][0] as u32));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(3, c.g[S2][0] as u32);
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -16558,10 +16558,10 @@ fn wof_add_particle_data_resume(c: &mut Cpu) {
                     c.cycles += 19;
                     c.g[A1][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x6f68));
                     c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[A1][0] as u32));
+                    c.ldr(2, c.g[A1][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S5][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S5][0] as u32));
+                    c.sdr(2, c.g[S5][0] as u32);
                     c.sw((c.g[S5][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.g[V0][0] = c.g[S5][0];
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));

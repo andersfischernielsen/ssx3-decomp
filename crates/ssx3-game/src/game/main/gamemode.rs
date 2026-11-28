@@ -8429,7 +8429,7 @@ fn gm_handler8_pick_opponents_resume(c: &mut Cpu) {
                 }
                 0x0023b0b8 => {
                     c.cycles += 7;
-                    c.sw((c.g[V0][0] as u32), c.g[A2][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[A2][0]);
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
                     let t = (c.g[A2][0] as i64) >= 0;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4));
@@ -8455,7 +8455,7 @@ fn gm_handler8_pick_opponents_resume(c: &mut Cpu) {
                     .call(c, 0x0023b0e0)?;
                     c.g[T1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x480));
                     c.g[T0][0] = 0x2;
-                    c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A2][0] = 0u64;
                     c.g[A0][0] = c.g[T1][0];
                     c.g[A3][0] = c.g[SP][0];
@@ -8489,10 +8489,10 @@ fn gm_handler8_pick_opponents_resume(c: &mut Cpu) {
                 }
                 0x0023b118 => {
                     c.cycles += 5;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.sw((c.g[V1][0] as u32), c.g[A1][0]);
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.sw(c.g[V1][0] as u32, c.g[A1][0]);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x40), 0u64);
                     pc = 0x0023b12c;
                     continue;
@@ -8518,7 +8518,7 @@ fn gm_handler8_pick_opponents_resume(c: &mut Cpu) {
                 0x0023b13c => {
                     c.cycles += 5;
                     c.g[A0][0] = c.g[T1][0];
-                    c.g[A1][0] = c.lw((c.g[A3][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[A3][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
                     let t = c.g[A1][0] == c.g[V0][0];
                     c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));

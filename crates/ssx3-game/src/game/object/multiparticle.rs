@@ -3014,7 +3014,7 @@ fn rail_man_disable_rail_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
                     c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
@@ -3024,12 +3024,12 @@ fn rail_man_disable_rail_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x003587b0);
                     c.g[S0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x18));
                     call_ptr(c, 0x002d1bd8, 0x003587b0)?;
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = c.g[S0][0] & 0xff;
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] != 0u64 {
                         c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
@@ -3054,8 +3054,8 @@ fn rail_man_disable_rail_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V0][0] = sx((c.g[S0][0] as u32) >> 8);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -3102,7 +3102,7 @@ fn rail_man_disable_rail_resume(c: &mut Cpu) {
                 0x00358818 => {
                     c.cycles += 44;
                     c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x6c));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x70));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.lwc1(2, (c.g[S1][0] as u32).wrapping_add(0x74));
@@ -3151,7 +3151,7 @@ fn rail_man_disable_rail_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[S0][0];
                     call_ptr(c, 0x003284b8, 0x003588b8)?;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
 
                     if c.g[V0][0] != 0u64 {
                         c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
@@ -3265,7 +3265,7 @@ fn rail_man_disable_rail_resume(c: &mut Cpu) {
                 }
                 0x00358930 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     if t {

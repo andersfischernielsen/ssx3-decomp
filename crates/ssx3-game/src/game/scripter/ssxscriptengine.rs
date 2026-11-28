@@ -12262,7 +12262,7 @@ fn script_engine_get_transition_target_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     let t = true;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
@@ -12278,7 +12278,7 @@ fn script_engine_get_transition_target_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     pc = 0x0027a4f8;
@@ -12305,8 +12305,8 @@ fn script_engine_get_transition_target_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1df0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -12319,7 +12319,7 @@ fn script_engine_get_transition_target_resume(c: &mut Cpu) {
                     call_ptr(c, 0x002e4ce8, 0x0027a524)?;
                     c.g[S0][0] = c.g[V0][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -12456,7 +12456,7 @@ fn script_engine_get_transition_target_resume(c: &mut Cpu) {
                     call_ptr(c, 0x002e4d70, 0x0027a620)?;
                     c.g[V1][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7f40));
-                    c.sw((c.g[S0][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V1][0]);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x1f));
@@ -12752,8 +12752,8 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                 0x0027b0ec => {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x540));
-                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] != 0u64;
                     c.g[A1][0] = c.g[SP][0];
                     if t {
@@ -12795,8 +12795,8 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[V0][0];
                     c.g[V1][0] = 0u64;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x540));
-                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                     let t = (c.g[A1][0] as i64) <= 0;
                     c.g[T4][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                     if t {
@@ -12818,11 +12818,11 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                 0x0027b160 => {
                     c.cycles += 9;
                     c.g[T3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                    c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T4][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[T1][0] as u32));
+                    c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T1][0] as u32);
                     c.mult(0, 3, 2, 13);
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T7][0] as u32)));
-                    c.g[T0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T7][0] as u32));
+                    c.g[T0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = ((c.g[S4][0] as i64) < (c.g[T0][0] as i64)) as u64;
                     let t = c.g[V1][0] != 0u64;
                     c.g[V1][0] = c.g[T3][0];
@@ -12865,7 +12865,7 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                 }
                 0x0027b1a0 => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A2][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x4));
                     let t = c.g[A2][0] == 0u64;
                     c.g[V0][0] = sx((c.g[A3][0] as u32) << 2);
@@ -12881,8 +12881,8 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                 }
                 0x0027b1b0 => {
                     c.cycles += 5;
-                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
 
                     if c.g[V1][0] != 0u64 {
@@ -12935,9 +12935,9 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                 }
                 0x0027b1e8 => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[V0][0] as u32), c.g[T1][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[T1][0]);
                     c.g[V1][0] = c.g[T3][0];
                     pc = 0x0027b1f8;
                     continue;
@@ -12985,8 +12985,8 @@ fn script_engine_choose_script_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[V1][0] = c.hi[0];
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-                    c.g[S0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[V1][0] as u32);
                     pc = 0x0027b230;
                     continue;
                 }
@@ -16143,7 +16143,7 @@ fn script_engine_skip_finish_script_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A2][0] = 0u64;
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x0027aa10);
                     c.g[S1][0] = c.g[A0][0];
                     Callee {
@@ -16167,8 +16167,8 @@ fn script_engine_skip_finish_script_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1e20));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -16217,7 +16217,7 @@ fn script_engine_skip_finish_script_resume(c: &mut Cpu) {
                     c.g[V0][0] = (0u64 < c.g[S0][0]) as u64;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -18215,7 +18215,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
                     c.g[S1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     c.g[FP][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x7c));
@@ -18228,9 +18228,9 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V1][0] = (c.g[S3][0] < 0x15u64) as u64;
                     c.g[S0][0] = c.g[V0][0];
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     let t = c.g[V1][0] == 0u64;
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     if t {
                         pc = 0x0027bf10;
                         continue;
@@ -18242,8 +18242,8 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = 0x480000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1ec0));
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] as u32;
 
                     pc = t;
@@ -18263,7 +18263,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 0x0027be44 => {
                     c.cycles += 2;
                     let t = true;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     if t {
                         pc = 0x0027bee8;
                         continue;
@@ -18285,7 +18285,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 0x0027be54 => {
                     c.cycles += 2;
                     let t = true;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     if t {
                         pc = 0x0027bee8;
                         continue;
@@ -18307,7 +18307,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 0x0027be64 => {
                     c.cycles += 2;
                     let t = true;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     if t {
                         pc = 0x0027bee8;
                         continue;
@@ -18330,7 +18330,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 }
                 0x0027be7c => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
                     let t = true;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
@@ -18356,7 +18356,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 }
                 0x0027be9c => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48));
                     let t = true;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
@@ -18383,7 +18383,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 }
                 0x0027bec0 => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x5c));
                     let t = true;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x18));
@@ -18410,7 +18410,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                 }
                 0x0027bee4 => {
                     c.cycles += 1;
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     pc = 0x0027bee8;
                     continue;
                 }
@@ -18427,10 +18427,10 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                     c.g[A0][0] = 0x480000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1bb0));
-                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     pc = 0x0027bf10;
                     continue;
                 }
@@ -18461,7 +18461,7 @@ fn script_engine_eval_choice_params_resume(c: &mut Cpu) {
                     c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.pc = t;
@@ -19096,9 +19096,9 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                         f: ee::s07::ScriptView_GetParams,
                     }
                     .call(c, 0x002816e8)?;
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     let t = c.g[V1][0] == 0u64;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0028175c;
                         continue;
@@ -19188,7 +19188,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                 }
                 0x00281758 => {
                     c.cycles += 1;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     pc = 0x0028175c;
                     continue;
                 }
@@ -19218,7 +19218,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                 0x00281770 => {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x14));
-                    c.g[A0][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lb(c.g[V0][0] as u32);
                     c.g[V1][0] = (c.g[A0][0] < 0x9u64) as u64;
                     let t = c.g[V1][0] == 0u64;
                     c.g[V0][0] = 0x480000;
@@ -19233,8 +19233,8 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1f20));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -19244,7 +19244,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
                     if t {
@@ -19304,7 +19304,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00281808);
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     Callee {
                         addr: 0x00281c40,
                         f: ee::s07::ScriptViewObj_GetSlotCam,
@@ -19327,7 +19327,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[V0][0];
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 20);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[A1][0] = c.g[V1][0];
                     if t {
@@ -19471,7 +19471,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x002818f8);
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     Callee {
                         addr: 0x00281c40,
                         f: ee::s07::ScriptViewObj_GetSlotCam,
@@ -19524,7 +19524,7 @@ fn script_view_obj_tick_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     let t = (c.g[V0][0] as i64) < 0;
                     c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
                     if t {

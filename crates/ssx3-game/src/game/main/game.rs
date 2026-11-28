@@ -51,7 +51,6 @@ pub(crate) use crate::game::world::world::oc435_callee;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
@@ -2117,10 +2116,10 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.g[V0][0];
                     c.g[S0][0] = c.g[A1][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2168));
                     c.g[A1][0] = sx((c.g[S0][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                     let t = (c.g[V1][0] as i64) < 0;
                     c.g[S1][0] = c.g[A0][0];
@@ -2150,8 +2149,8 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4c30));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2161,7 +2160,7 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2168));
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[A0][0] = 0x4;
                     let t = true;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
@@ -2176,7 +2175,7 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2168));
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[A0][0] = 0x4;
                     let t = true;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
@@ -2191,7 +2190,7 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2168));
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[A0][0] = 0x4;
                     let t = true;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
@@ -2206,7 +2205,7 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2168));
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[A0][0] = 0x8;
                     let t = true;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A0][0]);
@@ -2221,14 +2220,14 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.cycles += 12;
                     c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_add(0x2168));
                     c.g[A1][0] = sx((c.g[S0][0] as u32) << 4);
-                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V0][0] = 0x2;
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[V1][0] = c.g[A0][0];
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1b0));
                     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[RA][0] = sx(0x0022d56c);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
                     call_ptr(c, 0x003a99d8, 0x0022d56c)?;
@@ -2268,7 +2267,7 @@ fn section_man_request_activate_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -4183,11 +4182,11 @@ fn section_man_request_load_resume(c: &mut Cpu) {
                     c.cycles += 10;
                     c.g[V0][0] = 0x440000;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[T0][0] = c.g[V0][0];
                     c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2168));
                     c.g[A2][0] = sx((c.g[A1][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                     let t = (c.g[V1][0] as i64) < 0;
                     c.g[T1][0] = c.g[A0][0];
@@ -4217,8 +4216,8 @@ fn section_man_request_load_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4c60));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4228,7 +4227,7 @@ fn section_man_request_load_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x2168));
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     let t = true;
                     c.g[A0][0] = 0x1;
                     if t {
@@ -4242,7 +4241,7 @@ fn section_man_request_load_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(0x2168));
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 4);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[A0][0] = 0x3;
                     pc = 0x0022d454;
                     continue;
@@ -4257,7 +4256,7 @@ fn section_man_request_load_resume(c: &mut Cpu) {
                 0x0022d45c => {
                     c.cycles += 2;
                     let t = c.g[A2][0] == 0u64;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0022d470;
                         continue;
@@ -4279,7 +4278,7 @@ fn section_man_request_load_resume(c: &mut Cpu) {
                 }
                 0x0022d46c => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x0022d470;
                     continue;
                 }
@@ -4610,7 +4609,7 @@ fn section_man_on_event_trigger_2_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[A1][0];
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x0022d6ec);
                     c.g[S2][0] = c.g[A0][0];
                     call_ptr(c, 0x0014dc80, 0x0022d6ec)?;
@@ -4763,8 +4762,8 @@ fn section_man_on_event_trigger_2_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4bb0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4871,7 +4870,7 @@ fn section_man_on_event_trigger_2_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0022d890);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0022d890)?;
                     c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
                     c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x5bc8));
@@ -4894,7 +4893,7 @@ fn section_man_on_event_trigger_2_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;

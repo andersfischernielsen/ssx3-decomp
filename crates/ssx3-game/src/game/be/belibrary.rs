@@ -6855,7 +6855,7 @@ fn bolts_count_children_2_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[T0][0] = c.g[A0][0];
                     c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x11c));
 
                     if c.g[V0][0] != 0u64 {
@@ -6868,7 +6868,7 @@ fn bolts_count_children_2_resume(c: &mut Cpu) {
                 }
                 0x0014d4e0 => {
                     c.cycles += 11;
-                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[A0][0] = 0x38;
                     c.g[A3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
                     c.g[V0][0] = c.g[V1][0];
@@ -6876,9 +6876,9 @@ fn bolts_count_children_2_resume(c: &mut Cpu) {
                     c.g[T1][0] = 0u64;
                     c.mult(0, 4, 7, 4);
                     c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
-                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     let t = true;
-                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     if t {
                         pc = 0x0014d518;
                         continue;
@@ -6964,9 +6964,9 @@ fn bolts_count_children_2_resume(c: &mut Cpu) {
                 }
                 0x0014d548 => {
                     c.cycles += 3;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = c.g[RA][0] as u32;
-                    c.g[V0][0] = c.lh((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lh(c.g[V1][0] as u32);
                     c.pc = t;
                     return Ok(());
                 }

@@ -12396,7 +12396,7 @@ fn rider_tuning_static_init_resume(c: &mut Cpu) {
                     c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0xb0));
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0xa8));
                     let t = c.g[A1][0] != c.g[V0][0];
@@ -13151,7 +13151,7 @@ fn rider_tuning_static_init_resume(c: &mut Cpu) {
                     c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0xb0));
                     c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0xa8));
                     c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -16188,11 +16188,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142ae8 => {
                     c.cycles += 11;
-                    c.g[A1][0] = c.ld((c.g[V1][0] as u32));
+                    c.g[A1][0] = c.ld(c.g[V1][0] as u32);
                     c.g[A2][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[T4][0] = c.ld((c.g[V1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[V0][0] as u32), c.g[A1][0]);
+                    c.sd(c.g[V0][0] as u32, c.g[A1][0]);
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A2][0]);
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x10), c.g[T3][0]);
                     c.sd((c.g[V0][0] as u32).wrapping_add(0x18), c.g[T4][0]);
@@ -16211,8 +16211,8 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142b14 => {
                     c.cycles += 14;
-                    c.g[A0][0] = c.ld((c.g[V1][0] as u32));
-                    c.sd((c.g[V0][0] as u32), c.g[A0][0]);
+                    c.g[A0][0] = c.ld(c.g[V1][0] as u32);
+                    c.sd(c.g[V0][0] as u32, c.g[A0][0]);
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x78c8));
                     c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x8));
@@ -16222,19 +16222,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[T1][0];
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xdf0));
-                    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x108), c.g[V1][0]);
                     pc = 0x00142b4c;
                     continue;
                 }
                 0x00142b4c => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16253,15 +16253,15 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142b78 => {
                     c.cycles += 10;
-                    c.g[T0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x7880));
                     c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x6c0), c.g[T1][0]);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x158), c.g[V1][0]);
                     pc = 0x00142ba0;
                     continue;
@@ -16360,11 +16360,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142cd0 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[A3][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A3][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A2][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[T4][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16384,31 +16384,31 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 0x00142cfc => {
                     c.cycles += 16;
                     c.g[A1][0] = 0x460000;
-                    c.g[V0][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x76d8));
-                    c.g[T1][0] = c.ld((c.g[A3][0] as u32));
-                    c.sd((c.g[A2][0] as u32), c.g[T1][0]);
+                    c.g[T1][0] = c.ld(c.g[A3][0] as u32);
+                    c.sd(c.g[A2][0] as u32, c.g[T1][0]);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A3][0] = 0x460000;
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x7690));
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[V0][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
                     c.g[A3][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T4][0] = sx((c.g[T0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T4][0] as u32)));
+                    c.g[T4][0] = sx((c.g[T0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T4][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00142d3c;
                     continue;
                 }
                 0x00142d3c => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16427,12 +16427,12 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142d68 => {
                     c.cycles += 25;
-                    c.g[A3][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A3][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A3][0]);
                     c.g[A0][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T1][0]);
-                    c.g[V0][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
                     c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x7690));
                     c.g[A2][0] = 0x460000;
                     c.g[T0][0] = 0x460000;
@@ -16444,7 +16444,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T1][0] = c.g[A0][0];
                     c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x8));
                     c.g[T0][0] = c.g[SP][0];
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T4][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
                     c.g[S2][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
@@ -16457,11 +16457,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142dcc => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16482,9 +16482,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x72f8));
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A1][0] = 0x460000;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x72b0));
@@ -16493,19 +16493,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T4][0] = sx((c.g[T2][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T4][0] as u32)));
+                    c.g[T4][0] = sx((c.g[T2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T4][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00142e38;
                     continue;
                 }
                 0x00142e38 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V1][0]);
@@ -16524,9 +16524,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142e64 => {
                     c.cycles += 25;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.g[V0][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A3][0]);
                     c.g[V1][0] = 0x460000;
@@ -16542,7 +16542,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T2][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
                     c.g[V0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x14));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T4][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T4][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x14));
@@ -16554,11 +16554,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142ec8 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16579,9 +16579,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x14));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x77d0));
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A1][0] = 0x460000;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7788));
@@ -16590,19 +16590,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T3][0] as u32).wrapping_add(0x14));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x20));
-                    c.g[T2][0] = sx((c.g[T3][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T3][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00142f34;
                     continue;
                 }
                 0x00142f34 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -16621,9 +16621,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142f60 => {
                     c.cycles += 25;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[T4][0] = 0x460000;
@@ -16639,7 +16639,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
                     c.g[V0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[T5][0] as u32).wrapping_add(0x4));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(0x4));
@@ -16651,11 +16651,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00142fc4 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -16676,9 +16676,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(0x4));
                     c.g[T3][0] = 0x460000;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x74e8));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x74a0));
@@ -16687,19 +16687,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T5][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T5][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T5][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143030;
                     continue;
                 }
                 0x00143030 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T4][0]);
@@ -16718,9 +16718,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x0014305c => {
                     c.cycles += 25;
-                    c.g[V0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
@@ -16736,7 +16736,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[T6][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[T6][0] as u32).wrapping_add(0x8));
@@ -16748,11 +16748,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001430c0 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16773,9 +16773,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T6][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x75e0));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x7598));
@@ -16784,19 +16784,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T6][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T6][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T6][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x0014312c;
                     continue;
                 }
                 0x0014312c => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -16815,9 +16815,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143158 => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -16833,7 +16833,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[T7][0] as u32).wrapping_add(0x80));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[T7][0] as u32).wrapping_add(0x80));
@@ -16845,11 +16845,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001431bc => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16870,9 +16870,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T7][0] as u32).wrapping_add(0x80));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x73f0));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x73a8));
@@ -16881,19 +16881,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T7][0] as u32).wrapping_add(0x80));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x90));
-                    c.g[T2][0] = sx((c.g[T7][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T7][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143228;
                     continue;
                 }
                 0x00143228 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -16912,9 +16912,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143254 => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -16930,7 +16930,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[T8][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[T8][0] as u32).wrapping_add(0x8));
@@ -16942,11 +16942,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001432b8 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -16967,9 +16967,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T8][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7200));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x71b8));
@@ -16978,19 +16978,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T8][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T8][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T8][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143324;
                     continue;
                 }
                 0x00143324 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -17009,9 +17009,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143350 => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -17027,7 +17027,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[T9][0] as u32).wrapping_add(0x14));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[T9][0] as u32).wrapping_add(0x14));
@@ -17039,11 +17039,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001433b4 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17064,9 +17064,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[T9][0] as u32).wrapping_add(0x14));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7108));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x70c0));
@@ -17075,19 +17075,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[T9][0] as u32).wrapping_add(0x14));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x20));
-                    c.g[T2][0] = sx((c.g[T9][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T9][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143420;
                     continue;
                 }
                 0x00143420 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -17106,9 +17106,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x0014344c => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -17124,7 +17124,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x58));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x58));
@@ -17136,11 +17136,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001434b0 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17161,9 +17161,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x58));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7010));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6fc8));
@@ -17172,19 +17172,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x58));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x60));
-                    c.g[T2][0] = sx((c.g[S3][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x0014351c;
                     continue;
                 }
                 0x0014351c => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -17203,9 +17203,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143548 => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -17221,7 +17221,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x14));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x14));
@@ -17233,11 +17233,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001435ac => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17258,9 +17258,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x14));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6f18));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6ed0));
@@ -17269,19 +17269,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x14));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x20));
-                    c.g[T2][0] = sx((c.g[S4][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[S4][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143618;
                     continue;
                 }
                 0x00143618 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -17300,9 +17300,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143644 => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -17318,7 +17318,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x200));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x200));
@@ -17330,11 +17330,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001436a8 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17356,31 +17356,31 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x208));
                     c.g[A2][0] = 0x460000;
                     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x6e20));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
-                    c.g[A3][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                    c.g[A3][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A3][0]);
                     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6dd8));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A3][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
                     c.g[A1][0] = c.g[S1][0];
                     c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x208));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x0014371c;
                     continue;
                 }
                 0x0014371c => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -17399,9 +17399,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143748 => {
                     c.cycles += 26;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[T3][0] = 0x460000;
@@ -17411,14 +17411,14 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6ce0));
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6d28));
                     c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x6470));
-                    c.g[V0][0] = c.lw((c.g[T4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T4][0] as u32);
                     c.g[T1][0] = c.g[A0][0];
                     c.g[T0][0] = c.g[SP][0];
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[S1][0]);
                     c.g[V0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f0));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1f0));
@@ -17430,11 +17430,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001437b0 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -17456,30 +17456,30 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x204));
                     c.g[T4][0] = 0x460000;
                     c.g[A0][0] = sx((c.g[T4][0] as u32).wrapping_sub(0x6d28));
-                    c.g[V0][0] = c.lw((c.g[T3][0] as u32));
-                    c.g[V1][0] = c.ld((c.g[T1][0] as u32));
-                    c.sd((c.g[T0][0] as u32), c.g[V1][0]);
+                    c.g[V0][0] = c.lw(c.g[T3][0] as u32);
+                    c.g[V1][0] = c.ld(c.g[T1][0] as u32);
+                    c.sd(c.g[T0][0] as u32, c.g[V1][0]);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[T0][0] = 0x460000;
                     c.g[A2][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x6ce0));
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[V0][0] = c.lw((c.g[T3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T3][0] as u32);
                     c.g[A3][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T3][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T3][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143820;
                     continue;
                 }
                 0x00143820 => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -17498,9 +17498,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x0014384c => {
                     c.cycles += 26;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[T3][0] = 0x460000;
@@ -17510,14 +17510,14 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6be8));
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6c30));
                     c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x6470));
-                    c.g[V0][0] = c.lw((c.g[T4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T4][0] as u32);
                     c.g[T1][0] = c.g[A0][0];
                     c.g[T0][0] = c.g[SP][0];
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[S1][0]);
                     c.g[V0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x14));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x14));
@@ -17529,11 +17529,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001438b4 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -17554,9 +17554,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x14));
                     c.g[T3][0] = 0x460000;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6c30));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x6be8));
@@ -17565,19 +17565,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S5][0] as u32).wrapping_add(0x14));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x20));
-                    c.g[T2][0] = sx((c.g[S5][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[S5][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143920;
                     continue;
                 }
                 0x00143920 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T4][0]);
@@ -17596,9 +17596,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x0014394c => {
                     c.cycles += 25;
-                    c.g[V0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
@@ -17614,7 +17614,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c0));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x1c0));
@@ -17626,11 +17626,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x001439b0 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17652,31 +17652,31 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x200));
                     c.g[A2][0] = 0x460000;
                     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x6b38));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
-                    c.g[A3][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                    c.g[A3][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A3][0]);
                     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6af0));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A3][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
                     c.g[A1][0] = c.g[S1][0];
                     c.g[T0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x200));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143a24;
                     continue;
                 }
                 0x00143a24 => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -17695,9 +17695,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143a50 => {
                     c.cycles += 26;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[T3][0] = 0x460000;
@@ -17707,14 +17707,14 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x69f8));
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6a40));
                     c.g[A2][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x6470));
-                    c.g[V0][0] = c.lw((c.g[T4][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[T4][0] as u32);
                     c.g[T1][0] = c.g[A0][0];
                     c.g[T0][0] = c.g[SP][0];
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[S1][0]);
                     c.g[V0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0xa0));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0xa0));
@@ -17726,11 +17726,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143ab8 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -17751,9 +17751,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0xa0));
                     c.g[T3][0] = 0x460000;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6a40));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x69f8));
@@ -17762,19 +17762,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S7][0] as u32).wrapping_add(0xa0));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb0));
-                    c.g[T2][0] = sx((c.g[S7][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[S7][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143b24;
                     continue;
                 }
                 0x00143b24 => {
                     c.cycles += 11;
-                    c.g[T0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T4][0]);
@@ -17793,9 +17793,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143b50 => {
                     c.cycles += 25;
-                    c.g[V0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
@@ -17811,7 +17811,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x50));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x50));
@@ -17823,11 +17823,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143bb4 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17848,9 +17848,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x50));
                     c.g[A1][0] = 0x460000;
-                    c.g[A2][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A2][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A2][0]);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6758));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6710));
@@ -17859,19 +17859,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x50));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x60));
-                    c.g[T2][0] = sx((c.g[FP][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[FP][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143c20;
                     continue;
                 }
                 0x00143c20 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[A0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T0][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[T3][0]);
@@ -17890,9 +17890,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143c4c => {
                     c.cycles += 25;
-                    c.g[T4][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[A2][0] as u32);
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T4][0]);
                     c.g[A3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.g[T0][0] = 0x460000;
@@ -17908,7 +17908,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[SP][0];
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
                     c.g[T3][0] = sx((c.g[T1][0] as u32).wrapping_add(0x40));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
@@ -17920,11 +17920,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143cb0 => {
                     c.cycles += 11;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[V0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A0][0]);
@@ -17946,31 +17946,31 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x21c));
                     c.g[A2][0] = 0x460000;
                     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x6948));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
-                    c.g[A3][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
+                    c.g[A3][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[A3][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A3][0]);
                     c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6900));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[T0][0] = sx((c.g[A2][0] as u32).wrapping_add(0xa0));
                     c.g[A1][0] = c.g[S1][0];
                     c.g[A3][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x21c));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = c.lw((c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A3][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143d24;
                     continue;
                 }
                 0x00143d24 => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -17989,19 +17989,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143d50 => {
                     c.cycles += 31;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x218));
                     c.g[A2][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6900));
                     c.g[T4][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x21c));
                     c.g[A1][0] = 0u64;
-                    c.g[V1][0] = c.lw((c.g[T4][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[T4][0] as u32);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6c0), c.g[S1][0]);
                     c.g[V0][0] = c.lhu((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.g[RA][0] = sx(0x00143d8c);
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     Callee {
@@ -18030,11 +18030,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143dcc => {
                     c.cycles += 11;
-                    c.g[T3][0] = c.ld((c.g[A3][0] as u32));
+                    c.g[T3][0] = c.ld(c.g[A3][0] as u32);
                     c.g[T4][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A2][0] as u32), c.g[T3][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[T3][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x8), c.g[T4][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.sd((c.g[A2][0] as u32).wrapping_add(0x18), c.g[V1][0]);
@@ -18057,9 +18057,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x460000;
                     c.g[V1][0] = 0x460000;
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
-                    c.g[T0][0] = c.ld((c.g[A3][0] as u32));
+                    c.g[T0][0] = c.ld(c.g[A3][0] as u32);
                     c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x6660));
-                    c.sd((c.g[A2][0] as u32), c.g[T0][0]);
+                    c.sd(c.g[A2][0] as u32, c.g[T0][0]);
                     c.g[A1][0] = c.g[S1][0];
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6618));
@@ -18068,19 +18068,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x10));
-                    c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[T2][0] = sx((c.g[T0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143e40;
                     continue;
                 }
                 0x00143e40 => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -18099,9 +18099,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143e6c => {
                     c.cycles += 26;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T1][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[T3][0] = 0x460000;
@@ -18118,7 +18118,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6c0), c.g[S1][0]);
                     c.g[V0][0] = c.lhu((c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T2][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6e8), c.g[A0][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
@@ -18130,11 +18130,11 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143ed4 => {
                     c.cycles += 11;
-                    c.g[A0][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[A0][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A1][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x10));
                     c.g[A3][0] = c.ld((c.g[T1][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[T0][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[A0][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x10), c.g[A2][0]);
                     c.sd((c.g[T0][0] as u32).wrapping_add(0x18), c.g[A3][0]);
@@ -18155,9 +18155,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[T3][0] = 0x460000;
-                    c.g[T4][0] = c.ld((c.g[T1][0] as u32));
+                    c.g[T4][0] = c.ld(c.g[T1][0] as u32);
                     c.g[A3][0] = 0x460000;
-                    c.sd((c.g[T0][0] as u32), c.g[T4][0]);
+                    c.sd(c.g[T0][0] as u32, c.g[T4][0]);
                     c.g[A0][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x6568));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x6e8), c.g[SP][0]);
                     c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x6520));
@@ -18166,19 +18166,19 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x20));
-                    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub((c.g[V0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
                     pc = 0x00143f40;
                     continue;
                 }
                 0x00143f40 => {
                     c.cycles += 11;
-                    c.g[T1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[T1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[T3][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-                    c.sd((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[T1][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[T3][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x10), c.g[T4][0]);
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x18), c.g[V0][0]);
@@ -18197,9 +18197,9 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                 }
                 0x00143f6c => {
                     c.cycles += 13;
-                    c.g[V1][0] = c.ld((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.ld(c.g[A2][0] as u32);
                     c.g[A0][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[T3][0] = 0x460000;
                     c.sd((c.g[A1][0] as u32).wrapping_add(0x8), c.g[A0][0]);
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x18));
@@ -18207,7 +18207,7 @@ fn rider_base_dtor_resume(c: &mut Cpu) {
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x6c0), c.g[S1][0]);
                     c.g[V0][0] = c.lhu((c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x210));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     let t = c.g[T4][0] == 0u64;
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x58), c.g[V0][0]);
                     if t {
@@ -19522,7 +19522,7 @@ fn rider_handplant_state_update_resume(c: &mut Cpu) {
                     c.div_s(0, 0, 3);
                     c.g[AT][0] = 0x40000000;
                     c.mtc1(1, 1);
-                    c.lqc2(3, (c.g[S2][0] as u32));
+                    c.lqc2(3, c.g[S2][0] as u32);
                     c.lqc2(4, (c.g[S2][0] as u32).wrapping_add(0x30));
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -19544,11 +19544,11 @@ fn rider_handplant_state_update_resume(c: &mut Cpu) {
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.lqc2(4, (c.g[S2][0] as u32));
+                    c.lqc2(4, c.g[S2][0] as u32);
                     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     c.sq(2, (c.g[A2][0] as u32).wrapping_add(0x110));
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa0));
                     c.swc1(2, (c.g[V1][0] as u32).wrapping_add(0x11c));
@@ -19571,8 +19571,8 @@ fn rider_handplant_state_update_resume(c: &mut Cpu) {
                     c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x14));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x18));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sq(2, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.lqc2(5, (c.g[V1][0] as u32).wrapping_add(0x120));
                     c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
                     c.vu0().opmula(4, 5);
@@ -19602,7 +19602,7 @@ fn rider_handplant_state_update_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xee0));
                     c.sq(2, (c.g[A2][0] as u32).wrapping_add(0x110));
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa0));
-                    c.lq(2, (c.g[A1][0] as u32));
+                    c.lq(2, c.g[A1][0] as u32);
                     c.sq(2, (c.g[V1][0] as u32).wrapping_add(0x1e0));
                     c.lwc1(1, (c.g[A0][0] as u32).wrapping_sub(0xee0));
                     c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x10));
@@ -19694,7 +19694,7 @@ fn rider_handplant_state_update_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xea0));
                     c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x50));
                     c.mfc1(2, 0);
-                    c.lqc2(4, (c.g[V1][0] as u32));
+                    c.lqc2(4, c.g[V1][0] as u32);
                     c.qmtc2(2, 3);
                     c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -19713,7 +19713,7 @@ fn rider_handplant_state_update_resume(c: &mut Cpu) {
                     c.lq(2, (c.g[S2][0] as u32).wrapping_add(0x10));
                     c.sq(3, (c.g[S2][0] as u32).wrapping_add(0x50));
                     c.sq(2, (c.g[S2][0] as u32).wrapping_add(0x60));
-                    c.sq(3, (c.g[SP][0] as u32));
+                    c.sq(3, c.g[SP][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xa0));
                     c.g[RA][0] = sx(0x001393fc);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x788));
