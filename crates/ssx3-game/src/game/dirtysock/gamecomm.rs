@@ -6646,7 +6646,11 @@ pub(crate) mod tests {
             // The ping response copies the 16-byte header to `sp + 0x100`,
             // so the scan's `sp + 0x108` word is `HDR + 8`.
             c.bus.write32(HDR + 8, if scan == 1 { M } else { 0x6000 });
-            c.bus.write32(SELF + 0xb8, 4);
+            // Seed 70 steers the `< V0` bound to zero (`V1 == V0 == 0`):
+            // orig takes the 0x257180 exit, the `<=` mutant enters the
+            // scan. (The other scan seeds keep bound 4 and still cover
+            // the loop and the match arms.)
+            c.bus.write32(SELF + 0xb8, if seed == 70 { 0 } else { 4 });
             // Tell the event hook to skip the 0x257110 unwind on
             // scan seeds so the VBlank reaches the scan instead.
             c.bus.write32(FIX + 0x3a00, SCAN_SEED);
@@ -6661,7 +6665,8 @@ pub(crate) mod tests {
     #[test]
     fn c_game_comm_update_matches() {
         // Pinned totals after the scan/countdown steering (scan seeds
-        // 34/46 match at k=1, 70/82 run to the bound; countdown on
+        // 34/46 match at k=1, 82 runs to the bound, 70 takes the zero
+        // bound exit; countdown on
         // 34/46): the dropped totals' arms are re-proven by the
         // mutation sweep, not by cycle counts.
         const PATHS: &[u64] = &[
@@ -6672,7 +6677,7 @@ pub(crate) mod tests {
             15738, 15744, 15746, 15747, 15771, 15772, 15773, 15778, 15779, 15785, 15786, 15792,
             15794, 15796, 15797, 15798, 15803, 15810, 15831, 15832, 15833, 15838, 15845, 15846,
             15847, 15853, 15857, 15859, 15865, 15871, 15873, 15876, 15877, 15898, 15899, 15900,
-            15905, 15912, 15913, 15924, 15925, 19030, 19031, 19105, 19106, 19234, 21207, 21275,
+            15905, 15912, 15913, 15924, 15925, 19030, 19031, 19105, 19106, 19156, 21207, 21275,
             21276, 21335, 21336, 21402, 21403, 515001, 517113, 517173, 517292, 517332,
         ];
         check_paths(
@@ -7745,6 +7750,17 @@ pub(crate) mod tests {
             // handler chains, 6 takes the `< 6` bound exit; each
             // crosses the arm-condition words below.
             plant_packet(c, this, 3, (seed / 4 % 7) as u8);
+            // The pop copies 12 bytes from `pkt + 4` to the frame, so the
+            // frame word at `SP + 0x4` is the packet word at `pkt + 8`.
+            // Seed 18 (type 4) plants 61 there for the 0x2580e0 div
+            // chain: the first divide's quotient is 1, so the second
+            // divide's remainder is 1 and the `<< 2` mutant stores at a
+            // different table word than orig (`S0 + 4` vs `S0 + 0`).
+            if seed == 18 {
+                let slot = this + 3 * 0x88 + 0x144;
+                let pkt = c.bus.read32(slot + 12);
+                c.bus.write32(pkt + 8, 61);
+            }
         } else {
             c.bus
                 .write8(crate::difftest::SP - 0x30, (seed / 4 % 7) as u8);
@@ -9066,15 +9082,20 @@ pub(crate) mod tests {
     }
 
     /// Both exit arms, no loop: a set +0x3f4 skips straight to teardown,
-    /// and a set +0x4 with clear +0x3f4 skips the wait loop too.
+    /// and a set +0x4 with clear +0x3f4 skips the wait loop too. Seeds
+    /// 310/311 reuse the (1, 0) combo on both parities (both seeds run
+    /// the full teardown with no scripted fake-call unwind): the odd seed
+    /// pairs V0 == 0 at the 0x258744 teardown gate with the clear
+    /// 0x534B30+8 word, taking the 0x25875c send-packet arm (killing its
+    /// delete mutant, which would otherwise exit early).
     #[test]
     fn c_game_comm_wait_for_peer_ready_exits() {
         check(
             ee::s06::f_002586b0__generated,
             c_game_comm_wait_for_peer_ready,
-            300,
+            312,
             &|c, seed| {
-                if seed % 2 == 0 {
+                if seed % 2 == 0 || seed >= 310 {
                     wait_for_peer_setup(c, seed, 1, 0);
                 } else {
                     wait_for_peer_setup(c, seed, 0, 1);

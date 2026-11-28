@@ -13931,6 +13931,10 @@ pub(crate) mod tests {
 
     pub(crate) fn lobbyupd_setup_rdir_noroot(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, MSG_DIR, 0);
+        // A previous pump's flag word: the `rdir` exit sets bit 0x400, so
+        // the read-modify-write flag store (`|0x400` at 0x3e9910) is tested
+        // with the bit set (unmasking the `^0x400` mutant, which clears it).
+        c.bus.write32(API + 0x08, 0x400);
         // The directory arm only runs in the rdir state.
         c.bus.write32(API + 0x0c, ST_RDIR);
         lobbyupd_string(c, b"rdir-cache");
@@ -13950,17 +13954,30 @@ pub(crate) mod tests {
 
     pub(crate) fn lobbyupd_setup_skey2(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, ST_SKEY, 0);
+        // A previous pump's flag word: the `skey2` exit sets bit 0x1, so
+        // the read-modify-write flag store (`|0x1` at 0x3e9a24) is tested
+        // with the bit set (unmasking the `^0x1` mutant, which clears it).
+        // (V0 there is the reloaded flag word, not the decode return.)
+        c.bus.write32(API + 0x08, 0x1);
         c.bus.write32(API + 0x0c, ST_SKEY);
     }
 
     pub(crate) fn lobbyupd_setup_auth(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, MSG_AUTH, 0);
+        // A previous pump's flag word: the `+aut` exit sets bit 0x2, so
+        // the read-modify-write flag stores (`|0x2` at 0x3e9b00/0x3e9b78)
+        // are tested with the bit set.
+        c.bus.write32(API + 0x08, 0x2);
         c.bus.write32(GETADDR, 0x0A00_0001);
         lobbyupd_string(c, b"auth-name");
     }
 
     pub(crate) fn lobbyupd_setup_acct(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, MSG_ACCT, 0);
+        // A previous pump's flag word: the `+act` exit sets bit 0x2, so
+        // the read-modify-write flag stores (`|0x2` at 0x3e9b00/0x3e9b78)
+        // are tested with the bit set.
+        c.bus.write32(API + 0x08, 0x2);
     }
 
     pub(crate) fn lobbyupd_setup_snap(c: &mut Cpu, _seed: u32) {
@@ -13981,6 +13998,10 @@ pub(crate) mod tests {
 
     pub(crate) fn lobbyupd_setup_sess(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, MSG_SESS, 0);
+        // A previous pump's flag word: the `+ses` exit sets bit 0x200, so
+        // the read-modify-write flag store (`|0x200` at 0x3e9e74) is tested
+        // with the bit set (unmasking the `^0x200` mutant, which clears it).
+        c.bus.write32(API + 0x08, 0x200);
         lobbyupd_string(c, b"sess-data");
     }
 
@@ -14127,6 +14148,11 @@ pub(crate) mod tests {
 
     pub(crate) fn lobbyupd_setup_snp(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, MSG_SNP, 0);
+        // A previous pump's flag word: the `+snp` exit sets bit 0x80, so
+        // the read-modify-write flag store (`|0x80` at 0x3eac48) is tested
+        // with the bit set (unmasking the `^0x80` mutant, which clears it).
+        // (The earlier same-word store at 0x3ea9f4 is masked by this one.)
+        c.bus.write32(API + 0x08, 0x80);
         c.bus.write32(API + 0x508, 5);
         c.bus.write32(API + 0x374, 0xC700_0374);
         c.bus.write32(GETNUM, 6);
@@ -14134,6 +14160,12 @@ pub(crate) mod tests {
 
     pub(crate) fn lobbyupd_setup_move(c: &mut Cpu, _seed: u32) {
         lobbyupd_msg(c, MSG_MOVE, 0);
+        // Previous-pump flag words: the `+mov` exit sets bits 0x8 and
+        // 0x40, so the read-modify-write flag stores (`|0x8` at 0x3ead7c,
+        // `|0x40` at 0x3eadc4) are tested with the bits set (unmasking the
+        // mutants, which clear them). The earlier same-word stores at
+        // 0x3ea058 / 0x3ea09c are masked by these.
+        c.bus.write32(API + 0x08, 0x8 | 0x40);
         c.bus.write32(API + 0x324, 0xC700_0324);
         c.bus.write32(GETNUM, 100);
         lobbyupd_string(c, b"move-room");
@@ -14323,6 +14355,9 @@ pub(crate) mod tests {
     pub(crate) fn lobbyupd_setup_snp_v3(c: &mut Cpu, _seed: u32) {
         lobbyupd_setup_snp(c, 0);
         c.bus.write32(API + 0x508, 3);
+        // No RMW preset here: this row falls out to dispatch before the
+        // `|0x80` store, so the flag must stay clear (see the check).
+        c.bus.write32(API + 0x08, 0);
     }
 
     /// `+snp` with node value 8: the `0x003eaa20` test misses, killing
@@ -14330,6 +14365,8 @@ pub(crate) mod tests {
     pub(crate) fn lobbyupd_setup_snp_v8(c: &mut Cpu, _seed: u32) {
         lobbyupd_setup_snp(c, 0);
         c.bus.write32(API + 0x508, 8);
+        // No RMW preset here: same fallthrough as the v3 row above.
+        c.bus.write32(API + 0x08, 0);
     }
 
     /// `+snp` with node value 4: the `0x003eaa10` test misses (the `< 4`

@@ -42716,12 +42716,20 @@ pub(crate) mod tests {
                 c.g[A0][0] = [3, 0x20, 3][mode as usize] as u64;
                 fd_slot(c, 3, mode != 2);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
-                // Dance-table digit: first word in use (skip the scan) or
-                // free (scan the 32-slot table).
-                c.bus.write32(
-                    0x0045_5188,
-                    [0x1234_0000, 0xffff_ffff][seed as usize / 30 % 2],
-                );
+                // Dance-table digit: first word in use (skip the scan),
+                // free (scan the 32-slot table and stop at the first
+                // claimed word), or all-free (the scan runs to `A0 == 32`,
+                // killing the `< 32` mutant, which takes one more step).
+                if seed as usize / 30 % 3 == 2 {
+                    for w in 0..32u32 {
+                        c.bus.write32(0x0045_5188 + 4 * w, 0xffff_ffff);
+                    }
+                } else {
+                    c.bus.write32(
+                        0x0045_5188,
+                        [0x1234_0000, 0xffff_ffff][seed as usize / 30 % 2],
+                    );
+                }
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
                 // Reply-flag digit: set takes the wait arm, clear the
