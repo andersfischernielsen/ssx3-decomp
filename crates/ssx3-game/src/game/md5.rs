@@ -898,7 +898,9 @@ pub(crate) mod tests {
     /// buffered bytes at index 0, 10, 50, 55, 60 or 63 (one count wraps the
     /// low word, so the carry into the high word happens), and inputs of 0
     /// to 200 bytes; the game image holds Final's padding block. Outputs
-    /// (`a1` for Final) are prefilled.
+    /// (`a1` for Final) are prefilled. Update-only seeds plant a zero
+    /// count (the carry arm) and the index + length pairs summing to 65
+    /// and 128 (the two tail edges).
     pub(crate) fn md5uf_fixture(c: &mut Cpu, seed: u32, addr: u32) -> Rng {
         let mut r = machine(c, seed, addr as u64, 0);
         crate::difftest::elf_image(c);
@@ -906,13 +908,17 @@ pub(crate) mod tests {
         const BUF: u32 = DATA + 0x400;
         crate::difftest::fill(c, &mut r, CTX, 0x20);
         let index = [0u32, 10, 50, 55, 60, 63][seed as usize % 6];
+        let update = addr == 0x0031_d3a8;
         let low = if seed % 7 == 6 {
             0xffff_fe00 | index << 3
         } else {
             (r.next_u32() & !0x1ff) | index << 3
         };
+        // A fresh context (count 0) takes the carry arm; Update-only so
+        // Final's seeds and pins are untouched.
+        let low = if update && seed % 13 == 12 { 0 } else { low };
         c.bus.write32(CTX, low);
-        let len = match (seed / 6) % 8 {
+        let mut len = match (seed / 6) % 8 {
             0 => 0,
             1 => 1,
             2 => 3,
@@ -922,6 +928,15 @@ pub(crate) mod tests {
             6 => 100,
             _ => (r.next_u32() % 200) as usize,
         };
+        // S3 + len == 65 takes the transform arm with a buffered tail;
+        // S3 + len == 128 leaves exactly 64 bytes after it (Update-only).
+        if update && index != 0 {
+            if seed % 11 == 10 {
+                len = 65 - index as usize;
+            } else if seed % 11 == 9 {
+                len = 128 - index as usize;
+            }
+        }
         crate::difftest::fill(c, &mut r, BUF, 0x40);
         for i in 0..len {
             c.bus.write8(BUF + i as u32, 1 + (r.next_u32() % 95) as u8);
@@ -946,7 +961,12 @@ pub(crate) mod tests {
                 0x0031_d3a8,
                 // Empty input 27; buffered-only copies 62..163; transforms
                 // from index 0 (1045) up to 200 bytes from index 63 (3523).
-                &[27, 62, 65, 76, 79, 118, 121, 163, 1045, 3523][..],
+                // Gap arms (Update-only seeds): the count carry 237; the
+                // S3+len == 65 tail 1095..1469; the S3+len == 128 tail
+                // 1086..2483.
+                &[
+                    27, 62, 65, 76, 79, 118, 121, 163, 1045, 3523, 237, 1095, 1469, 1086, 2483,
+                ][..],
             ),
             (
                 ee::s10::f_0031d4d0__generated as fn(&mut Cpu),

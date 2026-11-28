@@ -4204,6 +4204,9 @@ pub(crate) mod tests {
         ];
         let flag = seed % 2 == 1;
         let (w, h) = SHAPES[(seed / 8) as usize % SHAPES.len()];
+        // Width 0xFFFF (columns -1): the sweep's `<` vs `<=` arm takes
+        // -1 >> 4 instead of 0.
+        let w = if seed % 17 == 16 { -1 } else { w };
         vdts_graphics_man(
             c,
             seed,
