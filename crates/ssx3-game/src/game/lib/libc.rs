@@ -10874,8 +10874,19 @@ pub fn print_f(c: &mut Cpu) {
 /// digits into the caller buffer.
 pub fn print_e(c: &mut Cpu) {
     guest(c, |c| {
-        'b_4218b8: {
-            'b_42175c: {
+        let epi = |c: &mut Cpu| {
+            c.cycles += 7;
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+            c.pc = t;
+        };
+        {
+            {
                 c.cycles += 25;
                 c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
                 c.g[T0][0] = sx((c.g[T0][0] as u32) << 24);
@@ -10903,64 +10914,56 @@ pub fn print_e(c: &mut Cpu) {
                 c.g[V0][0] = 0x270f;
                 if c.g[V1][0] != c.g[V0][0] {
                     c.g[V0][0] = c.lbu(c.g[A1][0] as u32);
-                    break 'b_42175c;
                 } else {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x00421754);
                     c.g[A0][0] = c.g[S0][0];
                     callee::STRCPY.call(c, 0x0042_1754)?;
-                    let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-                    if t {
-                        break 'b_4218b8;
-                    } else {
-                        break 'b_42175c;
-                    }
+                    epi(c);
+                    return Ok(());
                 }
             }
-            'b_421784: {
-                'b_421774: {
+            {
+                {
                     c.cycles += 4;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                     c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     let t = c.g[S3][0] != 0u64;
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                    if t {
-                        break 'b_421774;
-                    } else {
+                    // The += 2 runs only on the S3 == 0 path; post-774
+                    // runs unless this is the S1 == 0 re-check with
+                    // digits remaining (which skips to next sibling).
+                    if !t {
                         c.cycles += 2;
-                        if c.g[S1][0] == 0u64 {
-                            c.g[V0][0] = c.lb(c.g[A1][0] as u32);
-                            break 'b_421784;
-                        } else {
-                            break 'b_421774;
-                        }
+                    }
+                    if t || c.g[S1][0] != 0u64 {
+                        c.cycles += 4;
+                        c.g[V0][0] = 0x2e;
+                        c.sb(c.g[S0][0] as u32, c.g[V0][0]);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = c.lb(c.g[A1][0] as u32);
+                    } else {
+                        c.g[V0][0] = c.lb(c.g[A1][0] as u32);
                     }
                 }
-                c.cycles += 4;
-                c.g[V0][0] = 0x2e;
-                c.sb(c.g[S0][0] as u32, c.g[V0][0]);
-                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                c.g[V0][0] = c.lb(c.g[A1][0] as u32);
-                break 'b_421784;
             }
-            'b_4217bc: {
-                'b_4217b8: {
+            {
+                {
                     c.cycles += 2;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
                     if t {
-                        break 'b_4217b8;
+                        // NUL byte: the 'g' marker store below, then next.
+                        c.cycles += 1;
+                        c.g[V0][0] = 0x67;
                     } else {
                         c.cycles += 2;
-                        let t = (c.g[S4][0] as i64) <= 0;
                         c.g[V0][0] = 0x67;
-                        if t {
-                            break 'b_4217bc;
-                        } else {
+                        if (c.g[S4][0] as i64) > 0 {
                             c.cycles += 1;
                             c.sb(c.g[S0][0] as u32, c.g[V1][0]);
-                            'l_421798: loop {
+                            loop {
                                 c.cycles += 6;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
@@ -10969,7 +10972,7 @@ pub fn print_e(c: &mut Cpu) {
                                 let t = c.g[V0][0] == 0u64;
                                 c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
                                 if t {
-                                    break 'b_4217b8;
+                                    break;
                                 } else {
                                     c.cycles += 2;
                                     if (c.g[S1][0] as i64) > 0 {
@@ -10977,80 +10980,66 @@ pub fn print_e(c: &mut Cpu) {
                                         if event_due(c) {
                                             deliver_event_here(c, 0x0042_1798);
                                         }
-                                        continue 'l_421798;
+                                        continue;
                                     } else {
-                                        break 'b_4217b8;
+                                        break;
                                     }
                                 }
                             }
+                            c.cycles += 1;
+                            c.g[V0][0] = 0x67;
                         }
                     }
                 }
-                c.cycles += 1;
-                c.g[V0][0] = 0x67;
-                break 'b_4217bc;
             }
-            'b_421804: {
-                'b_4217cc: {
+            {
+                // Long skips to the next sibling ride this flag; the
+                // guarded blocks below run only while it stays clear.
+                let mut skip_804 = false;
+                {
                     c.cycles += 2;
                     let t = c.g[S2][0] != c.g[V0][0];
                     c.g[V0][0] = 0x47;
-                    if t {
-                        break 'b_4217cc;
-                    } else {
+                    if !t {
                         c.cycles += 2;
-                        let t = true;
                         c.g[S2][0] = 0x65;
-                        if t {
-                            break 'b_421804;
-                        } else {
-                            break 'b_4217cc;
-                        }
+                        skip_804 = true;
                     }
                 }
-                'b_4217dc: {
+                if !skip_804 {
                     c.cycles += 2;
                     let t = c.g[S2][0] != c.g[V0][0];
-
-                    if t {
-                        break 'b_4217dc;
-                    } else {
+                    if !t {
                         c.cycles += 2;
-                        let t = true;
                         c.g[S2][0] = 0x45;
-                        if t {
-                            break 'b_421804;
-                        } else {
-                            break 'b_4217dc;
-                        }
+                        skip_804 = true;
                     }
                 }
-                c.cycles += 2;
-                let t = (c.g[S1][0] as i64) <= 0;
-                c.g[V0][0] = 0x30;
-                if t {
-                    break 'b_421804;
-                } else {
-                    c.cycles += 1;
-                    'l_4217e8: loop {
-                        c.cycles += 7;
-                        c.sb(c.g[S0][0] as u32, c.g[V0][0]);
-                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
-                        let t = (c.g[S1][0] as i64) > 0;
-                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                        if t {
-                            if event_due(c) {
-                                deliver_event_here(c, 0x0042_17e8);
+                if !skip_804 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x30;
+                    if (c.g[S1][0] as i64) > 0 {
+                        c.cycles += 1;
+                        loop {
+                            c.cycles += 7;
+                            c.sb(c.g[S0][0] as u32, c.g[V0][0]);
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                            let t = (c.g[S1][0] as i64) > 0;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0042_17e8);
+                                }
+                                continue;
+                            } else {
+                                break;
                             }
-                            continue 'l_4217e8;
-                        } else {
-                            break 'b_421804;
                         }
                     }
                 }
             }
-            'b_421838: {
-                'b_421830: {
+            {
+                {
                     c.cycles += 6;
                     c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     c.sb(c.g[S0][0] as u32, c.g[S2][0]);
@@ -11059,45 +11048,29 @@ pub fn print_e(c: &mut Cpu) {
                     let t = (c.g[V1][0] as i64) >= 0;
                     c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
-                        break 'b_421830;
+                        c.cycles += 2;
+                        c.g[V0][0] = 0x2b;
+                        c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     } else {
                         c.cycles += 5;
                         c.g[V0][0] = 0x2d;
                         c.g[V1][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
                         c.sb(c.g[S0][0] as u32, c.g[V0][0]);
-                        let t = true;
                         c.sw(c.g[SP][0] as u32, c.g[V1][0]);
-                        if t {
-                            break 'b_421838;
-                        } else {
-                            break 'b_421830;
-                        }
                     }
                 }
-                c.cycles += 2;
-                c.g[V0][0] = 0x2b;
-                c.sb(c.g[S0][0] as u32, c.g[V0][0]);
-                break 'b_421838;
             }
-            'b_421878: {
+            {
                 c.cycles += 4;
                 c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                 c.g[V0][0] = ((c.g[A0][0] as i64) < 100i64) as u64;
                 let t = c.g[V0][0] != 0u64;
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                if t {
-                    break 'b_421878;
-                } else {
-                    'b_421858: {
-                        c.cycles += 4;
-                        c.g[V0][0] = 0x64;
-                        c.div(0, 4, 2);
-                        if c.g[V0][0] == 0u64 {
-                            break 'b_421858;
-                        } else {
-                            break 'b_421858;
-                        }
-                    }
+                if !t {
+                    // Both divide-check arms fall through: keep the divide.
+                    c.cycles += 4;
+                    c.g[V0][0] = 0x64;
+                    c.div(0, 4, 2);
                     c.cycles += 8;
                     c.g[V1][0] = c.lo[0];
                     c.mult(0, 2, 3, 2);
@@ -11107,17 +11080,12 @@ pub fn print_e(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
                     c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                    break 'b_421878;
                 }
             }
-            'b_421884: {
+            {
+                // Both arms fall through: keep the setup.
                 c.cycles += 3;
                 c.g[V1][0] = 0xa;
-                if c.g[V1][0] == 0u64 {
-                    break 'b_421884;
-                } else {
-                    break 'b_421884;
-                }
             }
             c.cycles += 13;
             c.div(0, 4, 3);
@@ -11133,18 +11101,9 @@ pub fn print_e(c: &mut Cpu) {
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30));
             c.sb(c.g[S0][0] as u32, c.g[V0][0]);
             c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-            break 'b_4218b8;
+            epi(c);
+            return Ok(());
         }
-        c.cycles += 7;
-        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-        let t = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
-        c.pc = t;
-        Ok(())
     });
 }
 

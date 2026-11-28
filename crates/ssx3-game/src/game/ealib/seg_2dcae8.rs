@@ -3160,90 +3160,80 @@ pub fn stream_file_cancel_request(c: &mut Cpu) {
         if c.g[V0][0] != 0 {
             frame.restore(c, S0, 0xa0);
         } else {
-            'b_3e0f74: {
-                'b_3e0f70: {
-                    'b_3e0f18: {
-                        'b_3e0f10: {
-                            c.cycles += 9;
-                            c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                            c.g[RA][0] = sx(0x003e_0eec);
-                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
-                            callee::EA_MUTEX_LOCK.call(c, 0x003e_0eec)?;
-                            c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                            c.g[RA][0] = sx(0x003e_0ef8);
-                            c.g[A1][0] = c.g[S0][0];
-                            callee::STREAM_FILE_LOOKUP_REQUEST.call(c, 0x003e_0ef8)?;
-                            c.g[A1][0] = c.g[V0][0];
-                            let missing = c.g[A1][0] == 0;
-                            c.g[V1][0] = 0x4;
-                            if missing {
-                                break 'b_3e0f10;
-                            }
-                            c.cycles += 3;
-                            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
-                            if c.g[V0][0] != c.g[V1][0] {
-                                c.g[A0][0] = 0x1;
-                                break 'b_3e0f18;
-                            }
-                            break 'b_3e0f10;
-                        }
-                        c.cycles += 2;
-                        c.g[S0][0] = 0x1;
-                        break 'b_3e0f70;
-                    }
-                    'b_3e0f34: {
-                        c.cycles += 2;
-                        if c.g[V0][0] != c.g[A0][0] {
-                            c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
-                            break 'b_3e0f34;
-                        }
-                        c.cycles += 5;
-                        c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                        c.g[RA][0] = sx(0x003e_0f2c);
-                        c.g[S0][0] = 0x1;
-                        callee::STREAM_FILE_FREE_REQUEST.call(c, 0x003e_0f2c)?;
-                        c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                        break 'b_3e0f74;
-                    }
-                    'b_3e0f50: {
-                        c.cycles += 6;
-                        c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x50));
-                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
-                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
-                        let tied = c.g[A1][0] == c.g[V0][0];
-                        c.g[S6][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
-                        if tied {
-                            break 'b_3e0f50;
-                        }
+            // 0x3e0f74: look the request up under the mutex.
+            c.cycles += 9;
+            c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+            c.g[RA][0] = sx(0x003e_0eec);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            callee::EA_MUTEX_LOCK.call(c, 0x003e_0eec)?;
+            c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+            c.g[RA][0] = sx(0x003e_0ef8);
+            c.g[A1][0] = c.g[S0][0];
+            callee::STREAM_FILE_LOOKUP_REQUEST.call(c, 0x003e_0ef8)?;
+            c.g[A1][0] = c.g[V0][0];
+            let missing = c.g[A1][0] == 0;
+            c.g[V1][0] = 0x4;
+            // 0x3e0f10 / 0x3e0f18: a missing or inactive (state 4) request
+            // only unlocks below (S0 = 1); anything else either frees
+            // (state 1) or stays open and is scanned (S0 = 0).
+            let mut freed = false;
+            if !missing {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            }
+            c.cycles += 2;
+            if missing || c.g[V0][0] == c.g[V1][0] {
+                c.g[S0][0] = 0x1;
+            } else {
+                c.g[A0][0] = 0x1;
+                // 0x3e0f34: state 1 frees the request; any other state is
+                // marked active and scanned below.
+                if c.g[V0][0] != c.g[A0][0] {
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    // 0x3e0f50: the ring position follows the request
+                    // unless it is tied to the stream head.
+                    c.cycles += 6;
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x50));
+                    c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
+                    let tied = c.g[A1][0] == c.g[V0][0];
+                    c.g[S6][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                    if !tied {
                         c.cycles += 1;
                         c.g[S6][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x120));
-                        break 'b_3e0f50;
                     }
-                    'b_3e0f6c: {
-                        c.cycles += 3;
-                        c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
-                        if c.g[A1][0] == 0 {
-                            c.g[S7][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x54));
-                            break 'b_3e0f6c;
-                        }
+                    // 0x3e0f6c: the sync word follows the request chain.
+                    c.cycles += 3;
+                    c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                    if c.g[A1][0] == 0 {
+                        c.g[S7][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x54));
+                    } else {
                         c.cycles += 3;
                         c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
                         if c.g[V0][0] != c.g[A0][0] {
                             c.g[S7][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x120));
-                            break 'b_3e0f6c;
+                        } else {
+                            c.cycles += 1;
+                            c.g[S7][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x54));
                         }
-                        c.cycles += 1;
-                        c.g[S7][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x54));
-                        break 'b_3e0f6c;
                     }
                     c.cycles += 1;
                     c.g[S0][0] = 0;
-                    break 'b_3e0f70;
+                } else {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[RA][0] = sx(0x003e_0f2c);
+                    c.g[S0][0] = 0x1;
+                    callee::STREAM_FILE_FREE_REQUEST.call(c, 0x003e_0f2c)?;
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+                    freed = true;
                 }
+            }
+            if !freed {
+                // 0x3e0f70: the open and inactive requests rejoin here.
                 c.cycles += 1;
                 c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                break 'b_3e0f74;
             }
             c.cycles += 4;
             c.g[RA][0] = sx(0x003e_0f7c);
@@ -3252,52 +3242,97 @@ pub fn stream_file_cancel_request(c: &mut Cpu) {
             if c.g[S0][0] != 0 {
                 frame.restore(c, S0, 0xa0);
             } else {
-                'b_3e10e0: {
-                    c.cycles += 4;
-                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
-                    let empty = (c.g[V0][0] as i64) <= 0;
-                    c.g[A0][0] = 0;
-                    if empty {
-                        break 'b_3e10e0;
-                    }
+                // 0x3e10e0: scan the ring unless it is empty.
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+                let empty = (c.g[V0][0] as i64) <= 0;
+                c.g[A0][0] = 0;
+                if !empty {
                     c.cycles += 1;
                     c.g[V1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
-                    'l_3e0f98: loop {
-                        'b_3e10cc: {
-                            c.cycles += 8;
-                            c.g[V0][0] = sx((c.g[A0][0] as u32) << 4);
-                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
-                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                            c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A0][0]);
-                            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
-                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                            if (c.g[V0][0] as i64) <= 0 {
+                    loop {
+                        // 0x3e10cc: step to the next entry; empty
+                        // slots skip the scan below.
+                        c.cycles += 8;
+                        c.g[V0][0] = sx((c.g[A0][0] as u32) << 4);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A0][0]);
+                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                        if (c.g[V0][0] as i64) <= 0 {
+                            c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                        } else {
+                            // 0x3e1070 / 0x3e10c8: an out-of-range ring
+                            // re-checks the drain below; a synced ring
+                            // rejoins the advance through the tail; anything
+                            // else runs the consume loop.
+                            c.cycles += 6;
+                            c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                            c.g[A1][0] = c.g[S6][0];
+                            c.g[RA][0] = sx(0x003e_0fc8);
+                            c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                            callee::STREAM_FILE_RING_IN_RANGE.call(c, 0x003e_0fc8)?;
+                            let out = c.g[V0][0] == 0;
+                            c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                            let mut tail = false;
+                            if out {
+                                // 0x3e1084: the out-of-range ring re-checks
+                                // the drain below.
+                                c.cycles += 7;
+                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                c.g[A0][0] = c.g[S6][0];
+                                c.g[A1][0] = c.g[S7][0];
+                                c.g[RA][0] = sx(0x003e_1084);
+                                c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                                callee::STREAM_FILE_RING_IN_RANGE.call(c, 0x003e_1084)?;
+                                let out = c.g[V0][0] == 0;
                                 c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                                break 'b_3e10cc;
-                            }
-                            'b_3e10c8: {
-                                'b_3e1070: {
-                                    c.cycles += 6;
-                                    c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                                    c.g[A1][0] = c.g[S6][0];
-                                    c.g[RA][0] = sx(0x003e_0fc8);
-                                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
-                                    callee::STREAM_FILE_RING_IN_RANGE.call(c, 0x003e_0fc8)?;
-                                    let out = c.g[V0][0] == 0;
-                                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
-                                    if out {
-                                        break 'b_3e1070;
+                                if !out {
+                                    // 0x3e1090: drain chunks until the ring
+                                    // starves or leaves range.
+                                    c.cycles += 1;
+                                    loop {
+                                        c.cycles += 9;
+                                        c.g[RA][0] = sx(0x003e_1098);
+                                        c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        callee::STREAM_FILE_GET_CHUNK.call(c, 0x003e_1098)?;
+                                        c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[RA][0] = sx(0x003e_10a4);
+                                        c.g[A1][0] = c.g[V0][0];
+                                        callee::STREAM_FILE_RELEASE_CHUNK.call(c, 0x003e_10a4)?;
+                                        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
+                                        let starved = (c.g[V0][0] as i64) <= 0;
+                                        c.g[A0][0] = c.g[S6][0];
+                                        if starved {
+                                            break;
+                                        }
+                                        c.cycles += 5;
+                                        c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                                        c.g[RA][0] = sx(0x003e_10c0);
+                                        c.g[A1][0] = c.g[S7][0];
+                                        callee::STREAM_FILE_RING_IN_RANGE.call(c, 0x003e_10c0)?;
+                                        if c.g[V0][0] == 0 {
+                                            break;
+                                        }
+                                        if event_due(c) {
+                                            deliver_event_here(c, HEAD_1090);
+                                        }
                                     }
-                                    c.cycles += 5;
-                                    c.g[S0][0] = c.g[S6][0];
-                                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
-                                    let synced = c.g[S6][0] == c.g[S7][0];
-                                    c.g[S3][0] = sx((c.g[V0][0] as u32) << 24);
-                                    if synced {
-                                        break 'b_3e10c8;
-                                    }
+                                    tail = true;
+                                }
+                            } else {
+                                c.cycles += 5;
+                                c.g[S0][0] = c.g[S6][0];
+                                c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+                                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                                let synced = c.g[S6][0] == c.g[S7][0];
+                                c.g[S3][0] = sx((c.g[V0][0] as u32) << 24);
+                                if synced {
+                                    tail = true;
+                                } else {
                                     c.cycles += 7;
                                     c.g[S2][0] = 0xff0000;
                                     c.g[FP][0] = 0xffffffffffffffff;
@@ -3305,29 +3340,28 @@ pub fn stream_file_cancel_request(c: &mut Cpu) {
                                     c.g[S5][0] = 0xffffffffff000000;
                                     c.g[S4][0] = 0xfffffffffffffffe;
                                     c.g[V0][0] = c.lw(c.g[S0][0] as u32);
-                                    'l_3e1000: loop {
-                                        'b_3e1060: {
-                                            'b_3e1010: {
-                                                c.cycles += 2;
-                                                if c.g[V0][0] != c.g[FP][0] {
-                                                    c.g[V0][0] =
-                                                        c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                                                    break 'b_3e1010;
-                                                }
-                                                c.cycles += 2;
-                                                c.g[S0][0] =
-                                                    c.lw((c.g[A0][0] as u32).wrapping_add(0x30));
-                                                break 'b_3e1060;
-                                            }
-                                            'b_3e105c: {
-                                                c.cycles += 4;
-                                                c.g[S1][0] = c.g[V0][0] & c.g[S2][0];
-                                                c.g[V0][0] = c.g[V0][0] & c.g[S5][0];
-                                                let other = c.g[V0][0] != c.g[S3][0];
-                                                c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                                                if other {
-                                                    break 'b_3e105c;
-                                                }
+                                    // 0x3e1000: consume slots until the sync
+                                    // word catches up with the head.
+                                    loop {
+                                        // 0x3e1060 / 0x3e1010: a fresh slot
+                                        // reloads the sync pair and skips the
+                                        // step below.
+                                        c.cycles += 2;
+                                        if c.g[V0][0] == c.g[FP][0] {
+                                            c.cycles += 2;
+                                            c.g[S0][0] =
+                                                c.lw((c.g[A0][0] as u32).wrapping_add(0x30));
+                                        } else {
+                                            c.g[V0][0] =
+                                                c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                                            // 0x3e105c: consume the slot when
+                                            // its masked word matches.
+                                            c.cycles += 4;
+                                            c.g[S1][0] = c.g[V0][0] & c.g[S2][0];
+                                            c.g[V0][0] = c.g[V0][0] & c.g[S5][0];
+                                            let other = c.g[V0][0] != c.g[S3][0];
+                                            c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+                                            if !other {
                                                 c.cycles += 15;
                                                 c.g[RA][0] = sx(0x003e_1028);
                                                 c.g[A0][0] =
@@ -3359,13 +3393,11 @@ pub fn stream_file_cancel_request(c: &mut Cpu) {
                                                     c.g[S1][0],
                                                 );
                                                 c.g[A0][0] = c.lw(c.g[SP][0] as u32);
-                                                break 'b_3e105c;
                                             }
                                             c.cycles += 1;
                                             c.g[S0][0] =
                                                 sx((c.g[S0][0] as u32)
                                                     .wrapping_add(c.g[S1][0] as u32));
-                                            break 'b_3e1060;
                                         }
                                         c.cycles += 2;
                                         if c.g[S0][0] != c.g[S7][0] {
@@ -3373,59 +3405,20 @@ pub fn stream_file_cancel_request(c: &mut Cpu) {
                                             if event_due(c) {
                                                 deliver_event_here(c, HEAD_1000);
                                             }
-                                            continue 'l_3e1000;
+                                            continue;
                                         }
                                         c.cycles += 2;
                                         c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                                        break 'b_3e10cc;
+                                        break;
                                     }
-                                }
-                                c.cycles += 7;
-                                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
-                                c.g[A0][0] = c.g[S6][0];
-                                c.g[A1][0] = c.g[S7][0];
-                                c.g[RA][0] = sx(0x003e_1084);
-                                c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
-                                callee::STREAM_FILE_RING_IN_RANGE.call(c, 0x003e_1084)?;
-                                let out = c.g[V0][0] == 0;
-                                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                                if out {
-                                    break 'b_3e10cc;
-                                }
-                                c.cycles += 1;
-                                'l_3e1090: loop {
-                                    c.cycles += 9;
-                                    c.g[RA][0] = sx(0x003e_1098);
-                                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
-                                    callee::STREAM_FILE_GET_CHUNK.call(c, 0x003e_1098)?;
-                                    c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
-                                    c.g[RA][0] = sx(0x003e_10a4);
-                                    c.g[A1][0] = c.g[V0][0];
-                                    callee::STREAM_FILE_RELEASE_CHUNK.call(c, 0x003e_10a4)?;
-                                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
-                                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                                    let starved = (c.g[V0][0] as i64) <= 0;
-                                    c.g[A0][0] = c.g[S6][0];
-                                    if starved {
-                                        break 'b_3e10c8;
-                                    }
-                                    c.cycles += 5;
-                                    c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                                    c.g[RA][0] = sx(0x003e_10c0);
-                                    c.g[A1][0] = c.g[S7][0];
-                                    callee::STREAM_FILE_RING_IN_RANGE.call(c, 0x003e_10c0)?;
-                                    if c.g[V0][0] == 0 {
-                                        break 'b_3e10c8;
-                                    }
-                                    if event_due(c) {
-                                        deliver_event_here(c, HEAD_1090);
-                                    }
-                                    continue 'l_3e1090;
                                 }
                             }
-                            c.cycles += 1;
-                            c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                            break 'b_3e10cc;
+                            if tail {
+                                // 0x3e10c8: synced and drained rings rejoin
+                                // the advance below through here.
+                                c.cycles += 1;
+                                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+                            }
                         }
                         c.cycles += 5;
                         c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
@@ -3436,13 +3429,13 @@ pub fn stream_file_cancel_request(c: &mut Cpu) {
                             if event_due(c) {
                                 deliver_event_here(c, HEAD_F98);
                             }
-                            continue 'l_3e0f98;
+                            continue;
                         }
-                        break 'b_3e10e0;
+                        break;
                     }
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0xa0);
                 }
-                c.cycles += 1;
-                frame.restore(c, S0, 0xa0);
             }
         }
         c.cycles += 11;

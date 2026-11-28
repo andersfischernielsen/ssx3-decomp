@@ -8846,45 +8846,41 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
             if !t {
                 c.cycles += 2;
                 c.g[S6][0] = 0u64;
-                'l_414d70: loop {
-                    'b_414da0: {
-                        c.cycles += 2;
-                        let t = c.g[FP][0] == 0u64;
-                        c.g[A0][0] = 0x1;
-                        if !t {
-                            c.cycles += 6;
-                            c.g[T2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
-                            c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
-                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
-                            c.g[V0][0] = sx((c.g[V0][0] as u32) >> 30);
-                            let t = c.g[V0][0] != c.g[A0][0];
-                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                loop {
+                    c.cycles += 2;
+                    let t = c.g[FP][0] == 0u64;
+                    c.g[A0][0] = 0x1;
+                    if !t {
+                        c.cycles += 6;
+                        c.g[T2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                        c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 30);
+                        let t = c.g[V0][0] != c.g[A0][0];
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        if t {
+                            c.cycles += 5;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x8));
                             if t {
-                                c.cycles += 5;
-                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
-                                c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                                c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
-                                let t = c.g[V0][0] != 0u64;
-                                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x8));
-                                if t {
-                                    if event_due(c) {
-                                        deliver_event_here(c, 0x0041_4d70);
-                                    }
-                                    continue 'l_414d70;
-                                } else {
-                                    break 'l_414d70;
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0041_4d70);
                                 }
+                                continue;
                             } else {
-                                c.cycles += 2;
-                                c.g[T2][0] =
-                                    sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
-                                break 'b_414da0;
+                                break;
                             }
+                        } else {
+                            c.cycles += 2;
+                            c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
                         }
+                    } else {
                         c.cycles += 2;
                         c.g[T2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
                         c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
-                        break 'b_414da0;
                     }
                     c.cycles += 9;
                     c.g[V0][0] = 0x1fff0000;
@@ -8929,9 +8925,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                             if event_due(c) {
                                 deliver_event_here(c, 0x0041_4d70);
                             }
-                            continue 'l_414d70;
+                            continue;
                         } else {
-                            break 'l_414d70;
+                            break;
                         }
                     } else {
                         c.cycles += 2;
@@ -8953,9 +8949,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                 if event_due(c) {
                                     deliver_event_here(c, 0x0041_4d70);
                                 }
-                                continue 'l_414d70;
+                                continue;
                             } else {
-                                break 'l_414d70;
+                                break;
                             }
                         }
                         c.cycles += 2;
@@ -8973,9 +8969,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                 if event_due(c) {
                                     deliver_event_here(c, 0x0041_4d70);
                                 }
-                                continue 'l_414d70;
+                                continue;
                             } else {
-                                break 'l_414d70;
+                                break;
                             }
                         } else {
                             c.cycles += 2;
@@ -9060,9 +9056,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                             if event_due(c) {
                                                 deliver_event_here(c, 0x0041_4d70);
                                             }
-                                            continue 'l_414d70;
+                                            continue;
                                         } else {
-                                            break 'l_414d70;
+                                            break;
                                         }
                                     } else {
                                         c.cycles += 2;
@@ -9085,9 +9081,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                                 if event_due(c) {
                                                     deliver_event_here(c, 0x0041_4d70);
                                                 }
-                                                continue 'l_414d70;
+                                                continue;
                                             } else {
-                                                break 'l_414d70;
+                                                break;
                                             }
                                         } else {
                                             c.cycles += 2;
