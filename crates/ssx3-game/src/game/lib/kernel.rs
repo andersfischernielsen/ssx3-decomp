@@ -137,6 +137,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_4880, disable_intc_guarded, "DisableIntc"),
     (0x0042_48e8, enable_intc_guarded, "EnableIntc"),
     (
+        0x0042_4aa0,
+        libkernl_intr_helper_thread,
+        "libkernl_IntrHelperThread",
+    ),
+    (
         0x0042_4b78,
         libkernl_init_thread_helper,
         "libkernl_InitThreadHelper",
@@ -4919,10 +4924,10 @@ pub fn enable_intc_guarded(c: &mut Cpu) {
 
 /// `void libkernl_IntrHelperThread(void *queue)` (0x424aa0): helper-thread
 /// main dispatching queued interrupt events (Wakeup/Rotate/Suspend/Printf
-/// by queue byte). It never returns by design; no `OVERRIDES` entry (see
+/// by queue byte). It never returns by design; `intr_helper_thread_full`
+/// drives every queue byte through the four callees (see also
 /// `intr_helper_thread_prefix_matches`, which checks the prologue and the
 /// first `WaitSema` via a forced unwind).
-#[allow(dead_code)]
 pub fn libkernl_intr_helper_thread(c: &mut Cpu) {
     use callee::*;
     guest(c, |c| {
@@ -7503,6 +7508,81 @@ pub(crate) mod tests {
             let r = compare(ee::s15::f_00424aa0, libkernl_intr_helper_thread, setup);
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
         }
+    }
+
+    /// Queue for `intr_helper_thread_full_matches`: the count starts at a
+    /// multiple of 4 and the dispatch bytes cycle 0-3 from `seed % 4`, so
+    /// the first iteration takes arm `seed % 4` and every seed drains all
+    /// four callees before unwinding out.
+    const INTR_QUEUE: u32 = DATA + 0x410;
+
+    fn intr_helper_full_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x424a_a0, 0);
+        hook_printf();
+        c.bus.write32(PRINTF_GATE, GATE_MAGIC);
+        c.bus.write32(INTR_QUEUE, 4 * (seed % 3));
+        for i in 0..12u32 {
+            c.bus.write8(INTR_QUEUE + 8 + 2 * i, ((seed + i) % 4) as u8);
+            c.bus.write8(INTR_QUEUE + 9 + 2 * i, (0x41 + i) as u8);
+        }
+        c.bus.write32(0x0052_b3a0, 0x51ab00 + seed);
+        c.bus.write32(fakes::LOG_UNWIND_AT, 6 + 2 * (seed % 3));
+        c.g[A0][0] = INTR_QUEUE as u64;
+        schedule(c, &mut r, seed, 0x0042_4aa0);
+    }
+
+    /// The four callees the helper dispatches to, by queue byte.
+    const INTR_CALLEES: [u32; 4] = [0x0042_3cd0, 0x0042_3c50, 0x0042_3d10, 0x0042_5c28];
+
+    /// `libkernl_IntrHelperThread` over a queue draining through every arm
+    /// (Wakeup/Rotate/Suspend/Printf by queue byte, the count advancing,
+    /// the carry-on event checks at `0x424ae0` firing), unwinding out at a
+    /// chosen fake call. The callees are real (each has its own tests);
+    /// `printf` is faked. Arm reach is asserted from the call trace below.
+    #[test]
+    fn intr_helper_thread_full_matches() {
+        covered(
+            ee::s15::f_00424aa0__generated,
+            libkernl_intr_helper_thread,
+            SEEDS,
+            &|c, seed| intr_helper_full_setup(c, seed),
+        );
+        // Reach: each seed's first iteration takes arm `seed % 4`, and
+        // across seeds all four callees appear in the generated run's
+        // trace; event seeds reschedule the carry-on deadline.
+        let mut seen = [false; 4];
+        for seed in 0..SEEDS {
+            let mut c = crate::difftest::fresh();
+            intr_helper_full_setup(&mut c, seed);
+            let first_deadline = c.next_event;
+            ssx3_ee_rt::prof::trace::start();
+            crate::difftest::run_generated(&mut c, ee::s15::f_00424aa0__generated);
+            let calls = ssx3_ee_rt::prof::trace::take();
+            let want = INTR_CALLEES[seed as usize % 4];
+            // The first dispatch in trace order (anything before it is
+            // the loop-head `WaitSema`, not a dispatch arm).
+            let first = calls
+                .iter()
+                .map(|k| k[0] as u32)
+                .find(|t| INTR_CALLEES.contains(t));
+            assert_eq!(
+                first,
+                Some(want),
+                "seed {seed}: first-iteration callee is not {want:#x}",
+            );
+            for (i, addr) in INTR_CALLEES.iter().enumerate() {
+                if calls.iter().any(|k| k[0] == *addr as u64) {
+                    seen[i] = true;
+                }
+            }
+            if seed % 3 != 0 {
+                assert_ne!(
+                    c.next_event, first_deadline,
+                    "seed {seed}: no event delivered on the loop checks",
+                );
+            }
+        }
+        assert!(seen.iter().all(|s| *s), "callees seen: {seen:?}");
     }
 
     /// `libkernl_InitThreadHelper` over the already-initialized word and the

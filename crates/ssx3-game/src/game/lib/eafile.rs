@@ -10,6 +10,7 @@ use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -19,6 +20,7 @@ use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -268,6 +270,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_3b00, ea_file_cd_issue_read, "EAFile_CdIssueRead"),
     (0x003e_3d78, ea_file_cd_mount_disc, "EAFile_CdMountDisc"),
     (0x003e_44b0, ea_file_cd_shutdown, "EAFile_CdShutdown"),
+    (
+        0x003d_e420,
+        ea_file_complete_request,
+        "EAFile_CompleteRequest",
+    ),
+    (0x003e_3208, ea_file_platform_open, "EAFile_PlatformOpen"),
+    (0x003e_32f8, ea_file_platform_close, "EAFile_PlatformClose"),
+    (
+        0x003e_33b0,
+        ea_file_host_read_service,
+        "EAFile_HostReadService",
+    ),
+    (
+        0x003e_34e8,
+        ea_file_platform_get_size,
+        "EAFile_PlatformGetSize",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -686,6 +705,21 @@ pub(crate) mod callee {
         addr: 0x003e_58c8,
         f: ee::s14::EATimer_RemoveCallback,
     };
+
+    /// `u32 EAFile_ResolvePath(src, dst, status_out)` (0x003e_3098).
+    pub(crate) const EA_FILE_RESOLVE_PATH: Callee = Callee {
+        addr: 0x003e_3098,
+        f: ee::s14::EAFile_ResolvePath,
+    };
+
+    /// `int sceOpen(path, flags)` (0x0042_7d60), through the function table.
+    pub(crate) const SCE_OPEN: u32 = 0x0042_7d60;
+
+    /// `int sceClose(fd)` (0x0042_7fe8), through the function table.
+    pub(crate) const SCE_CLOSE: u32 = 0x0042_7fe8;
+
+    /// `int sceRead(fd, buf, size)` (0x0042_83a0), through the function table.
+    pub(crate) const SCE_READ: u32 = 0x0042_83a0;
 }
 
 // ---------------------------------------------------------------------------
@@ -9203,6 +9237,353 @@ pub fn ea_file_shutdown(c: &mut Cpu) {
     })
 }
 
+/// `void EAFile_CompleteRequest(ok)` (0x3de420): bump the file-manager
+/// active count, and when a request is pending record the result in its
+/// result word (`-1` when it already completed, `1`/`-2` for a live one by
+/// `ok`), clear the pending slot, run its callback, drop the count again
+/// and drain the queue through `EAFile_ServiceQueue` when it hits zero.
+pub fn ea_file_complete_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 0x520000;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = c.g[V1][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6550));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        let pending = c.g[A1][0] != 0;
+        frame.restore(c, S0, 0x10);
+        if pending {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            let stale = c.g[V0][0] != 0;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+            if !stale {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                c.g[V1][0] = 0x1;
+                if c.g[A0][0] != 0 {
+                    c.g[V0][0] = c.g[V1][0];
+                }
+            }
+            c.cycles += 6;
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x6550));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x28));
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+                c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                let t = c.g[V0][0] as u32;
+                c.g[RA][0] = sx(0x003d_e494);
+                c.pc = t;
+                call_indirect(c, t);
+                if c.pc != 0x003d_e494 {
+                    return Err(Unwound);
+                }
+            }
+            c.cycles += 6;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            frame.restore(c, S0, 0x10);
+            if c.g[V1][0] == 0 {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x003d_e4b4);
+                c.g[A0][0] = 0;
+                callee::EA_FILE_SERVICE_QUEUE.call(c, 0x003d_e4b4)?;
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 EAFile_PlatformOpen(path, mode, handle_out)` (0x3e3208): resolve
+/// the path; a `cd:` path looks the entry up (`0x1000000 | entry` handle)
+/// while a `host0:` path opens it on the host (`fd | 0x2000000`, the mode
+/// low 3 bits mapping to the `sceOpen` flags); anything else, a missed
+/// lookup or a failed open returns 0.
+pub fn ea_file_platform_open(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x140);
+        frame.save(c, S0, 0x130);
+        frame.save(c, S1, 0x120);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x110);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[RA][0] = sx(0x003e_322c);
+        c.g[A2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x100));
+        callee::EA_FILE_RESOLVE_PATH.call(c, 0x003e_322c)?;
+        c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x100));
+        c.g[A0][0] = 0x1;
+        let cd = c.g[V1][0] == c.g[A0][0];
+        c.g[V0][0] = 0x2;
+        if cd {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A0][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x003e_324c);
+            c.g[A2][0] = c.g[S0][0];
+            callee::EA_FILE_CD_LOOKUP.call(c, 0x003e_324c)?;
+            let found = c.g[V0][0] != 0;
+            c.g[A0][0] = 0x1000000;
+            if found {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[V0][0] = 0x1;
+                c.cycles += 3;
+                c.g[V1][0] = c.g[A0][0] | c.g[V1][0];
+                c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        } else {
+            c.cycles += 2;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V0][0] = 0;
+            } else {
+                c.cycles += 3;
+                c.g[A1][0] = c.g[S1][0] & 0x7;
+                if c.g[A1][0] == c.g[A0][0] {
+                    c.g[A1][0] = 0x1;
+                } else {
+                    c.cycles += 2;
+                    if c.g[A1][0] == 0 {
+                        c.g[A1][0] = 0x103;
+                    } else {
+                        c.cycles += 2;
+                        let host2 = c.g[A1][0] == c.g[V1][0];
+                        c.g[V0][0] = 0x6;
+                        if host2 {
+                            c.cycles += 2;
+                            c.g[A1][0] = 0x203;
+                        } else {
+                            c.cycles += 2;
+                            c.g[V1][0] = 0xffff_ffff_ffff_ffff;
+                            if c.g[A1][0] == c.g[V0][0] {
+                                c.cycles += 2;
+                                c.g[A1][0] = 0x603;
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] = 0;
+                                c.cycles += 2;
+                                c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                                frame.restore(c, S0, 0x130);
+                                frame.restore(c, S1, 0x120);
+                                c.cycles += 5;
+                                frame.restore_ra(c, 0x110);
+                                frame.close(c);
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                c.cycles += 5;
+                c.g[RA][0] = sx(0x003e_32b4);
+                c.g[A0][0] = c.g[SP][0];
+                call_ptr(c, callee::SCE_OPEN, 0x003e_32b4)?;
+                c.g[A0][0] = c.g[V0][0];
+                let failed = (c.g[A0][0] as i64) < 0;
+                c.sw(c.g[S0][0] as u32, c.g[A0][0]);
+                if failed {
+                    c.cycles += 1;
+                    c.sw(c.g[S0][0] as u32, 0u64);
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                } else {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x100));
+                    c.g[V0][0] = 0x1;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 24);
+                    c.cycles += 3;
+                    c.g[V1][0] = c.g[A0][0] | c.g[V1][0];
+                    c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x130);
+        frame.restore(c, S1, 0x120);
+        c.cycles += 5;
+        frame.restore_ra(c, 0x110);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EAFile_PlatformClose(handle)` (0x3e32f8): a `host0:` handle
+/// (`handle >> 24 == 2`) closes its host fd and clears the remembered fd
+/// when it was the last one opened; any other handle (or a host handle
+/// that was never opened) returns 0 without closing.
+pub fn ea_file_platform_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0xff0000;
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(((c.g[A0][0] as u32) as i32 >> 24) as u32);
+        c.g[V1][0] = 0x2;
+        let host = c.g[A1][0] == c.g[V1][0];
+        c.g[S0][0] = c.g[A0][0] & c.g[V0][0];
+        if host {
+            c.cycles += 6;
+            c.g[RA][0] = sx(0x003e_3324);
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, callee::SCE_CLOSE, 0x003e_3324)?;
+            c.g[V1][0] = 0x450000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc40));
+            let last = c.g[V0][0] == c.g[S0][0];
+            frame.restore(c, S0, 0x10);
+            if last {
+                c.cycles += 2;
+                c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+                c.sw((c.g[V1][0] as u32).wrapping_add(0xc40), c.g[V0][0]);
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            }
+        } else {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 4;
+        c.g[V0][0] = 0;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EAFile_HostReadService()` (0x3e33b0): when a host read is
+/// pending, seek the remembered fd to the read offset unless it already
+/// sits there, run the read, advance the remembered position, clear the
+/// pending flag and complete the request with whether the full length
+/// arrived.
+pub fn ea_file_host_read_service(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x520000;
+        frame.save(c, S2, 0x20);
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x63e0));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x63e0));
+        c.g[S2][0] = c.g[V0][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        let pending = c.g[V1][0] != 0;
+        frame.save_ra(c, 0);
+        if pending {
+            c.cycles += 6;
+            c.g[V0][0] = 0x450000;
+            c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc40));
+            c.g[S3][0] = c.g[V0][0];
+            let fd_same = c.g[V1][0] == c.g[A0][0];
+            c.g[S1][0] = 0x450000;
+            if !fd_same {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[A2][0] = 0;
+                c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                c.g[RA][0] = sx(0x003e_3418);
+                c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x63e0));
+                call_ptr(c, callee::SCE_LSEEK, 0x003e_3418)?;
+            } else {
+                c.cycles += 4;
+                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc4c));
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x63e0));
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                    c.g[A2][0] = 0;
+                    c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                    c.g[RA][0] = sx(0x003e_3418);
+                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x63e0));
+                    call_ptr(c, callee::SCE_LSEEK, 0x003e_3418)?;
+                }
+            }
+            c.cycles += 16;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+            c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[RA][0] = sx(0x003e_342c);
+            call_ptr(c, callee::SCE_READ, 0x003e_342c)?;
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = c.g[V0][0] ^ c.g[A0][0];
+            c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[A0][0] = (c.g[V0][0] < 0x1u64) as u64;
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc40), c.g[A2][0]);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.sw((c.g[S2][0] as u32).wrapping_sub(0x63e0), 0u64);
+            c.g[RA][0] = sx(0x003e_3458);
+            c.sw((c.g[S1][0] as u32).wrapping_add(0xc4c), c.g[V1][0]);
+            callee::EA_FILE_COMPLETE_REQUEST.call(c, 0x003e_3458)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x40);
+        c.g[V0][0] = 0;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u32 EAFile_PlatformGetSize(handle)` (0x3e34e8): the disc entry for a
+/// `cd:` handle, else the host size via `sceLseek(fd, 0, SEEK_END)`;
+/// returns whatever that lookup yields.
+pub fn ea_file_platform_get_size(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0xff0000;
+        c.g[V0][0] = c.g[V0][0] | 0xffff;
+        c.g[A1][0] = sx(((c.g[A0][0] as u32) as i32 >> 24) as u32);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = 0x1;
+        let cd = c.g[A1][0] == c.g[V1][0];
+        c.g[A0][0] = c.g[A0][0] & c.g[V0][0];
+        if cd {
+            c.cycles += 6;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            c.g[RA][0] = sx(0x003e_3518);
+            c.g[A3][0] = 0;
+            callee::EA_FILE_CD_GET_ENTRY.call(c, 0x003e_3518)?;
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        } else {
+            c.cycles += 4;
+            c.g[A1][0] = 0;
+            c.g[RA][0] = sx(0x003e_352c);
+            c.g[A2][0] = 0x2;
+            call_ptr(c, callee::SCE_LSEEK, 0x003e_352c)?;
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15681,6 +16062,479 @@ pub(crate) mod tests {
                 c.bus.write32(EA_FILE_TEST_RET_CD_CALLBACK, 0);
                 schedule(c, &mut r, seed, 0x003d_cde0)
             },
+        );
+    }
+    use crate::difftest::fakes::check_reaching;
+
+    /// Gate word for this module's slot fakes (per-machine RAM): with
+    /// [`MAGIC`] set, the fakes below answer from a result cell or script;
+    /// otherwise they run the body the slot held before.
+    pub(crate) const CTRL: u32 = DATA + 0x7_0000;
+
+    pub(crate) const MAGIC: u32 = 0x5eaf_11e5;
+
+    pub(crate) const RET_RESOLVE_DEV: u32 = DATA + 0x7_0010;
+
+    pub(crate) const RET_CD_LOOKUP: u32 = DATA + 0x7_0014;
+
+    pub(crate) const RET_SCE_OPEN: u32 = DATA + 0x7_0018;
+
+    pub(crate) const RET_SCE_CLOSE: u32 = DATA + 0x7_001c;
+
+    pub(crate) const RET_SCE_LSEEK: u32 = DATA + 0x7_0020;
+
+    pub(crate) const RET_SCE_READ: u32 = DATA + 0x7_0024;
+
+    pub(crate) const RET_SVCQ: u32 = DATA + 0x7_0028;
+
+    pub(crate) const RET_CD_GET_ENTRY: u32 = DATA + 0x7_002c;
+
+    /// Fixed cost of a gated test-fake call on both sides.
+    pub(crate) const FAKE_COST: u64 = 8;
+
+    macro_rules! fake_ret {
+        ($name:ident, $gen:expr, $cell:expr, $id:expr) => {
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(CTRL) != MAGIC {
+                    return fakes::fall_back(c, fakes::prev_cell($name), $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                let before = c.cycles;
+                fakes::fake(c, $id, ra);
+                c.cycles = before + FAKE_COST;
+                // Sign-extend like the real call's `lw` return, so a
+                // planted `-1` still tests negative at the caller.
+                c.g[V0][0] = sx(c.bus.read32($cell));
+            }
+        };
+    }
+
+    fake_ret!(
+        fake_cd_lookup,
+        ee::s14::f_003e4508__generated,
+        RET_CD_LOOKUP,
+        0xeaf0_2002
+    );
+
+    fake_ret!(
+        fake_sce_open,
+        ee::s15::f_00427d60__generated,
+        RET_SCE_OPEN,
+        0xeaf0_2003
+    );
+
+    fake_ret!(
+        fake_sce_close,
+        ee::s15::f_00427fe8__generated,
+        RET_SCE_CLOSE,
+        0xeaf0_2004
+    );
+
+    fake_ret!(
+        fake_sce_lseek,
+        ee::s15::f_00428168__generated,
+        RET_SCE_LSEEK,
+        0xeaf0_2005
+    );
+
+    fake_ret!(
+        fake_sce_read,
+        ee::s15::f_004283a0__generated,
+        RET_SCE_READ,
+        0xeaf0_2006
+    );
+
+    fake_ret!(
+        fake_service_queue,
+        ee::s14::f_003ddfa8__generated,
+        RET_SVCQ,
+        0xeaf0_2007
+    );
+
+    fake_ret!(
+        fake_cd_get_entry,
+        ee::s14::f_003e48d8__generated,
+        RET_CD_GET_ENTRY,
+        0xeaf0_2008
+    );
+
+    /// `ResolvePath` fake: store the steered device word through the status
+    /// pointer, fill the 256-byte destination with a device-varying nonzero
+    /// pattern, and return 1.
+    pub(crate) fn fake_resolve_path(c: &mut Cpu) {
+        if c.bus.read32(CTRL) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(fake_resolve_path),
+                ee::s14::f_003e3098__generated,
+            );
+        }
+        let (dst, out) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+        let ra = c.g[RA][0] as u32;
+        let before = c.cycles;
+        fakes::fake(c, 0xeaf0_200a, ra);
+        c.cycles = before + FAKE_COST;
+        let dev = c.bus.read32(RET_RESOLVE_DEV);
+        c.bus.write32(out, dev);
+        for i in 0..64u32 {
+            c.bus.write32(dst + 4 * i, 0xa5a5_0000 | (i ^ dev));
+        }
+        c.g[V0][0] = 1;
+    }
+
+    /// Hook this module's slot fakes (once per process; all gated).
+    pub(crate) fn oc_install_fakes() {
+        use std::ptr::addr_of_mut;
+        let hooks: [(*mut fn(&mut Cpu), fn(&mut Cpu)); 8] = [
+            (
+                addr_of_mut!(ee::s14::OVERRIDE_003E3098),
+                fake_resolve_path as fn(&mut Cpu),
+            ),
+            (addr_of_mut!(ee::s14::OVERRIDE_003E4508), fake_cd_lookup),
+            (addr_of_mut!(ee::s15::OVERRIDE_00427D60), fake_sce_open),
+            (addr_of_mut!(ee::s15::OVERRIDE_00427FE8), fake_sce_close),
+            (addr_of_mut!(ee::s15::OVERRIDE_00428168), fake_sce_lseek),
+            (addr_of_mut!(ee::s15::OVERRIDE_004283A0), fake_sce_read),
+            (addr_of_mut!(ee::s14::OVERRIDE_003DDFA8), fake_service_queue),
+            (addr_of_mut!(ee::s14::OVERRIDE_003E48D8), fake_cd_get_entry),
+        ];
+        for (slot, fake) in hooks {
+            fakes::hook(slot, fake, fakes::prev_cell(fake));
+        }
+    }
+
+    /// Open this module's gate (the fakes answer from their cells).
+    pub(crate) fn oc_open(c: &mut Cpu) {
+        oc_install_fakes();
+        c.bus.write32(CTRL, MAGIC);
+    }
+
+    /// A live file-manager request at `R` (result prefilled, callback and
+    /// counter planted by the caller).
+    pub(crate) const REQ: u32 = DATA + 0x510;
+
+    pub(crate) fn complete_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3d_e420, 0);
+        oc_open(c);
+        let live = seed % 3 != 0;
+        // Null seeds park the counter at 7 (incremented, never drained);
+        // live seeds drain to zero from 0 (++ then --) or stay up from 2.
+        c.bus.write32(
+            0x0051_9ab0 + 0x10,
+            if !live {
+                7
+            } else if seed / 24 % 2 == 0 {
+                0
+            } else {
+                2
+            },
+        );
+        c.bus
+            .write32(0x0051_9ab0 + 0x24, if live { REQ } else { 0 });
+        for i in 0..12u32 {
+            c.bus.write32(REQ + 4 * i, 0);
+        }
+        // Distinctive result slot (a missing store keeps it) and thread id
+        // words with nonzero low bytes.
+        c.bus.write32(REQ + 8, 0xa5a5_a5a5);
+        c.bus.write32(REQ, DATA + 0x610);
+        c.bus.write32(REQ + 0x14, DATA + 0x620);
+        // Live or stale request, completing ok or not, callback set or
+        // clear.
+        c.bus.write32(REQ + 4, (seed / 3 % 2) as u32);
+        c.bus
+            .write32(REQ + 0x28, [0, 0, 0x0000_4000][seed as usize / 12 % 3]);
+        c.bus.write32(RET_SVCQ, 0x51ab51 + seed);
+        c.g[A0][0] = (seed / 6 % 2) as u64;
+        c.pc = 0x003d_e420;
+    }
+
+    /// Null, stale, live ok/failed, callback set/clear, drain/no-drain.
+    #[test]
+    fn ea_file_complete_request_matches() {
+        check(
+            ee::s14::f_003de420__generated,
+            ea_file_complete_request,
+            96,
+            &|c, seed| complete_setup(c, seed),
+        );
+    }
+
+    /// The queue-drain call really ran on the draining seeds (its return
+    /// address logged by the fake).
+    #[test]
+    fn ea_file_complete_request_reaches_service_queue() {
+        check_reaching(
+            ee::s14::f_003de420__generated,
+            ea_file_complete_request,
+            96,
+            &[0x003d_e4b4],
+            &|c, seed| complete_setup(c, seed),
+        );
+    }
+
+    /// The callback ran on the callback seeds (its indirect-call return
+    /// logged by the miss hook).
+    #[test]
+    fn ea_file_complete_request_reaches_callback() {
+        check_reaching(
+            ee::s14::f_003de420__generated,
+            ea_file_complete_request,
+            96,
+            &[0x003d_e494],
+            &|c, seed| complete_setup(c, seed),
+        );
+    }
+
+    /// `PlatformOpen` fixture: the device (cd/host/other), the mode low 3
+    /// bits, a found or missed lookup, and a failed or good open.
+    pub(crate) fn open_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_3208, 0);
+        oc_open(c);
+        c.bus
+            .write32(RET_RESOLVE_DEV, [1, 2, 0, 3][seed as usize % 4]);
+        c.g[A0][0] = (DATA + 0x400) as u64;
+        c.bus.write32(DATA + 0x400, 0x3a6463);
+        c.g[A1][0] = (seed / 4 % 8) as u64;
+        c.g[A2][0] = (DATA + 0x910) as u64;
+        c.bus.write32(DATA + 0x910, 0xa5a5_a5a5);
+        c.bus.write32(
+            RET_CD_LOOKUP,
+            if seed / 32 % 2 == 0 { 0 } else { DATA + 0x710 },
+        );
+        c.bus.write32(DATA + 0x710, 0x51cd51);
+        c.bus
+            .write32(RET_SCE_OPEN, [0xffff_ffff, 5][seed as usize / 64 % 2]);
+        c.pc = 0x003e_3208;
+    }
+
+    /// cd/host/other devices, every mode mapping, missed and hit lookups,
+    /// failed and good opens.
+    #[test]
+    fn ea_file_platform_open_matches() {
+        check(
+            ee::s14::f_003e3208__generated,
+            ea_file_platform_open,
+            128,
+            &|c, seed| open_setup(c, seed),
+        );
+    }
+
+    /// `PlatformOpen` failed/success arm pair: host device, found lookup,
+    /// mode 1, open result `-1` or `5` by seed. The `-1` row takes the
+    /// failed-open arm only because the `sceOpen` fake sign-extends.
+    pub(crate) fn open_sign_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_3208, 0);
+        oc_open(c);
+        c.bus.write32(RET_RESOLVE_DEV, 2);
+        c.g[A0][0] = (DATA + 0x400) as u64;
+        c.bus.write32(DATA + 0x400, 0x3a6463);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = (DATA + 0x910) as u64;
+        c.bus.write32(DATA + 0x910, 0xa5a5_a5a5);
+        c.bus.write32(RET_CD_LOOKUP, DATA + 0x710);
+        c.bus.write32(DATA + 0x710, 0x51cd51);
+        c.bus
+            .write32(RET_SCE_OPEN, if seed % 2 == 0 { 0xffff_ffff } else { 5 });
+        c.pc = 0x003e_3208;
+    }
+
+    /// The failed-open arm runs (46 cycles) alongside the success arm
+    /// (50); without the sign-extending fake both seeds take success.
+    #[test]
+    fn ea_file_platform_open_sign_paths() {
+        crate::difftest::check_paths(
+            ee::s14::f_003e3208__generated,
+            ea_file_platform_open,
+            2,
+            &[46, 50],
+            &|c, seed| open_sign_setup(c, seed),
+        );
+    }
+
+    /// Both callees ran on some seed (their return addresses in the fake
+    /// log): the lookup on a cd seed, the open on a host seed.
+    #[test]
+    fn ea_file_platform_open_reaches_callees() {
+        check_reaching(
+            ee::s14::f_003e3208__generated,
+            ea_file_platform_open,
+            128,
+            &[0x003e_324c, 0x003e_32b4],
+            &|c, seed| open_setup(c, seed),
+        );
+    }
+
+    /// `PlatformClose` fixture: the handle's top byte (host or not) and a
+    /// remembered fd that does or does not match.
+    pub(crate) fn close_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_32f8, 0);
+        oc_open(c);
+        let fd = 0x34_5678u32;
+        let top = [2, 1, 0, 3][seed as usize % 4];
+        c.g[A0][0] = ((top << 24) | fd) as u64;
+        c.bus
+            .write32(0x0045_0c40, if seed / 4 % 2 == 0 { fd } else { fd + 1 });
+        c.bus.write32(RET_SCE_CLOSE, seed);
+        c.pc = 0x003e_32f8;
+    }
+
+    /// Host and non-host handles, remembered fd match and mismatch.
+    #[test]
+    fn ea_file_platform_close_matches() {
+        check(
+            ee::s14::f_003e32f8__generated,
+            ea_file_platform_close,
+            32,
+            &|c, seed| close_setup(c, seed),
+        );
+    }
+
+    /// The close ran on a host seed with a matching remembered fd.
+    #[test]
+    fn ea_file_platform_close_reaches_sce_close() {
+        check_reaching(
+            ee::s14::f_003e32f8__generated,
+            ea_file_platform_close,
+            32,
+            &[0x003e_3324],
+            &|c, seed| close_setup(c, seed),
+        );
+    }
+
+    /// `HostReadService` fixture: a pending or idle service word, a
+    /// remembered fd and position that do or do not match, a short or full
+    /// read, and a request slot that is live or null.
+    pub(crate) fn read_service_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_33b0, 0);
+        oc_open(c);
+        const STATE: u32 = 0x0051_9c20;
+        let pending = seed % 2 != 0;
+        c.bus.write32(STATE, pending as u32);
+        let fd = 5u32;
+        let off = 0x100 + seed;
+        let len = 0x40u32;
+        c.bus.write32(STATE + 4, fd);
+        c.bus.write32(STATE + 8, DATA + 0x610);
+        c.bus.write32(STATE + 0xc, off);
+        c.bus.write32(STATE + 0x10, len);
+        for i in 0..16u32 {
+            c.bus.write32(DATA + 0x610 + 4 * i, 0xb5b5_0000 | i);
+        }
+        c.bus
+            .write32(0x0045_0c40, if seed / 2 % 2 == 0 { fd } else { fd + 1 });
+        // One digit parks the remembered position exactly on the read
+        // offset, so the fd-match arm skips `sceLseek`.
+        c.bus.write32(
+            0x0045_0c4c,
+            if seed / 4 % 2 == 0 {
+                off
+            } else {
+                off + len + 8
+            },
+        );
+        c.bus
+            .write32(RET_SCE_READ, if seed / 8 % 2 == 0 { len } else { len + 7 });
+        c.bus.write32(RET_SCE_LSEEK, 0x51ee51 + seed);
+        // The completion runs its null arm (slot clear) or its full body.
+        c.bus.write32(0x0051_9ab0 + 0x10, 5);
+        if seed / 16 % 2 == 0 {
+            c.bus.write32(0x0051_9ab0 + 0x24, 0);
+        } else {
+            c.bus.write32(0x0051_9ab0 + 0x24, REQ);
+            for i in 0..12u32 {
+                c.bus.write32(REQ + 4 * i, 0);
+            }
+            c.bus.write32(REQ + 8, 0xa5a5_a5a5);
+            c.bus.write32(REQ, DATA + 0x610);
+            c.bus.write32(REQ + 0x14, DATA + 0x620);
+        }
+        c.pc = 0x003e_33b0;
+    }
+
+    /// Idle and pending service, seek/no-seek, short/full reads, null and
+    /// live completions.
+    #[test]
+    fn ea_file_host_read_service_matches() {
+        check(
+            ee::s14::f_003e33b0__generated,
+            ea_file_host_read_service,
+            32,
+            &|c, seed| read_service_setup(c, seed),
+        );
+    }
+
+    /// The seek and the read both ran on some seed.
+    #[test]
+    fn ea_file_host_read_service_reaches_callees() {
+        check_reaching(
+            ee::s14::f_003e33b0__generated,
+            ea_file_host_read_service,
+            32,
+            &[0x003e_3418, 0x003e_342c],
+            &|c, seed| read_service_setup(c, seed),
+        );
+    }
+
+    /// `HostReadService` seek/no-seek arm pair: pending service, matching
+    /// fd, full read, null completion, remembered position on or off the
+    /// read offset by seed. The on-offset row skips `sceLseek`.
+    pub(crate) fn read_service_seek_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_33b0, 0);
+        oc_open(c);
+        const STATE: u32 = 0x0051_9c20;
+        let off = 0x100u32;
+        let len = 0x40u32;
+        c.bus.write32(STATE, 1);
+        c.bus.write32(STATE + 4, 5);
+        c.bus.write32(STATE + 8, DATA + 0x610);
+        c.bus.write32(STATE + 0xc, off);
+        c.bus.write32(STATE + 0x10, len);
+        for i in 0..16u32 {
+            c.bus.write32(DATA + 0x610 + 4 * i, 0xb5b5_0000 | i);
+        }
+        c.bus.write32(0x0045_0c40, 5);
+        c.bus
+            .write32(0x0045_0c4c, if seed % 2 == 0 { off } else { off + len + 8 });
+        c.bus.write32(RET_SCE_READ, len);
+        c.bus.write32(RET_SCE_LSEEK, 0x51ee51 + seed);
+        c.bus.write32(0x0051_9ab0 + 0x10, 5);
+        c.bus.write32(0x0051_9ab0 + 0x24, 0);
+        c.pc = 0x003e_33b0;
+    }
+
+    /// The no-seek arm runs (68 cycles) alongside the seek arm (81); the
+    /// seek return address alone cannot prove the absence.
+    #[test]
+    fn ea_file_host_read_service_seek_paths() {
+        crate::difftest::check_paths(
+            ee::s14::f_003e33b0__generated,
+            ea_file_host_read_service,
+            2,
+            &[68, 81],
+            &|c, seed| read_service_seek_setup(c, seed),
+        );
+    }
+
+    /// `PlatformGetSize` fixture: the handle's top byte (cd or host).
+    pub(crate) fn get_size_setup(c: &mut Cpu, seed: u32) {
+        let _r = machine(c, seed, 0x3e_34e8, 0);
+        oc_open(c);
+        let top = [1, 0, 2, 0x81][seed as usize % 4];
+        c.g[A0][0] = ((top << 24) | 0x34_5678) as u64;
+        c.bus.write32(RET_CD_GET_ENTRY, 0x51ce51 + seed);
+        c.bus.write32(RET_SCE_LSEEK, 0x51ee52 + seed);
+        c.pc = 0x003e_34e8;
+    }
+
+    /// cd and host drives (the host arm seeks to the end).
+    #[test]
+    fn ea_file_platform_get_size_matches() {
+        check(
+            ee::s14::f_003e34e8__generated,
+            ea_file_platform_get_size,
+            16,
+            &|c, seed| get_size_setup(c, seed),
         );
     }
 }

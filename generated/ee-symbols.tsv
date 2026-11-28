@@ -13118,7 +13118,7 @@ s15	00424a20	00424a40	-	iEnableIntc
 s15	00424a40	00424a60	-	iDisableIntc
 s15	00424a60	00424a80	-	iEnableDmac
 s15	00424a80	00424aa0	-	iDisableDmac
-s15	00424aa0	00424b78	-	libkernl_IntrHelperThread
+s15	00424aa0	00424b78	o	libkernl_IntrHelperThread
 s15	00424b78	00424c4c	o	libkernl_InitThreadHelper
 s15	00424c50	00424ce4	o	iWakeupThread
 s15	00424ce8	00424d64	-	iRotateThreadReadyQueue
