@@ -13899,6 +13899,13 @@ pub(crate) mod tests {
         c.bus.write32(API + 0x18, BASE_TICK - 1);
     }
 
+    /// Idle with the tick delta exactly at the `0x003e9630` bound: the
+    /// `< 5001` mutant would skip the tick advance.
+    pub(crate) fn lobbyupd_setup_idle_tick5001(c: &mut Cpu, _seed: u32) {
+        lobbyupd_setup_idle(c, 0);
+        c.bus.write32(API + 0x14, BASE_TICK - 5001);
+    }
+
     pub(crate) fn lobbyupd_setup_ping(c: &mut Cpu, _seed: u32) {
         lobbyupd_setup_idle(c, 0);
         c.bus.write32(API + 0x1c, 0xffff_ffff);
@@ -14003,6 +14010,19 @@ pub(crate) mod tests {
         c.bus.write32(API + 0x310, 0xC700_0310);
     }
 
+    /// `+rom` delete with no room field but a hash hit: the find miss
+    /// (`0x003ea30c`) runs the hash find, which hits and runs the
+    /// `0x003ea320` delete path (kills the `|0x20` mutant there, which
+    /// would clear the word instead of setting it).
+    pub(crate) fn lobbyupd_setup_rom_del_found(c: &mut Cpu, _seed: u32) {
+        lobbyupd_setup_rom_del(c, 0);
+        c.bus.write32(HFIND, NODE);
+        // A set flag bit unmasks the `0x003ea320` store: the common
+        // `0x003ea350` exit re-sets bit 0x20, so a clear entry word would
+        // converge there and hide a clearing mutant.
+        c.bus.write32(API + 0x08, 0x40);
+    }
+
     pub(crate) fn lobbyupd_setup_rom_add(c: &mut Cpu, _seed: u32) {
         elf_image(c);
         lobbyupd_msg(c, MSG_ROM, 0);
@@ -14035,6 +14055,19 @@ pub(crate) mod tests {
         c.bus.write32(FIND, TAGPTR);
         c.bus.write32(GETFLAGS, 0x0020_0001);
         lobbyupd_string(c, b"usr-name");
+    }
+
+    /// `+usr` add with a zero number: the `0x003ea480` test misses, so
+    /// the arm continues into the add path (the `< 0` mutant would exit
+    /// through `0x003ea78c` instead).
+    pub(crate) fn lobbyupd_setup_usr_add_empty(c: &mut Cpu, _seed: u32) {
+        lobbyupd_setup_usr_add(c, 0);
+        c.bus.write32(GETNUM, 0);
+        // A previous pump's flag word: the `+usr` exit sets bit 0x40, so
+        // re-entering with it set exercises the set-bit side of the
+        // read-modify-write flag store (kills the `|0x40` → `^0x40`
+        // mutant, which would clear it).
+        c.bus.write32(API + 0x08, 0x40);
     }
 
     pub(crate) fn lobbyupd_setup_usr_del(c: &mut Cpu, _seed: u32) {
@@ -14198,6 +14231,8 @@ pub(crate) mod tests {
     pub(crate) fn lobbyupd_setup_usr_add_hfind(c: &mut Cpu, _seed: u32) {
         lobbyupd_setup_usr_add(c, 0);
         c.bus.write32(HFIND, NODE);
+        // A previous pump's flag word (see `lobbyupd_setup_usr_add_empty`).
+        c.bus.write32(API + 0x08, 0x40);
     }
 
     /// `+snp` with a value at the clamp (`0x003eaaf4`): the stored value
@@ -14219,12 +14254,17 @@ pub(crate) mod tests {
     /// `+rom` add over an existing room whose tag byte steers the
     /// `0x003ea2bc` compare: `'7'` and `'0'` take the `0x003ea2c4` call,
     /// `':'` takes the `0x003ea2cc` fallthrough. The boundary bytes kill
-    /// the `< 48` (`'0'`) and `< 58` (`':'`) mutants.
+    /// the `< 48` (`'0'`) and `< 58` (`':'`) mutants. The byte the
+    /// `0x003ea2ac` compare reads is at S0+0x5c, where S0 is the
+    /// list-data word (the `LDATA` fake's value): point it at scratch and
+    /// plant the byte there (it was previously planted at `POOL+0x5c`,
+    /// which nothing on this path reads).
     pub(crate) fn lobbyupd_setup_rom_add_hfind_digit(c: &mut Cpu, seed: u32) {
         lobbyupd_setup_rom_add_hfind(c, 0);
-        c.bus.write32(LDATA, POOL);
+        c.bus.write32(LDATA, STRING_SRC);
         c.bus
-            .write8(POOL + 0x5c, [b'7', b'0', b':'][seed as usize % 3]);
+            .write8(STRING_SRC + 0x5c, [b'7', b'0', b':'][seed as usize % 3]);
+        c.bus.write8(STRING_SRC + 0x5d, 0);
     }
 
     /// `+rom` add with no room-list word: the `0x003ea0bc` test misses,
@@ -14257,6 +14297,20 @@ pub(crate) mod tests {
         lobbyupd_string(c, b":70");
     }
 
+    /// `+pop` whose name starts with digits: the digit loop runs, and a
+    /// colon in a later position takes the other side of its `< 0xa`
+    /// checks (killing the boundary mutants the colon-first row never
+    /// reaches). Like the plain row, it counts rooms.
+    pub(crate) fn lobbyupd_setup_pop_digits(c: &mut Cpu, seed: u32) {
+        lobbyupd_msg(c, MSG_POP, 0);
+        c.bus.write32(API + 0x310, 0xC700_0310);
+        match seed % 3 {
+            0 => lobbyupd_string(c, b"7:"),
+            1 => lobbyupd_string(c, b"7::"),
+            _ => lobbyupd_string(c, b"7:7:"),
+        }
+    }
+
     /// `+mov` with a zero value: the `0x003eac7c` test misses, killing
     /// the `== 0` mutant, and the arm exits without counting.
     pub(crate) fn lobbyupd_setup_move_zero(c: &mut Cpu, _seed: u32) {
@@ -14276,6 +14330,14 @@ pub(crate) mod tests {
     pub(crate) fn lobbyupd_setup_snp_v8(c: &mut Cpu, _seed: u32) {
         lobbyupd_setup_snp(c, 0);
         c.bus.write32(API + 0x508, 8);
+    }
+
+    /// `+snp` with node value 4: the `0x003eaa10` test misses (the `< 4`
+    /// mutant would take the `0x003eac54` exit), so the arm continues
+    /// into the `0x003eaa20` gate like the plain row.
+    pub(crate) fn lobbyupd_setup_snp_v4(c: &mut Cpu, _seed: u32) {
+        lobbyupd_setup_snp(c, 0);
+        c.bus.write32(API + 0x508, 4);
     }
 
     /// `+usr` add over an existing user at an odd data address: the
@@ -14315,6 +14377,14 @@ pub(crate) mod tests {
         assert!(hits(c, N_PEEK) > 0);
         assert!(hits(c, N_SORT) > 0);
         assert_eq!(hits(c, N_SEND), 0);
+    }
+
+    pub(crate) fn lobbyupd_check_idle_tick5001(c: &mut Cpu, _seed: u32) {
+        lobbyupd_check_idle(c, _seed);
+        // The boundary delta ran the advance arm (0x003e963c), not the
+        // skip arm: +50/+5001 from the entry advance composed with the
+        // message-loop tick update.
+        assert_eq!(c.bus.read32(API + 0x10), BASE_TICK + 60000);
     }
 
     pub(crate) fn lobbyupd_check_pingtail(c: &mut Cpu, _seed: u32) {
@@ -14454,6 +14524,13 @@ pub(crate) mod tests {
         assert!(hits(c, N_HFINDI) > 0);
     }
 
+    pub(crate) fn lobbyupd_check_rom_del_found(c: &mut Cpu, _seed: u32) {
+        lobbyupd_check_rom_del(c, _seed);
+        // The find hit runs the `0x003ea320` delete (hash-del + free),
+        // not just the `0x003ea350` exit.
+        assert!(hits(c, N_HDELI) > 0);
+    }
+
     pub(crate) fn lobbyupd_check_rom_add(c: &mut Cpu, _seed: u32) {
         assert_eq!(c.pc, TEST_RA);
         assert_ne!(flags(c) & 0x20, 0);
@@ -14470,6 +14547,13 @@ pub(crate) mod tests {
         assert_eq!(c.pc, TEST_RA);
         assert_ne!(flags(c) & 0x40, 0);
         assert_eq!(c.bus.read32(API + 0x1b4), 0x0020_0001);
+    }
+
+    pub(crate) fn lobbyupd_check_usr_add_empty(c: &mut Cpu, _seed: u32) {
+        assert_eq!(c.pc, TEST_RA);
+        // The zero number still runs the add path (not the `0x003ea78c`
+        // exit the `< 0` mutant takes): the user flag is set.
+        assert_ne!(flags(c) & 0x40, 0);
     }
 
     pub(crate) fn lobbyupd_check_usr_del(c: &mut Cpu, _seed: u32) {
@@ -14664,6 +14748,12 @@ pub(crate) mod tests {
         assert_eq!(hits(c, N_ROOMCNT), 0);
     }
 
+    pub(crate) fn lobbyupd_check_pop_digits(c: &mut Cpu, _seed: u32) {
+        assert_eq!(c.pc, TEST_RA);
+        // The digit runs count rooms (like the plain row).
+        assert!(hits(c, N_ROOMCNT) > 0);
+    }
+
     pub(crate) fn lobbyupd_check_move_zero(c: &mut Cpu, _seed: u32) {
         assert_eq!(c.pc, TEST_RA);
         // The arm exited before the count: the room word stays clear.
@@ -14680,6 +14770,13 @@ pub(crate) mod tests {
         assert_eq!(c.pc, TEST_RA);
         // Same fallthrough as the row above, past the second gate.
         assert_eq!(flags(c) & 0x80, 0);
+    }
+
+    pub(crate) fn lobbyupd_check_snp_v4(c: &mut Cpu, _seed: u32) {
+        assert_eq!(c.pc, TEST_RA);
+        // The `0x003eaa20` gate hits, so the arm runs on like the plain
+        // row: the flag is set.
+        assert_ne!(flags(c) & 0x80, 0);
     }
 
     pub(crate) fn lobbyupd_check_usr_add_hfind_odd(c: &mut Cpu, _seed: u32) {
@@ -14722,6 +14819,11 @@ pub(crate) mod tests {
             _name: "idle",
             setup: lobbyupd_setup_idle,
             check_row: lobbyupd_check_idle,
+        },
+        LobbyUpdRow {
+            _name: "idle_tick5001",
+            setup: lobbyupd_setup_idle_tick5001,
+            check_row: lobbyupd_check_idle_tick5001,
         },
         LobbyUpdRow {
             _name: "pingtail",
@@ -14809,6 +14911,11 @@ pub(crate) mod tests {
             check_row: lobbyupd_check_rom_del,
         },
         LobbyUpdRow {
+            _name: "rom_del_found",
+            setup: lobbyupd_setup_rom_del_found,
+            check_row: lobbyupd_check_rom_del_found,
+        },
+        LobbyUpdRow {
             _name: "rom_add",
             setup: lobbyupd_setup_rom_add,
             check_row: lobbyupd_check_rom_add,
@@ -14822,6 +14929,11 @@ pub(crate) mod tests {
             _name: "usr_add",
             setup: lobbyupd_setup_usr_add,
             check_row: lobbyupd_check_usr_add,
+        },
+        LobbyUpdRow {
+            _name: "usr_add_empty",
+            setup: lobbyupd_setup_usr_add_empty,
+            check_row: lobbyupd_check_usr_add_empty,
         },
         LobbyUpdRow {
             _name: "usr_del",
@@ -14949,6 +15061,11 @@ pub(crate) mod tests {
             check_row: lobbyupd_check_pop_colon,
         },
         LobbyUpdRow {
+            _name: "pop_digits",
+            setup: lobbyupd_setup_pop_digits,
+            check_row: lobbyupd_check_pop_digits,
+        },
+        LobbyUpdRow {
             _name: "move_zero",
             setup: lobbyupd_setup_move_zero,
             check_row: lobbyupd_check_move_zero,
@@ -14962,6 +15079,11 @@ pub(crate) mod tests {
             _name: "snp_v8",
             setup: lobbyupd_setup_snp_v8,
             check_row: lobbyupd_check_snp_v8,
+        },
+        LobbyUpdRow {
+            _name: "snp_v4",
+            setup: lobbyupd_setup_snp_v4,
+            check_row: lobbyupd_check_snp_v4,
         },
         LobbyUpdRow {
             _name: "usr_add_hfind_odd",
@@ -15042,10 +15164,12 @@ pub(crate) mod tests {
                 817,  // usr_add_hfind: the `0x003ea5e8` update
                 459,  // snp_big: the `0x003eaaf4` clamp
                 536,  // snp_hfind: the `0x003eab58` ladder
-                // The three tag bytes share one total; the boundary two
-                // kill the `< 48` / `< 58` mutants (see the row comment).
-                2325, // rom_add_hfind_digit '7'
-                2325, // rom_add_hfind_digit '0'
+                // The three tag bytes take two totals now that the fixture
+                // plants them where the `0x003ea2ac` compare reads: '7' and
+                // '0' run the `0x003ea2c4` copy arm, ':' falls through.
+                // The boundary bytes kill the `< 48` / `< 58` mutants.
+                2348, // rom_add_hfind_digit '7'
+                2348, // rom_add_hfind_digit '0'
                 2325, // rom_add_hfind_digit ':'
                 // The two missing exits and snp_v3 share one total: all
                 // three fall out of dispatch after their compare.
@@ -15088,6 +15212,29 @@ pub(crate) mod tests {
                 _ => lobbyupd_setup_snp_v8(c, seed),
             },
         );
+    }
+
+    /// A second full pump from the post-first-pump state: flag words the
+    /// first pump set in the client object persist, so read-modify-write
+    /// flag mutants (`word|bit` → `word^bit`, which clear the bit on
+    /// re-entry) diverge here even though the first pump agrees with the
+    /// fixtures' clear words. The peek script is rewound so the second
+    /// pump re-dispatches the same message.
+    #[test]
+    fn lobby_api_update_second_pump() {
+        for row in LOBBYUPD_ROWS {
+            check(
+                ee::s14::f_003e95c8__generated,
+                lobby_api_update,
+                SEEDS,
+                &|c, seed| {
+                    (row.setup)(c, seed);
+                    lobby_api_update(c);
+                    c.bus.write32(PEEK_N, 0);
+                    lobbyupd_entry(c);
+                },
+            );
+        }
     }
 
     driven!(gen_update_driven, ee::s14::f_003e95c8__generated);
