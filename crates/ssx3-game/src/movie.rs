@@ -35,19 +35,12 @@ pub fn on() -> bool {
     ssx3_core::config::var("SSX3_NATIVE_MPEG").map_or(true, |v| v != "0")
 }
 
-/// The replacements to install: the native libmpeg, or with
-/// `SSX3_NATIVE_MPEG=0 SSX3_MOVIE_HASH=1` only a wrapper around the
-/// generated `sceMpegGetPicture` that prints each picture's hash (to compare
-/// the two paths picture by picture).
+/// The replacements to install: the native libmpeg (`SSX3_NATIVE_MPEG=0`
+/// keeps the ported libmpeg code; `SSX3_MOVIE_HASH=1` prints the hash of each
+/// decoded picture, to compare the two paths picture by picture).
 pub fn overrides() -> &'static [(u32, GuestFn, &'static str)] {
     if on() {
         OVERRIDES
-    } else if hash_on() {
-        &[(
-            0x0040_2a10,
-            generated_get_picture_hashed,
-            "sceMpegGetPicture",
-        )]
     } else {
         &[]
     }
@@ -74,12 +67,6 @@ fn print_hash(c: &Cpu, a: u32, n: usize) {
             let _ = std::fs::write(std::path::Path::new(&dir).join(format!("pic{k}.rgba")), b);
         }
     }
-}
-
-fn generated_get_picture_hashed(c: &mut Cpu) {
-    let (dst, mbcount) = (arg(c, 1), arg(c, 2) as usize);
-    ssx3_ee::s15::f_00402a10__generated(c);
-    print_hash(c, dst, mbcount * 1024);
 }
 
 /// One `sceMpeg` object.

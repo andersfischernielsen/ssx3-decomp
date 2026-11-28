@@ -31,10 +31,76 @@ const BEGIN_TRI_STRIP: u32 = 0x0037_a260;
 const END_TRI_STRIP: u32 = 0x0037_a430;
 
 /// Install the wrappers; false when switched off.
+/// The ports that held the slots before the capture hooks took them over: the
+/// draw functions run those when the draw layer is not capturing (the packet
+/// path the replay gate compares).
+static PREVIOUS: std::sync::Mutex<Vec<(u32, fn(&mut Cpu))>> = std::sync::Mutex::new(Vec::new());
+
+const HOOKED: &[u32] = &[
+    0x002dc7b0,
+    0x00362978,
+    0x00363490,
+    0x0036ac00,
+    0x0036c790,
+    0x00377cf0,
+    0x003781a0,
+    0x00378808,
+    0x00379028,
+    0x00379860,
+    0x00379bd0,
+    0x0037a260,
+    0x0037a430,
+    0x0037a610,
+    0x0037b548,
+    0x0037ba50,
+    0x0037cc98,
+    0x0037d348,
+    0x0037d450,
+    0x0037d800,
+    0x0037e238,
+    0x00380518,
+    0x003807a0,
+    0x00380ce0,
+    0x00381310,
+    0x003816f0,
+    0x00381ad0,
+    0x00381f10,
+    0x00385c10,
+    0x00386e78,
+    0x00387ec0,
+    0x003883b8,
+    0x003885e0,
+    0x0038b370,
+    0x0038d690,
+    0x003904a0,
+    0x00396b40,
+];
+
+fn remember_previous() {
+    let mut g = PREVIOUS.lock().unwrap();
+    for &a in HOOKED {
+        if g.iter().all(|(x, _)| *x != a) {
+            if let Some(f) = ssx3_ee::get_override(a) {
+                g.push((a, f));
+            }
+        }
+    }
+}
+
+fn previous(addr: u32) -> fn(&mut Cpu) {
+    PREVIOUS
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(a, _)| *a == addr)
+        .map(|(_, f)| *f)
+        .unwrap_or_else(|| panic!("capture: no port behind slot {addr:#x}"))
+}
 pub fn install() -> bool {
     if ssx3_core::config::var("SSX3_DIRECT").is_some_and(|v| v == "0") {
         return false;
     }
+    remember_previous();
     for (a, f, name) in [
         (
             DRAW_TRI_STRIP,
@@ -441,7 +507,7 @@ pub fn install() -> bool {
         (
             0x0036_3490,
             |c: &mut Cpu| {
-                crate::packetless::dispatch_render_frame(c, ssx3_ee::s12::f_00363490__generated)
+                crate::packetless::dispatch_render_frame(c, previous(0x00363490))
             },
             "PS2GraphicsMan_RenderFrame",
         ),
@@ -499,7 +565,7 @@ fn draw_tri_strip(c: &mut Cpu) {
             .collect();
         (entry, prim, start, v)
     });
-    ssx3_ee::s12::f_00379860__generated(c);
+    previous(0x00379860)(c);
     // (Not when the body unwound: the packet takes the decoding path.)
     let Some((entry, prim, start, verts)) = pre.filter(|p| c.pc == ret && !p.3.is_empty()) else {
         return;
@@ -637,7 +703,7 @@ fn emit_board_wake_strips(c: &mut Cpu) {
             board_wake_input(c, entry, FpuF32(c.f[12]), FpuF32(c.f[13]), args)
         })
         .flatten();
-    capture_ribbon(c, ssx3_ee::s12::f_003885e0__generated, input);
+    capture_ribbon(c, previous(0x003885e0), input);
 }
 
 /// EmitBoardWakeStrips' input: (rings, first, ring size, count, ring A,
@@ -708,7 +774,7 @@ fn emit_shadow_strips(c: &mut Cpu) {
             shadow_input(c, entry, FpuF32(c.f[12]), FpuF32(c.f[13]), args)
         })
         .flatten();
-    capture_ribbon(c, ssx3_ee::s12::f_00387ec0__generated, input);
+    capture_ribbon(c, previous(0x00387ec0), input);
 }
 
 /// EmitShadowStrips' input: (rings, first, count, ring A, ring B,
@@ -814,7 +880,7 @@ fn begin_tri_strip(c: &mut Cpu) {
         };
         (entry, prim, c.bus.read32(gm + 0x5a00))
     });
-    ssx3_ee::s12::f_0037a260__generated(c);
+    previous(0x0037a260)(c);
     let mut open = OPEN_STRIP.lock().unwrap();
     *open = None;
     // (One batch: the strip program takes at most 72 vertices.)
@@ -838,7 +904,7 @@ fn end_tri_strip(c: &mut Cpu) {
             .collect();
         (entry, prim, start, verts)
     });
-    ssx3_ee::s12::f_0037a430__generated(c);
+    previous(0x0037a430)(c);
     let Some((entry, prim, start, verts)) = pre.filter(|_| c.pc == ret) else {
         return;
     };
@@ -1137,7 +1203,7 @@ fn draw_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_00380518__generated,
+        previous(0x00380518),
         gm + 0x5a00,
         Some(0x1408),
         Shape::OneCnt,
@@ -1150,7 +1216,7 @@ fn draw_dynamic_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_003807a0__generated,
+        previous(0x003807a0),
         gm + 0x5a00,
         Some(0x140c),
         Shape::OneCnt,
@@ -1163,7 +1229,7 @@ fn draw_m_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_00380ce0__generated,
+        previous(0x00380ce0),
         gm + 0x5a00,
         Some(0x140c),
         Shape::OneCnt,
@@ -1175,7 +1241,7 @@ fn draw_trail(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_00381310__generated,
+        previous(0x00381310),
         gm + 0x5a00,
         None,
         Shape::OneCnt,
@@ -1187,7 +1253,7 @@ fn draw_trail_b(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_003816f0__generated,
+        previous(0x003816f0),
         gm + 0x5a00,
         None,
         Shape::OneCnt,
@@ -1200,7 +1266,7 @@ fn draw_patch_fx(c: &mut Cpu) {
     let cursor = c.g[A3][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_0038d690__generated,
+        previous(0x0038d690),
         cursor,
         None,
         Shape::OneCnt,
@@ -1213,7 +1279,7 @@ fn draw_model(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_packets(
         c,
-        ssx3_ee::s12::f_0037e238__generated,
+        previous(0x0037e238),
         gm + 0x5a00,
         None,
         Shape::UntilCall,
@@ -1226,7 +1292,7 @@ fn grid_mesh_draw(c: &mut Cpu) {
     let gm = c.bus.read32(c.g[A0][0] as u32 + 0x1c4);
     capture_packets(
         c,
-        ssx3_ee::s12::f_00385c10__generated,
+        previous(0x00385c10),
         gm + 0x5a00,
         None,
         Shape::UntilCall,
@@ -1238,13 +1304,13 @@ fn grid_mesh_draw(c: &mut Cpu) {
 /// chains.
 fn draw_skinned_model(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_records(c, ssx3_ee::s12::f_0037a610__generated, gm);
+    capture_records(c, previous(0x0037a610), gm);
 }
 
 /// Slot 100 `DrawSkinnedModelShadow` (0x37b548): one record per call.
 fn draw_skinned_model_shadow(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_records(c, ssx3_ee::s12::f_0037b548__generated, gm);
+    capture_records(c, previous(0x0037b548), gm);
 }
 
 /// `SSX3_CAPTURE_DEBUG=1`: packets that are not captured are reported.
@@ -1261,32 +1327,32 @@ fn gm_of(c: &mut Cpu) -> u32 {
 /// Draw functions whose packets are captured through the records they
 /// write (`capture_records`; specs in `eaaa404^:docs/investigation/n2-capture/`).
 macro_rules! record_captures {
-    ($($name:ident = $shard:ident :: $f:ident; $doc:literal)*) => {
+    ($($name:ident = $addr:literal; $doc:literal)*) => {
         $(
             #[doc = $doc]
             fn $name(c: &mut Cpu) {
                 let gm = gm_of(c);
-                capture_records(c, ssx3_ee::$shard::$f, gm);
+                capture_records(c, previous($addr), gm);
             }
         )*
     };
 }
 
 record_captures! {
-    capture_setrendertargettexture = s12::f_0037d348__generated; "slot 53: render into a texture"
-    capture_restorerendertarget = s12::f_0037d450__generated; "slot 54: back to the frame buffer"
-    capture_fillrendertarget = s12::f_0037d800__generated; "slot 55: fill the target, inset the scissor"
-    capture_drawtransition = s12::f_0037cc98__generated; "slot 61: screen copy into the transition texture"
-    capture_drawindexedtriangles = s12::f_00379bd0__generated; "slot 72"
-    capture_drawlinestrip = s12::f_00381ad0__generated; "slot 73"
-    capture_drawlineshape = s12::f_00381f10__generated; "slot 75 (VU1 entry 0x3bf0)"
-    capture_drawsprite3d = s12::f_00377cf0__generated; "slot 78"
-    capture_drawrotatedsprites = s12::f_003781a0__generated; "slot 79"
-    capture_drawglyphs = s12::f_00378808__generated; "slot 80"
-    capture_drawglyphsw = s12::f_00379028__generated; "slot 81"
-    capture_drawshadowvolume = s12::f_00386e78__generated; "slot 89: DIRECT segments and shadow ribbons, one record"
-    capture_drawboardwake = s12::f_003883b8__generated; "slot 90: wake ribbons, one record"
-    capture_fogparticleman_drawparticles = s09::f_002dc7b0__generated; "cPS2FogParticleMan_DrawParticles: GIF sprites"
+    capture_setrendertargettexture = 0x0037d348; "slot 53: render into a texture"
+    capture_restorerendertarget = 0x0037d450; "slot 54: back to the frame buffer"
+    capture_fillrendertarget = 0x0037d800; "slot 55: fill the target, inset the scissor"
+    capture_drawtransition = 0x0037cc98; "slot 61: screen copy into the transition texture"
+    capture_drawindexedtriangles = 0x00379bd0; "slot 72"
+    capture_drawlinestrip = 0x00381ad0; "slot 73"
+    capture_drawlineshape = 0x00381f10; "slot 75 (VU1 entry 0x3bf0)"
+    capture_drawsprite3d = 0x00377cf0; "slot 78"
+    capture_drawrotatedsprites = 0x003781a0; "slot 79"
+    capture_drawglyphs = 0x00378808; "slot 80"
+    capture_drawglyphsw = 0x00379028; "slot 81"
+    capture_drawshadowvolume = 0x00386e78; "slot 89: DIRECT segments and shadow ribbons, one record"
+    capture_drawboardwake = 0x003883b8; "slot 90: wake ribbons, one record"
+    capture_fogparticleman_drawparticles = 0x002dc7b0; "cPS2FogParticleMan_DrawParticles: GIF sprites"
 }
 
 /// `PS2BezierMan_v18(bm)` (0x38b370): the terrain patches drawn this frame
@@ -1294,7 +1360,7 @@ record_captures! {
 /// their records; the deferred groups go through `DeferMan_AppendPacket`.
 fn bezier_end_pass(c: &mut Cpu) {
     let gm = gm_of(c);
-    capture_records(c, ssx3_ee::s12::f_0038b370__generated, gm);
+    capture_records(c, previous(0x0038b370), gm);
 }
 
 /// `DeferMan_AppendPacket(bucket, start, end)` (0x362978): a packet added
@@ -1317,7 +1383,7 @@ fn append_packet(c: &mut Cpu) {
         #[cfg(feature = "render")]
         crate::render::defer_man_append_packet(c);
     } else {
-        ssx3_ee::s12::f_00362978__generated(c);
+        previous(0x00362978)(c);
     }
     if !direct::active() || c.pc != ret || start == end {
         return;
@@ -1388,17 +1454,17 @@ fn capture_post(c: &mut Cpu, body: fn(&mut Cpu), kind: PostKind) {
 }
 
 fn render_depth_fog(c: &mut Cpu) {
-    capture_post(c, ssx3_ee::s12::f_0036ac00__generated, PostKind::DepthFog);
+    capture_post(c, previous(0x0036ac00), PostKind::DepthFog);
 }
 
 fn render_bloom(c: &mut Cpu) {
-    capture_post(c, ssx3_ee::s12::f_0036c790__generated, PostKind::Bloom);
+    capture_post(c, previous(0x0036c790), PostKind::Bloom);
 }
 
 fn render_color_filter(c: &mut Cpu) {
     capture_post(
         c,
-        ssx3_ee::s12::f_003904a0__generated,
+        previous(0x003904a0),
         PostKind::ColorFilter,
     );
 }
@@ -1438,11 +1504,11 @@ fn capture_ret_packet(c: &mut Cpu, body: fn(&mut Cpu)) {
 /// packet (10 lighting qwords at VU1 7, MSCAL 0x1150), CALLed by the state
 /// change through w3.
 fn emit_lighting_packet(c: &mut Cpu) {
-    capture_ret_packet(c, ssx3_ee::s13::f_00396b40__generated);
+    capture_ret_packet(c, previous(0x00396b40));
 }
 
 /// Slot 101 `SetShadowHeader(gm, matrix, scale, offset)` (0x37ba50): the
 /// type-7 header packet (VU1 qw0-5), CALLed through w3.
 fn set_shadow_header(c: &mut Cpu) {
-    capture_ret_packet(c, ssx3_ee::s12::f_0037ba50__generated);
+    capture_ret_packet(c, previous(0x0037ba50));
 }
