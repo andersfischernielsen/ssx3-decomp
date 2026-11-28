@@ -10495,6 +10495,7 @@
 0x004242c0    libkernl_WaitVBlankOrFlag
 0x00424880    DisableIntc
 0x004248e8    EnableIntc
+0x00424aa0    libkernl_IntrHelperThread
 0x00424b78    libkernl_InitThreadHelper
 0x0042cfc0    libkernl_TLBExceptionHandler
 0x0042d100    libkernl_ExceptionReturnHandler
@@ -10595,6 +10596,8 @@
 # Phase 2 wave: oc1139, oc1158
 # Phase 2 wave: oc1139, oc1158
 # Phase 2 wave: oc1138, oc1139, oc1140, oc1141, oc1142, oc1143, oc1144, oc1145, oc1146, oc1147, oc1148, oc1149, oc1150, oc1151, oc1152, oc1153, oc1154, oc1155, oc1156, oc1157, oc1158, oc1159, oc1160, oc1161, oc1162, oc1163
+# Phase 2 wave: oc1460
+# Phase 2 wave: oc1460
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
