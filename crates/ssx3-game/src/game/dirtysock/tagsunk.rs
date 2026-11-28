@@ -1123,6 +1123,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_9ea0, lobby_man_global_ctors, "LobbyMan_GlobalCtors"),
     (0x0025_6bb0, net_rpc_alloc, "Net_RpcAlloc"),
     (0x0025_6bd8, net_rpc_free, "Net_RpcFree"),
+    (0x0025_91b8, net_get_conn_manager, "Net_GetConnManager"),
+    (0x0025_91d0, net_get_game_setup, "Net_GetGameSetup"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -26802,6 +26804,28 @@ pub fn net_rpc_free(c: &mut Cpu) {
     })
 }
 
+/// `Net_GetConnManager` (0x0025_91b8): straight-line leaf: 2 load(s). Mechanical port of the generated body.
+pub fn net_get_conn_manager(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+    c.g[V0][0] = 0xb0000;
+    c.g[V0][0] = c.g[V0][0] | 0x5ab0;
+    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x7c));
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    ret(c);
+}
+
+/// `Net_GetGameSetup` (0x0025_91d0): straight-line leaf: 2 load(s). Mechanical port of the generated body.
+pub fn net_get_game_setup(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+    c.g[V0][0] = 0xb0000;
+    c.g[V0][0] = c.g[V0][0] | 0x5abc;
+    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x7c));
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -39718,6 +39742,34 @@ pub(crate) mod tests {
             SEEDS_6,
             PATHS,
             &rpc_free_fixture,
+        );
+    }
+
+    /// `Net_GetConnManager` (0x0025_91b8) against the generated body.
+    #[test]
+    fn net_get_conn_manager_matches() {
+        check(
+            ee::s06::f_002591b8__generated,
+            net_get_conn_manager,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2591b8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Net_GetGameSetup` (0x0025_91d0) against the generated body.
+    #[test]
+    fn net_get_game_setup_matches() {
+        check(
+            ee::s06::f_002591d0__generated,
+            net_get_game_setup,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2591d0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
         );
     }
 }

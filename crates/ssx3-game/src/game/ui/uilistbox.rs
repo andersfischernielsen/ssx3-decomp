@@ -1311,7 +1311,7 @@ fn ui_menu_find_next_selectable_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S3][0] = 0xff;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x95));
                     c.g[S2][0] = c.lbu((c.g[S1][0] as u32).wrapping_add(0x96));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
@@ -1356,7 +1356,7 @@ fn ui_menu_find_next_selectable_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0039abc8);
-                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0039abc8)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
@@ -1466,7 +1466,7 @@ fn ui_menu_find_next_selectable_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;

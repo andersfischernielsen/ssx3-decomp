@@ -356,6 +356,126 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderHandplantState_Update",
     ),
     (0x0014_46f8, mission_rider_dtor, "MissionRider_dtor"),
+    (0x0011_3d88, race_state_race_enter, "RaceStateRace_Enter"),
+    (0x0013_f8b8, debug_printf_stub_f8b8, "DebugPrintf_Stub_f8b8"),
+    (
+        0x0014_06b0,
+        rider_iface_get_velocity_001406b0,
+        "RiderIface_GetVelocity",
+    ),
+    (
+        0x0014_06c0,
+        rider_iface_has_visited_001406c0,
+        "RiderIface_HasVisited",
+    ),
+    (
+        0x0014_06c8,
+        rider_iface_add_velocity_001406c8,
+        "RiderIface_AddVelocity",
+    ),
+    (
+        0x0014_06d0,
+        rider_iface_get_position_001406d0,
+        "RiderIface_GetPosition",
+    ),
+    (
+        0x0014_06e0,
+        rider_get_default_vector_001406e0,
+        "Rider_GetDefaultVector",
+    ),
+    (
+        0x0014_06f0,
+        rider_iface_get_index_001406f0,
+        "RiderIface_GetIndex",
+    ),
+    (
+        0x0014_06f8,
+        rider_iface_is_human_001406f8,
+        "RiderIface_IsHuman",
+    ),
+    (
+        0x0014_0700,
+        rider_iface_is_computer_00140700,
+        "RiderIface_IsComputer",
+    ),
+    (
+        0x0014_0708,
+        rider_iface_reset_at_matrix_00140708,
+        "RiderIface_ResetAtMatrix",
+    ),
+    (0x0014_0710, rider_v11_empty_00140710, "Rider_v11_Empty"),
+    (
+        0x0014_0718,
+        rider_iface_place_at_matrix_00140718,
+        "RiderIface_PlaceAtMatrix",
+    ),
+    (
+        0x0014_0720,
+        rider_iface_add_power_up_boost_00140720,
+        "RiderIface_AddPowerUpBoost",
+    ),
+    (
+        0x0014_0728,
+        rider_iface_add_power_up_trick_00140728,
+        "RiderIface_AddPowerUpTrick",
+    ),
+    (
+        0x0014_0730,
+        rider_iface_add_trick_multiplier_00140730,
+        "RiderIface_AddTrickMultiplier",
+    ),
+    (
+        0x0014_08f0,
+        rider_get_position_001408f0,
+        "Rider_GetPosition",
+    ),
+    (
+        0x0014_0910,
+        rider_get_velocity_00140910,
+        "Rider_GetVelocity",
+    ),
+    (0x0014_0b80, rider_get_index_00140b80, "Rider_GetIndex"),
+    (0x0014_0bc0, rider_is_human_00140bc0, "Rider_IsHuman"),
+    (
+        0x0014_0c68,
+        rider_reset_rumble_00140c68,
+        "Rider_ResetRumble",
+    ),
+    (
+        0x0014_0c70,
+        rider_pulse_rumble_00140c70,
+        "Rider_PulseRumble",
+    ),
+    (
+        0x0014_0c78,
+        rider_set_rumble_level_00140c78,
+        "Rider_SetRumbleLevel",
+    ),
+    (
+        0x0014_0c80,
+        rider_update_rumble_00140c80,
+        "Rider_UpdateRumble",
+    ),
+    (
+        0x0014_0ce0,
+        rider_script_obj_get_self_00140ce0,
+        "RiderScriptObj_GetSelf",
+    ),
+    (
+        0x0014_4068,
+        race_state_race_exit_00144068,
+        "RaceStateRace_Exit",
+    ),
+    (
+        0x0014_4368,
+        focus_man_collect_octree_node_2,
+        "FocusMan_CollectOctreeNode",
+    ),
+    (
+        0x0014_46e8,
+        player_score_path_branch_001446e8,
+        "Player_ScorePathBranch",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -16405,6 +16525,565 @@ pub fn rider_handplant_state_update(c: &mut Cpu) {
     });
 }
 
+/// `void FocusMan_CollectOctreeNode(FocusMan* scan, OctreeNode* node, CellKey* key)`
+/// (0x00144368): for every focus box that overlaps the octree cell `key`
+/// (`level, x, y, z`; cell size `2^level`, grown by 0.2 of a cell), hand the
+/// node to `FocusMan_CollectNodeObjects` (leaf when `level < 14`) and, above
+/// the leaf levels, recurse into the eight children with the doubled key
+/// (children visited in the original's order: +x, +y, -x, +z, +x, -y, -x, then
+/// the first child). Ported from the generated body (labelled blocks kept).
+pub fn focus_man_collect_octree_node_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+        c.g[A3][0] = 0u64;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S1][0] = c.g[A2][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S2][0] = c.g[A0][0];
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S3][0] = c.g[A1][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.g[T1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+        'l_144398: loop {
+            'b_1445f8: {
+                'b_1445f4: {
+                    c.cycles += 2;
+                    let t = c.g[A3][0] == c.g[T1][0];
+                    c.g[A0][0] = sx((c.g[A3][0] as u32) << 5);
+                    if t {
+                        break 'b_1445f4;
+                    } else {
+                        'b_1444a0: {
+                            c.cycles += 18;
+                            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                            c.mtc1(6, 1);
+                            c.cvt_s_w(1, 1);
+                            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x6e1c));
+                            c.g[S0][0] = c.g[V0][0];
+                            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7f));
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 23);
+                            c.sub_s(1, 1, 3);
+                            c.mtc1(2, 2);
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                            c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x10));
+                            c.mul_s(1, 1, 2);
+                            c.c_le_s(1, 0);
+                            let t = !c.fcc();
+                            c.g[T0][0] = 0u64;
+                            if t {
+                                break 'b_1444a0;
+                            } else {
+                                c.cycles += 9;
+                                c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x14));
+                                c.mtc1(3, 0);
+                                c.cvt_s_w(0, 0);
+                                c.sub_s(0, 0, 3);
+                                c.mul_s(0, 0, 2);
+                                c.c_le_s(0, 1);
+                                let t = !c.fcc();
+
+                                if t {
+                                    break 'b_1444a0;
+                                } else {
+                                    c.cycles += 10;
+                                    c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                    c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x18));
+                                    c.mtc1(5, 0);
+                                    c.cvt_s_w(0, 0);
+                                    c.sub_s(0, 0, 3);
+                                    c.mul_s(0, 0, 2);
+                                    c.c_le_s(0, 1);
+                                    let t = !c.fcc();
+                                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                                    if t {
+                                        break 'b_1444a0;
+                                    } else {
+                                        c.cycles += 9;
+                                        c.lwc1(1, c.g[A0][0] as u32);
+                                        c.mtc1(2, 0);
+                                        c.cvt_s_w(0, 0);
+                                        c.add_s(0, 0, 3);
+                                        c.mul_s(0, 0, 2);
+                                        c.c_le_s(1, 0);
+                                        let t = !c.fcc();
+                                        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                                        if t {
+                                            break 'b_1444a0;
+                                        } else {
+                                            c.cycles += 9;
+                                            c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x4));
+                                            c.mtc1(2, 0);
+                                            c.cvt_s_w(0, 0);
+                                            c.add_s(0, 0, 3);
+                                            c.mul_s(0, 0, 2);
+                                            c.c_le_s(1, 0);
+                                            let t = !c.fcc();
+                                            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+                                            if t {
+                                                break 'b_1444a0;
+                                            } else {
+                                                c.cycles += 9;
+                                                c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x8));
+                                                c.mtc1(2, 0);
+                                                c.cvt_s_w(0, 0);
+                                                c.add_s(0, 0, 3);
+                                                c.mul_s(0, 0, 2);
+                                                c.c_le_s(1, 0);
+                                                if c.fcc() {
+                                                    c.g[T0][0] = 0x1;
+                                                    break 'b_1444a0;
+                                                } else {
+                                                    break 'b_1444a0;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = c.g[T0][0] == 0u64;
+                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00144398);
+                            }
+                            continue 'l_144398;
+                        } else {
+                            c.cycles += 7;
+                            c.g[S0][0] = ((c.g[S0][0] as i64) < 14i64) as u64;
+                            c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                            c.g[A1][0] = c.g[S3][0];
+                            c.g[RA][0] = sx(0x001444bc);
+                            c.g[A2][0] = c.g[S0][0];
+                            call_ptr(c, 0x00101a28, 0x001444bc)?;
+                            if c.g[S0][0] != 0u64 {
+                                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                                break 'b_1445f8;
+                            } else {
+                                c.cycles += 4;
+                                c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+                                c.g[V0][0] = 0xb;
+                                let t = c.g[A1][0] == c.g[V0][0];
+                                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+                                if t {
+                                    break 'b_1445f4;
+                                } else {
+                                    'b_144514: {
+                                        c.cycles += 12;
+                                        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                                        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                                        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                                        c.g[A0][0] = sx((c.g[A0][0] as u32) << 1);
+                                        c.g[A2][0] = c.lw(c.g[S3][0] as u32);
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+                                        c.sw(c.g[SP][0] as u32, c.g[A1][0]);
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                                        let t = c.g[A2][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A0][0]);
+                                        if t {
+                                            break 'b_144514;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.g[A1][0] = c.g[A2][0];
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00144514);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x00144514)?;
+                                            break 'b_144514;
+                                        }
+                                    }
+                                    'b_144534: {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                                        let t = c.g[A1][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                        if t {
+                                            break 'b_144534;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00144534);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x00144534)?;
+                                            break 'b_144534;
+                                        }
+                                    }
+                                    'b_144554: {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x18));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                                        let t = c.g[A1][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                                        if t {
+                                            break 'b_144554;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00144554);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x00144554)?;
+                                            break 'b_144554;
+                                        }
+                                    }
+                                    'b_144574: {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x8));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                                        let t = c.g[A1][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                        if t {
+                                            break 'b_144574;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00144574);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x00144574)?;
+                                            break 'b_144574;
+                                        }
+                                    }
+                                    'b_144594: {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
+                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                                        let t = c.g[A1][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                                        if t {
+                                            break 'b_144594;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x00144594);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x00144594)?;
+                                            break 'b_144594;
+                                        }
+                                    }
+                                    'b_1445b4: {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x1c));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                                        let t = c.g[A1][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                        if t {
+                                            break 'b_1445b4;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x001445b4);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x001445b4)?;
+                                            break 'b_1445b4;
+                                        }
+                                    }
+                                    'b_1445d4: {
+                                        c.cycles += 5;
+                                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
+                                        c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x14));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                                        let t = c.g[A1][0] == 0u64;
+                                        c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                                        if t {
+                                            break 'b_1445d4;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[RA][0] = sx(0x001445d4);
+                                            c.g[A2][0] = c.g[SP][0];
+                                            Callee {
+                                                addr: 0x00144368,
+                                                f: ee::s01::FocusMan_CollectOctreeNode,
+                                            }
+                                            .call(c, 0x001445d4)?;
+                                            break 'b_1445d4;
+                                        }
+                                    }
+                                    c.cycles += 5;
+                                    c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                                    c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
+                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                                    let t = c.g[A1][0] == 0u64;
+                                    c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                                    if t {
+                                        break 'b_1445f4;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[A0][0] = c.g[S2][0];
+                                        c.g[RA][0] = sx(0x001445f4);
+                                        c.g[A2][0] = c.g[SP][0];
+                                        Callee {
+                                            addr: 0x00144368,
+                                            f: ee::s01::FocusMan_CollectOctreeNode,
+                                        }
+                                        .call(c, 0x001445f4)?;
+                                        break 'b_1445f4;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                break 'b_1445f8;
+            }
+            c.cycles += 6;
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+            c.pc = t;
+            return Ok(());
+        }
+    });
+}
+
+/// `RaceStateRace_Enter` (0x113d88, `cRaceHandler_OnGainState`): when the
+/// game comm object (`gp-0x204`) exists, `cGameComm_OnRaceStart(comm)`.
+pub fn race_state_race_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x204)).lw(c);
+        let no_comm = c.g[A0][0] == 0;
+        frame.save_ra(c, 0);
+        if !no_comm {
+            c.cycles += 2;
+            call_ptr(c, 0x0025_8988, 0x0011_3da0)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `DebugPrintf_Stub_f8b8` (0x0013_f8b8): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn debug_printf_stub_f8b8(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `RiderIface_GetVelocity` (0x0014_06b0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_get_velocity_001406b0(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x500000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0));
+    ret(c);
+}
+
+/// `RiderIface_HasVisited` (0x0014_06c0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_has_visited_001406c0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `RiderIface_AddVelocity` (0x0014_06c8): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_add_velocity_001406c8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RiderIface_GetPosition` (0x0014_06d0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_get_position_001406d0(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x500000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xee0));
+    ret(c);
+}
+
+/// `Rider_GetDefaultVector` (0x0014_06e0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_get_default_vector_001406e0(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x500000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
+    ret(c);
+}
+
+/// `RiderIface_GetIndex` (0x0014_06f0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_get_index_001406f0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `RiderIface_IsHuman` (0x0014_06f8): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_is_human_001406f8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `RiderIface_IsComputer` (0x0014_0700): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_is_computer_00140700(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `RiderIface_ResetAtMatrix` (0x0014_0708): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_reset_at_matrix_00140708(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Rider_v11_Empty` (0x0014_0710): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_v11_empty_00140710(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RiderIface_PlaceAtMatrix` (0x0014_0718): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_place_at_matrix_00140718(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RiderIface_AddPowerUpBoost` (0x0014_0720): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_add_power_up_boost_00140720(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RiderIface_AddPowerUpTrick` (0x0014_0728): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_add_power_up_trick_00140728(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RiderIface_AddTrickMultiplier` (0x0014_0730): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_iface_add_trick_multiplier_00140730(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Rider_GetPosition` (0x0014_08f0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_get_position_001408f0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x110));
+    ret(c);
+}
+
+/// `Rider_GetVelocity` (0x0014_0910): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_get_velocity_00140910(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1e0));
+    ret(c);
+}
+
+/// `Rider_GetIndex` (0x0014_0b80): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn rider_get_index_00140b80(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x86c));
+    ret(c);
+}
+
+/// `Rider_IsHuman` (0x0014_0bc0): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn rider_is_human_00140bc0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x874));
+    ret(c);
+}
+
+/// `Rider_ResetRumble` (0x0014_0c68): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_reset_rumble_00140c68(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Rider_PulseRumble` (0x0014_0c70): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_pulse_rumble_00140c70(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Rider_SetRumbleLevel` (0x0014_0c78): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_set_rumble_level_00140c78(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Rider_UpdateRumble` (0x0014_0c80): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_update_rumble_00140c80(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RiderScriptObj_GetSelf` (0x0014_0ce0): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_script_obj_get_self_00140ce0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// `RaceStateRace_Exit` (0x0014_4068): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_race_exit_00144068(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `Player_ScorePathBranch` (0x0014_46e8): straight-line leaf. Mechanical port of the generated body.
+pub fn player_score_path_branch_001446e8(c: &mut Cpu) {
+    c.cycles += 3;
+    c.mtc1(0, 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::abi::ret;
@@ -20587,6 +21266,548 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x001391a8;
+            },
+        );
+    }
+
+    // -------------------------------------------------- focus octree node
+
+    pub(crate) const OC1480_NODES: u32 = DATA + 0x2_0000;
+
+    pub(crate) const OC1480_KEY: u32 = DATA + 0x200;
+
+    pub(crate) const OC1480_BOXES: u32 = DATA + 0x400;
+
+    /// A scan of 0..=3 boxes against a key at levels 10..=15 (collect leaf
+    /// cells, or descend into the eight children of a cell) and a four-level
+    /// octree (children present with probability 1/2, 1/3 or 1/4); the real
+    /// `FocusMan_CollectNodeObjects` runs on nodes with empty object lists.
+    pub(crate) fn oc1480_focus_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x1443_6800 ^ (seed as u64) << 8);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP - 0x6e1c, 0.2f32.to_bits());
+        let scan = DATA;
+        let boxes = seed % 4;
+        c.bus.write32(scan, DATA + 0x100);
+        c.bus.write32(scan + 4, OC1480_BOXES);
+        c.bus.write32(scan + 8, boxes);
+        let level = [15u32, 14, 15, 14, 13, 12, 11, 10][((seed / 4) % 8) as usize];
+        let size = (1u32 << level) as f32;
+        c.bus.write32(OC1480_KEY, level);
+        for a in 1..4u32 {
+            c.bus
+                .write32(OC1480_KEY + 4 * a, (r.next_u32() % 3).wrapping_sub(1));
+        }
+        for i in 0..boxes {
+            let b = OC1480_BOXES + 0x20 * i;
+            for a in 0..3u32 {
+                let (lo, hi) = match (seed / 32 + i) % 3 {
+                    0 => (-4.0 * size, 4.0 * size),
+                    1 => {
+                        let lo = ((r.next_u32() % 6000) as f32 / 1000.0 - 3.0) * size;
+                        (lo, lo + (r.next_u32() % 3000) as f32 / 1000.0 * size)
+                    }
+                    _ => {
+                        let lo = ((r.next_u32() % 4000) as f32 / 1000.0 - 2.0) * size;
+                        (lo, lo + size * 0.1)
+                    }
+                };
+                c.bus.write32(b + 4 * a, lo.to_bits());
+                c.bus.write32(b + 0x10 + 4 * a, hi.to_bits());
+            }
+        }
+        let p = [2u32, 3, 4][(seed % 3) as usize];
+        // Root 0; depth 1: 1..=8; depth 2: 9..=16; depth 3: 17..=24 (no children).
+        for k in 0..25u32 {
+            let node = OC1480_NODES + 0x40 * k;
+            c.bus.write32(node + 0x20, 0);
+            for ch in 0..8u32 {
+                let child = match k {
+                    0 => 1 + ch,
+                    1..=8 => 9 + ch,
+                    9..=16 => 17 + ch,
+                    _ => 0,
+                };
+                let present = child != 0 && r.next_u32() % p == 0;
+                let target = if present {
+                    OC1480_NODES + 0x40 * child
+                } else {
+                    0
+                };
+                c.bus.write32(node + 4 * ch, target);
+            }
+        }
+        c.g[A0][0] = scan as u64;
+        c.g[A1][0] = OC1480_NODES as u64;
+        c.g[A2][0] = OC1480_KEY as u64;
+    }
+
+    /// `FocusMan_CollectOctreeNode` matches the generated body.
+    #[test]
+    fn focus_man_collect_octree_node_matches() {
+        check(
+            ee::s01::f_00144368__generated,
+            focus_man_collect_octree_node_2,
+            400,
+            &oc1480_focus_setup,
+        );
+    }
+
+    /// Gate word for the `cGameComm_OnRaceStart` fake (a unique cell of the
+    /// machine's RAM; the fake only answers when it is set).
+    pub(crate) const RSR_GATE: u32 = DATA + 0x20_0000;
+
+    pub(crate) const RSR_MAGIC: u32 = 0x5253_5201;
+
+    pub(crate) static RSR_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn rsr_fake_game_start(c: &mut Cpu) {
+        if c.bus.read32(RSR_GATE) != RSR_MAGIC {
+            return fakes::fall_back(c, &RSR_PREV, ee::s06::f_00258988__generated);
+        }
+        fakes::fake_call(c, 0x0025_8988);
+    }
+
+    #[test]
+    fn race_state_race_enter_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00258988),
+            rsr_fake_game_start,
+            &RSR_PREV,
+        );
+        fakes::covered(
+            ee::s00::f_00113d88__generated,
+            race_state_race_enter,
+            60,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x0011_3d88, 1);
+                let comm = if seed % 3 == 0 { 0 } else { DATA + 0x400 };
+                c.bus.write32(GAME_GP.wrapping_sub(0x204), comm);
+                c.bus.write32(RSR_GATE, RSR_MAGIC);
+            },
+        );
+    }
+
+    /// An edge-case 64-bit register value (0, 1, -1, small, random).
+    #[allow(dead_code)]
+    pub(crate) fn leaf_val(r: &mut Rng) -> u64 {
+        match r.next_u32() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => u64::MAX,
+            3 => (r.next_u32() % 64) as u64,
+            4 => sx(r.next_u32()),
+            5 => r.next_u32() as u64,
+            6 => 0x8000_0000,
+            _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        }
+    }
+
+    /// Fill `size` bytes at `start` with zero / small / random words, or, when
+    /// `chase` is set, with pointers (16-byte aligned) into `ptr_lo..ptr_lo + 0x200`.
+    #[allow(dead_code)]
+    pub(crate) fn leaf_fill(
+        c: &mut Cpu,
+        r: &mut Rng,
+        start: u32,
+        size: u32,
+        chase: bool,
+        ptr_lo: u32,
+    ) {
+        for i in 0..size / 4 {
+            let w = if chase {
+                ptr_lo + 16 * (r.next_u32() % 32)
+            } else {
+                match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.next_u32() % 16,
+                    _ => r.next_u32(),
+                }
+            };
+            c.bus.write32(start + 4 * i, w);
+        }
+    }
+
+    /// `DebugPrintf_Stub_f8b8` (0x0013_f8b8) against the generated body.
+    #[test]
+    fn debug_printf_stub_f8b8_matches() {
+        check(
+            ee::s01::f_0013f8b8__generated,
+            debug_printf_stub_f8b8,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x13f8b8, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_GetVelocity` (0x0014_06b0) against the generated body.
+    #[test]
+    fn rider_iface_get_velocity_001406b0_matches() {
+        check(
+            ee::s01::f_001406b0__generated,
+            rider_iface_get_velocity_001406b0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406b0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_HasVisited` (0x0014_06c0) against the generated body.
+    #[test]
+    fn rider_iface_has_visited_001406c0_matches() {
+        check(
+            ee::s01::f_001406c0__generated,
+            rider_iface_has_visited_001406c0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406c0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_AddVelocity` (0x0014_06c8) against the generated body.
+    #[test]
+    fn rider_iface_add_velocity_001406c8_matches() {
+        check(
+            ee::s01::f_001406c8__generated,
+            rider_iface_add_velocity_001406c8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406c8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_GetPosition` (0x0014_06d0) against the generated body.
+    #[test]
+    fn rider_iface_get_position_001406d0_matches() {
+        check(
+            ee::s01::f_001406d0__generated,
+            rider_iface_get_position_001406d0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406d0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_GetDefaultVector` (0x0014_06e0) against the generated body.
+    #[test]
+    fn rider_get_default_vector_001406e0_matches() {
+        check(
+            ee::s01::f_001406e0__generated,
+            rider_get_default_vector_001406e0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406e0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_GetIndex` (0x0014_06f0) against the generated body.
+    #[test]
+    fn rider_iface_get_index_001406f0_matches() {
+        check(
+            ee::s01::f_001406f0__generated,
+            rider_iface_get_index_001406f0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406f0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_IsHuman` (0x0014_06f8) against the generated body.
+    #[test]
+    fn rider_iface_is_human_001406f8_matches() {
+        check(
+            ee::s01::f_001406f8__generated,
+            rider_iface_is_human_001406f8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1406f8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_IsComputer` (0x0014_0700) against the generated body.
+    #[test]
+    fn rider_iface_is_computer_00140700_matches() {
+        check(
+            ee::s01::f_00140700__generated,
+            rider_iface_is_computer_00140700,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140700, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_ResetAtMatrix` (0x0014_0708) against the generated body.
+    #[test]
+    fn rider_iface_reset_at_matrix_00140708_matches() {
+        check(
+            ee::s01::f_00140708__generated,
+            rider_iface_reset_at_matrix_00140708,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140708, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_v11_Empty` (0x0014_0710) against the generated body.
+    #[test]
+    fn rider_v11_empty_00140710_matches() {
+        check(
+            ee::s01::f_00140710__generated,
+            rider_v11_empty_00140710,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140710, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_PlaceAtMatrix` (0x0014_0718) against the generated body.
+    #[test]
+    fn rider_iface_place_at_matrix_00140718_matches() {
+        check(
+            ee::s01::f_00140718__generated,
+            rider_iface_place_at_matrix_00140718,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140718, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_AddPowerUpBoost` (0x0014_0720) against the generated body.
+    #[test]
+    fn rider_iface_add_power_up_boost_00140720_matches() {
+        check(
+            ee::s01::f_00140720__generated,
+            rider_iface_add_power_up_boost_00140720,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140720, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_AddPowerUpTrick` (0x0014_0728) against the generated body.
+    #[test]
+    fn rider_iface_add_power_up_trick_00140728_matches() {
+        check(
+            ee::s01::f_00140728__generated,
+            rider_iface_add_power_up_trick_00140728,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140728, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderIface_AddTrickMultiplier` (0x0014_0730) against the generated body.
+    #[test]
+    fn rider_iface_add_trick_multiplier_00140730_matches() {
+        check(
+            ee::s01::f_00140730__generated,
+            rider_iface_add_trick_multiplier_00140730,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140730, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_GetPosition` (0x0014_08f0) against the generated body.
+    #[test]
+    fn rider_get_position_001408f0_matches() {
+        check(
+            ee::s01::f_001408f0__generated,
+            rider_get_position_001408f0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1408f0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_GetVelocity` (0x0014_0910) against the generated body.
+    #[test]
+    fn rider_get_velocity_00140910_matches() {
+        check(
+            ee::s01::f_00140910__generated,
+            rider_get_velocity_00140910,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140910, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_GetIndex` (0x0014_0b80) against the generated body.
+    #[test]
+    fn rider_get_index_00140b80_matches() {
+        check(
+            ee::s01::f_00140b80__generated,
+            rider_get_index_00140b80,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140b80, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_IsHuman` (0x0014_0bc0) against the generated body.
+    #[test]
+    fn rider_is_human_00140bc0_matches() {
+        check(
+            ee::s01::f_00140bc0__generated,
+            rider_is_human_00140bc0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140bc0, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_ResetRumble` (0x0014_0c68) against the generated body.
+    #[test]
+    fn rider_reset_rumble_00140c68_matches() {
+        check(
+            ee::s01::f_00140c68__generated,
+            rider_reset_rumble_00140c68,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140c68, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_PulseRumble` (0x0014_0c70) against the generated body.
+    #[test]
+    fn rider_pulse_rumble_00140c70_matches() {
+        check(
+            ee::s01::f_00140c70__generated,
+            rider_pulse_rumble_00140c70,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140c70, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_SetRumbleLevel` (0x0014_0c78) against the generated body.
+    #[test]
+    fn rider_set_rumble_level_00140c78_matches() {
+        check(
+            ee::s01::f_00140c78__generated,
+            rider_set_rumble_level_00140c78,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140c78, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Rider_UpdateRumble` (0x0014_0c80) against the generated body.
+    #[test]
+    fn rider_update_rumble_00140c80_matches() {
+        check(
+            ee::s01::f_00140c80__generated,
+            rider_update_rumble_00140c80,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x140c80, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderScriptObj_GetSelf` (0x0014_0ce0) against the generated body.
+    #[test]
+    fn rider_script_obj_get_self_00140ce0_matches() {
+        check(
+            ee::s01::f_00140ce0__generated,
+            rider_script_obj_get_self_00140ce0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140ce0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateRace_Exit` (0x0014_4068) against the generated body.
+    #[test]
+    fn race_state_race_exit_00144068_matches() {
+        check(
+            ee::s01::f_00144068__generated,
+            race_state_race_exit_00144068,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x144068, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Player_ScorePathBranch` (0x0014_46e8) against the generated body.
+    #[test]
+    fn player_score_path_branch_001446e8_matches() {
+        check(
+            ee::s01::f_001446e8__generated,
+            player_score_path_branch_001446e8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1446e8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

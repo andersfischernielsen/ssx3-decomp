@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -50,6 +51,7 @@ use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -474,6 +476,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         lobby_menu_debug_printf_stub,
         "LobbyMenu_DebugPrintfStub",
     ),
+    (0x0017_fdf0, cfe_input_get_state, "cFEInput_getState"),
+    (
+        0x0017_fe34,
+        feui_input_direction_tail_73,
+        "FEUIInput_IsDirection_tail73",
+    ),
+    (
+        0x0017_fe3c,
+        feui_input_direction_tail_74,
+        "FEUIInput_IsDirection_tail74",
+    ),
+    (
+        0x0017_fe44,
+        feui_input_direction_tail_75,
+        "FEUIInput_IsDirection_tail75",
+    ),
+    (0x0018_0508, keyboard_screen_ctor, "KeyboardScreen_ctor"),
+    (0x001d_d560, feui_input_v41_001dd560, "FEUIInput_v41"),
+    (0x001d_d568, feui_input_v42_001dd568, "FEUIInput_v42"),
+    (0x001d_d570, feui_input_v43_001dd570, "FEUIInput_v43"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3910,11 +3932,11 @@ fn feui_input_is_down_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[A1][0] = 0x73;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00180074);
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
                     call_ptr(c, 0x00320c48, 0x00180074)?;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.pc = t;
@@ -3923,7 +3945,7 @@ fn feui_input_is_down_resume(c: &mut Cpu) {
                 0x00180070 => {
                     c.cycles += 4;
                     c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x18));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.pc = t;
@@ -4905,8 +4927,8 @@ fn oc817_debug_menu_dispatch_item_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2fc0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5211,7 +5233,7 @@ fn oc817_debug_menu_start_multiplayer_resume(c: &mut Cpu) {
                 0x0017d110 => {
                     c.cycles += 7;
                     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[SP][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[A0][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4b30));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
@@ -5605,7 +5627,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     c.g[S4][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1534));
                     c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-                    c.sw((c.g[S1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0017d40c);
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x1da0), 0u64);
                     call_ptr(c, 0x00318260, 0x0017d40c)?;
@@ -5689,7 +5711,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0017d4c8);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0017d4c8)?;
                     let t = c.g[S2][0] != c.g[S0][0];
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
@@ -5743,7 +5765,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     c.g[S7][0] = sx((c.g[S1][0] as u32).wrapping_add(0x74c));
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x70));
                     c.g[FP][0] = sx((c.g[S1][0] as u32).wrapping_add(0x734));
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
                     let t = c.g[V0][0] == 0u64;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V1][0]);
@@ -5780,7 +5802,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0017d578);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0017d578)?;
 
                     if c.g[S2][0] != c.g[S0][0] {
@@ -5847,7 +5869,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0017d5d0);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0017d5d0)?;
                     let t = c.g[S2][0] != c.g[S0][0];
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x24));
@@ -5892,7 +5914,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0017d620);
                     c.g[A1][0] = 0x2;
                     call_ptr(c, 0x002caa80, 0x0017d620)?;
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     c.g[RA][0] = sx(0x0017d62c);
                     c.g[A1][0] = 0x2;
                     call_ptr(c, 0x001dcea0, 0x0017d62c)?;
@@ -5902,7 +5924,7 @@ fn lobby_menu_dtor_resume(c: &mut Cpu) {
                     call_ptr(c, 0x002cc048, 0x0017d638)?;
                     c.g[V1][0] = 0x470000;
                     c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x26b8));
-                    c.sw((c.g[S1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc));
                     let t = c.g[V0][0] == 0u64;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -6069,7 +6091,7 @@ fn lobby_menu_show_error_resume(c: &mut Cpu) {
                     c.cycles += 9;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[A2][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.sw((c.g[A2][0] as u32).wrapping_add(0x1c14), c.g[A1][0]);
                     c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2));
@@ -6087,8 +6109,8 @@ fn lobby_menu_show_error_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2e50));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -6145,7 +6167,7 @@ fn lobby_menu_show_error_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
                     call_ptr(c, 0x0025c610, 0x0017dab4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0017db10;
                         continue;
@@ -6211,7 +6233,7 @@ fn lobby_menu_show_error_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x8));
                     call_ptr(c, 0x002cc3b8, 0x0017daf0)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0017db10;
                         continue;
@@ -6232,7 +6254,7 @@ fn lobby_menu_show_error_resume(c: &mut Cpu) {
                 }
                 0x0017db0c => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x0017db10;
                     continue;
                 }
@@ -6701,8 +6723,8 @@ fn lobby_menu_update_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2e20));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7240,7 +7262,7 @@ fn lobby_menu_update_state_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00256038, 0x0017de34)?;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
                     c.g[RA][0] = sx(0x0017de40);
-                    c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                     call_ptr(c, 0x00266d58, 0x0017de40)?;
                     c.g[RA][0] = sx(0x0017de48);
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x304));
@@ -8950,8 +8972,8 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2bb0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -8976,7 +8998,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9014,7 +9036,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9047,7 +9069,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9080,7 +9102,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9113,7 +9135,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9146,7 +9168,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9179,7 +9201,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9212,7 +9234,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.g[AT][0] = 0x43480000;
@@ -9264,7 +9286,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(4, (c.g[SP][0] as u32));
+                    c.swc1(4, c.g[SP][0] as u32);
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x8));
@@ -9276,7 +9298,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                 0x0017e998 => {
                     c.cycles += 12;
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9314,13 +9336,13 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9337,12 +9359,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mul_s(2, 2, 1);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9378,13 +9400,13 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9401,12 +9423,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mul_s(2, 2, 1);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9456,13 +9478,13 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9479,12 +9501,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mul_s(2, 2, 1);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(5, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(5, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9520,13 +9542,13 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9543,12 +9565,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mul_s(2, 2, 1);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9584,13 +9606,13 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9607,12 +9629,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mul_s(2, 2, 1);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9653,13 +9675,13 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(6, (c.g[SP][0] as u32));
+                    c.ldr(6, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(6, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9677,12 +9699,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mul_s(2, 2, 1);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(2, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(5, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(5, (c.g[SP][0] as u32));
+                    c.ldr(5, c.g[SP][0] as u32);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(5, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9698,7 +9720,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0017eef4);
                     c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c14));
                     call_ptr(c, 0x00260e50, 0x0017eef4)?;
-                    c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[AT][0] = 0x43160000;
                     c.mtc1(1, 13);
@@ -9738,12 +9760,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x8));
-                    c.swc1(23, (c.g[SP][0] as u32));
+                    c.swc1(23, c.g[SP][0] as u32);
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[AT][0] = 0x42c80000;
                     c.mtc1(1, 13);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9770,12 +9792,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.lwc1(22, (c.g[GP][0] as u32).wrapping_sub(0x5a70));
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(23, (c.g[SP][0] as u32));
+                    c.swc1(23, c.g[SP][0] as u32);
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -9943,7 +9965,7 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                 0x0017f1d0 => {
                     c.cycles += 4;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     if t {
@@ -10013,12 +10035,12 @@ fn lobby_menu_render_resume(c: &mut Cpu) {
                     c.mtc1(1, 12);
                     c.swc1(0, (c.g[S1][0] as u32).wrapping_add(0x3c));
                     c.swc1(1, (c.g[S1][0] as u32).wrapping_add(0x38));
-                    c.swc1(3, (c.g[SP][0] as u32));
+                    c.swc1(3, c.g[SP][0] as u32);
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0xc));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(6, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S1][0] as u32).wrapping_add(0x47));
@@ -11493,6 +11515,175 @@ pub fn lobby_menu_debug_printf_stub(c: &mut Cpu) {
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
         c.pc = t;
         return Ok(());
+    })
+}
+
+/// `cFEInput_getState` (0x17fdf0; the reference's switch over the key): the
+/// signed low byte of `a1` selects an input id: keys 0..7 give 0x72..0x79 (the
+/// case labels 0x17fe2c..0x17fe64 of the game's jump table at 0x45d530), any
+/// other key gives 0. The id goes to the shared tail (0x17fe68), which calls
+/// `cInput_getState(this->mpInput, id)` at 0x320c48 with `this` from the entry
+/// a0 (kept in a2), then returns to the caller. Fully native: the case labels
+/// are the game's constants, so no table read is needed.
+pub fn cfe_input_get_state(c: &mut Cpu) {
+    const JUMP_TABLE: u32 = 0x0045_d530;
+    const CASE_LABELS: [u32; 8] = [
+        0x0017_fe2c,
+        0x0017_fe34,
+        0x0017_fe3c,
+        0x0017_fe44,
+        0x0017_fe4c,
+        0x0017_fe54,
+        0x0017_fe5c,
+        0x0017_fe64,
+    ];
+    const SHARED_TAIL_RET: u32 = 0x0017_fe70;
+
+    guest(c, |c| {
+        let key = ((c.g[A1][0] as u32) << 24) as i32 >> 24;
+        let case = usize::try_from(key).ok().filter(|&k| k < 8);
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A0][0];
+        c.g[V1][0] = sx(key as u32);
+        c.g[V0][0] = case.is_some() as u64;
+        c.g[A1][0] = 0;
+        if let Some(k) = case {
+            // The switch's dispatch block, then the case block (2 cycles; key 7's
+            // case is the 0x17fe64 block, one cycle less before the shared tail).
+            c.cycles += 7;
+            c.g[V0][0] = sx(JUMP_TABLE);
+            c.g[V1][0] = sx(((k as u32) << 2).wrapping_add(JUMP_TABLE));
+            c.g[A0][0] = sx(CASE_LABELS[k]);
+            c.cycles += if k == 7 { 1 } else { 2 };
+            c.g[A1][0] = 0x72 + k as u64;
+        }
+        // Shared tail at 0x17fe68.
+        c.cycles += 5;
+        c.g[RA][0] = sx(SHARED_TAIL_RET);
+        c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x18)).lw(c);
+        call_ptr(c, 0x0032_0c48, SHARED_TAIL_RET)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Shared tail of the three `FEUIInput_IsDirection` labels (0x17fe34,
+/// 0x17fe3c, 0x17fe44): each sets `a1` to its direction code and jumps to
+/// the common exit at 0x17fe68 (a tail call, so no return address is set).
+pub(crate) fn feui_input_direction_tail(c: &mut Cpu, direction: u64) {
+    c.cycles += 2;
+    c.g[A1][0] = direction;
+    c.pc = 0x0017_fe68;
+    call_indirect(c, 0x0017_fe68);
+}
+
+/// `FEUIInput_IsDirection` exit with `a1 = 0x73` (label 0x17fe34).
+pub fn feui_input_direction_tail_73(c: &mut Cpu) {
+    feui_input_direction_tail(c, 0x73);
+}
+
+/// `FEUIInput_IsDirection` exit with `a1 = 0x74` (label 0x17fe3c).
+pub fn feui_input_direction_tail_74(c: &mut Cpu) {
+    feui_input_direction_tail(c, 0x74);
+}
+
+/// `FEUIInput_IsDirection` exit with `a1 = 0x75` (label 0x17fe44).
+pub fn feui_input_direction_tail_75(c: &mut Cpu) {
+    feui_input_direction_tail(c, 0x75);
+}
+
+/// `FEUIInput_v41` (0x001d_d560): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn feui_input_v41_001dd560(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+    ret(c);
+}
+
+/// `FEUIInput_v42` (0x001d_d568): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn feui_input_v42_001dd568(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+    ret(c);
+}
+
+/// `FEUIInput_v43` (0x001d_d570): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn feui_input_v43_001dd570(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+    ret(c);
+}
+
+/// The object pointer in `s0` (the `KeyboardScreen` constructor), read again
+/// after each call as the generated code does.
+pub(crate) fn kb_self(c: &Cpu) -> u32 {
+    c.g[S0][0] as u32
+}
+
+/// `KeyboardScreen::KeyboardScreen(self, parent state)` (0x180508): links the
+/// object into itself, constructs its screen attributes, thread list, root
+/// group and object list, then sets the keyboard state (shift on, first key
+/// 1, current key 10, max 45 characters, cursor 0). Returns `self`.
+pub fn keyboard_screen_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 51;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4670));
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.sw(kb_self(c).wrapping_add(0x4), c.g[S0][0]);
+        c.g[A0][0] = sx(kb_self(c).wrapping_add(0x14));
+        c.sw(kb_self(c), c.g[S0][0]);
+        c.sw(kb_self(c).wrapping_add(0xc), 0);
+        c.sw(kb_self(c).wrapping_add(0x10), 0);
+        c.sw(kb_self(c).wrapping_add(0x8), c.g[V0][0]);
+        // Attribute screen constructor (0x1dd580).
+        call_ptr(c, 0x001d_d580, 0x0018_0544)?;
+        c.g[A0][0] = sx(kb_self(c).wrapping_add(0x18));
+        // Thread list constructor (0x3977e8).
+        call_ptr(c, 0x0039_77e8, 0x0018_054c)?;
+        c.sw(kb_self(c).wrapping_add(0x34), 0);
+        c.g[A1][0] = 0;
+        c.sw(kb_self(c).wrapping_add(0x38), 0);
+        c.g[A2][0] = 0;
+        c.sw(kb_self(c).wrapping_add(0x3c), 0);
+        c.g[A0][0] = sx(kb_self(c).wrapping_add(0x40));
+        // Root group constructor (0x39fb30).
+        call_ptr(c, 0x0039_fb30, 0x0018_0568)?;
+        c.g[V1][0] = 0x0049_0000;
+        c.g[A0][0] = sx(kb_self(c).wrapping_add(0xb4));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x49e8));
+        c.sw(kb_self(c).wrapping_add(0x48), c.g[V1][0]);
+        // Object list constructor (0x3977e8).
+        call_ptr(c, 0x0039_77e8, 0x0018_057c)?;
+        c.g[V1][0] = 0x0047_0000;
+        c.g[A2][0] = 0x1;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2e60));
+        c.g[A0][0] = 0xa;
+        c.g[A1][0] = 0x2d;
+        c.sw(kb_self(c).wrapping_add(0xd0), c.g[S1][0]);
+        c.sw(kb_self(c).wrapping_add(0x8), c.g[V1][0]);
+        c.g[V0][0] = c.g[S0][0];
+        c.sw(kb_self(c).wrapping_add(0xe8), c.g[A2][0]);
+        c.sw(kb_self(c).wrapping_add(0x170), c.g[A0][0]);
+        c.sw(kb_self(c).wrapping_add(0xd4), c.g[A1][0]);
+        c.sw(kb_self(c).wrapping_add(0xd8), 0);
+        c.sw(kb_self(c).wrapping_add(0xdc), 0);
+        c.sw(kb_self(c).wrapping_add(0xe0), 0);
+        c.sw(kb_self(c).wrapping_add(0xe4), c.g[A2][0]);
+        c.sb(kb_self(c).wrapping_add(0xec), 0);
+        c.sw(kb_self(c).wrapping_add(0x16c), 0);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
     })
 }
 
@@ -16403,5 +16594,177 @@ pub(crate) mod tests {
         c.g[A3][0] = 0;
         ee::s10::f_00317d70(c);
         c.g[V0][0] as u32
+    }
+
+    use crate::difftest::fakes::machine_rt;
+    pub(crate) use crate::game::camera::trigger::cameratriggerman::tests::OC1494_MAGIC;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::leaf_fill;
+
+    pub(crate) const OC1494_INPUT_GATE: u32 = DATA + 0x2020;
+
+    pub(crate) static OC1494_PREV_INPUT_MAP: AtomicUsize = AtomicUsize::new(0);
+
+    /// `InputMap_EvalBool`'s caller `0x320c48` (the tail of `cFEInput_getState`):
+    /// logged and returned to.
+    pub(crate) fn oc1494_fake_input_map(c: &mut Cpu) {
+        if c.bus.read32(OC1494_INPUT_GATE) != OC1494_MAGIC {
+            return fakes::fall_back(c, &OC1494_PREV_INPUT_MAP, ee::s10::f_00320c48__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0032_0c48, ra);
+    }
+
+    /// The `jump_out` hook for `cFEInput_getState`: the generated body leaves
+    /// through its switch (`jr` to a table label); run the label's real code
+    /// (the case blocks and the shared tail) instead of logging a fake call.
+    pub(crate) fn oc1494_jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
+        if (0x0017_fe2c..0x0017_fe68).contains(&pc) {
+            c.pc = pc;
+            call_indirect(c, pc);
+        } else {
+            fakes::fake_jump_out(c, pc, start, end);
+        }
+    }
+
+    #[test]
+    fn cfe_input_get_state_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00320C48),
+            oc1494_fake_input_map,
+            &OC1494_PREV_INPUT_MAP,
+        );
+        check(
+            ee::s02::f_0017fdf0__generated,
+            cfe_input_get_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0017_fdf0, 1);
+                c.bus.write32(OC1494_INPUT_GATE, OC1494_MAGIC);
+                c.hooks.jump_out = oc1494_jump_out;
+                // The game's switch jump table (0x45d530) is data the generated body
+                // reads; the test RAM does not hold it, so install the real labels.
+                for (i, label) in [
+                    0x0017_fe2c_u32,
+                    0x0017_fe34,
+                    0x0017_fe3c,
+                    0x0017_fe44,
+                    0x0017_fe4c,
+                    0x0017_fe54,
+                    0x0017_fe5c,
+                    0x0017_fe64,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    c.bus.write32(0x0045_d530 + 4 * i as u32, label);
+                }
+                // Keys -2..=9: negative, the eight table cases, and the default.
+                let key = (seed % 12) as i32 - 2;
+                let a1 = (r.next_u32() & !0xff) | (key as u8 as u32);
+                c.g[A1][0] = sx(a1);
+                // `this` (a0); its mpInput pointer is read by the tail.
+                c.g[A0][0] = sx(DATA + 0x400);
+                c.bus.write32(DATA + 0x400 + 0x18, DATA + 0x800);
+            },
+        );
+    }
+
+    #[test]
+    fn feui_input_direction_tail_73_matches() {
+        fakes::covered(
+            ee::s02::f_0017fe34__generated,
+            feui_input_direction_tail_73,
+            60,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x0017_fe34, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn feui_input_direction_tail_74_matches() {
+        fakes::covered(
+            ee::s02::f_0017fe3c__generated,
+            feui_input_direction_tail_74,
+            60,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x0017_fe3c, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn feui_input_direction_tail_75_matches() {
+        fakes::covered(
+            ee::s02::f_0017fe44__generated,
+            feui_input_direction_tail_75,
+            60,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x0017_fe44, 1);
+            },
+        );
+    }
+
+    /// `FEUIInput_v41` (0x001d_d560) against the generated body.
+    #[test]
+    fn feui_input_v41_001dd560_matches() {
+        check(
+            ee::s04::f_001dd560__generated,
+            feui_input_v41_001dd560,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1dd560, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `FEUIInput_v42` (0x001d_d568) against the generated body.
+    #[test]
+    fn feui_input_v42_001dd568_matches() {
+        check(
+            ee::s04::f_001dd568__generated,
+            feui_input_v42_001dd568,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1dd568, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `FEUIInput_v43` (0x001d_d570) against the generated body.
+    #[test]
+    fn feui_input_v43_001dd570_matches() {
+        check(
+            ee::s04::f_001dd570__generated,
+            feui_input_v43_001dd570,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1dd570, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn keyboard_screen_ctor_matches() {
+        check(
+            ssx3_ee::s02::f_00180508__generated,
+            keyboard_screen_ctor,
+            60,
+            &|c, seed| {
+                let _ = machine_rt(c, seed, 0x1538_0508, 0);
+                elf_image(c);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+            },
+        );
     }
 }

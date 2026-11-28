@@ -467,6 +467,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         mpeg2_copyright_extension,
         "MPEG2_copyright_extension",
     ),
+    (
+        0x003a_dc48,
+        c_ps2_chunk_resolve_v08_003adc48,
+        "cPS2ChunkResolve_v08",
+    ),
+    (0x003b_0680, rcmp_decoder_reset, "RCMP_DECODER_Reset"),
+    (
+        0x003b_06f8,
+        rcmp_decoder_release_chunk,
+        "RCMP_DECODER_ReleaseChunk",
+    ),
+    (0x003b_07b8, rcmp_global_ctors, "RCMP_GlobalCtors"),
+    (0x003b_07d8, rcmp_global_dtors, "RCMP_GlobalDtors"),
+    (
+        0x003b_0fa0,
+        ps2_sony_codec_internal_v05_003b0fa0,
+        "PS2_SONY_CODEC_INTERNAL_v05",
+    ),
+    (
+        0x003b_16e0,
+        mpeg2_group_of_pictures_header_2,
+        "MPEG2_group_of_pictures_header",
+    ),
+    (0x0042_e278, rcmp_codec_dtor, "RCMP_CODEC_dtor"),
+    (0x0042_e498, rcmp_system_dtor, "RCMP_SYSTEM_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14815,6 +14840,226 @@ pub fn mpeg2_extension_and_user_data(c: &mut Cpu) {
     })
 }
 
+/// `cPS2ChunkResolve_v08` (0x003a_dc48): straight-line leaf. Mechanical port of the generated body.
+pub fn c_ps2_chunk_resolve_v08_003adc48(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `PS2_SONY_CODEC_INTERNAL_v05` (0x003b_0fa0): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn ps2_sony_codec_internal_v05_003b0fa0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+    ret(c);
+}
+
+pub(crate) const MPEG2_GET_BITS: Callee = Callee {
+    addr: 0x003b_1300,
+    f: ee::s13::f_003b1300,
+};
+
+pub(crate) const MPEG2_MARKER_BIT: Callee = Callee {
+    addr: 0x003b_2360,
+    f: ee::s13::f_003b2360,
+};
+
+pub(crate) const MPEG2_EXTENSION_AND_USER_DATA: Callee = Callee {
+    addr: 0x003b_1988,
+    f: ee::s13::f_003b1988,
+};
+
+pub(crate) const RCMP_STATIC_INIT_DESTROY: Callee = Callee {
+    addr: 0x003b_0770,
+    f: ee::s13::f_003b0770,
+};
+
+/// `RCMP_DECODER_Reset` (0x3b0680): calls the method in slot `+0x34` of the
+/// object at `self + 0x14` (its `this` is `obj + vt[+0x30]`, a 16-bit
+/// offset), passing `a1` through.
+pub fn rcmp_decoder_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x14));
+        c.g[V0][0] = c.lw(c.g[A2][0] as u32);
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x30));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
+        let t = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x003b_06a0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `RCMP_DECODER_ReleaseChunk(self, blk)` (0x3b06f8): calls the function at
+/// `self + 0xc` with `a0 = self`, `a1 = *(self + 4)`, `a2 = blk`.
+pub fn rcmp_decoder_release_chunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        let t = c.g[V1][0] as u32;
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+        call_ptr(c, t, 0x003b_0714)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `RCMP_GlobalCtors` (0x3b07b8): `RCMP_StaticInitDestroy(1, 0xffff)`.
+pub fn rcmp_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        RCMP_STATIC_INIT_DESTROY.call(c, 0x003b_07cc)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `RCMP_GlobalDtors` (0x3b07d8): `RCMP_StaticInitDestroy(0, 0xffff)`.
+pub fn rcmp_global_dtors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0u64;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        RCMP_STATIC_INIT_DESTROY.call(c, 0x003b_07ec)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `MPEG2_group_of_pictures_header` (0x3b16e0): reads the GOP fields
+/// through `MPEG2_Get_Bits` and `MPEG2_marker_bit`, then
+/// `MPEG2_extension_and_user_data`. A first-GOP check (the word at
+/// 0x510000 - 0x5f78 against 0x509648) also bumps the counter pair at
+/// 0x450000 - 0x3c80 / 0x3c88 before the reads.
+pub fn mpeg2_group_of_pictures_header_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        c.g[V0][0] = 0x510000;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_sub(0x5f78));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x69b8));
+        let t = c.g[A0][0] != c.g[V1][0];
+        frame.save_ra(c, 0);
+        if !t {
+            c.cycles += 8;
+            c.g[V1][0] = 0x450000;
+            c.g[A1][0] = 0x450000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x3c84));
+            c.g[A0][0] = 0x450000;
+            c.g[V1][0] = 0x1;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+            c.sw((c.g[A0][0] as u32).wrapping_sub(0x3c80), c.g[V1][0]);
+            c.sw((c.g[A1][0] as u32).wrapping_sub(0x3c88), c.g[V0][0]);
+        }
+        c.cycles += 35;
+        c.g[A0][0] = 0x1;
+        MPEG2_GET_BITS.call(c, 0x003b_1724)?;
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = 0x5;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69d8), c.g[V0][0]);
+        MPEG2_GET_BITS.call(c, 0x003b_1734)?;
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = 0x6;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69d4), c.g[V0][0]);
+        MPEG2_GET_BITS.call(c, 0x003b_1744)?;
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = 0x490000;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69d0), c.g[V0][0]);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5468));
+        MPEG2_MARKER_BIT.call(c, 0x003b_1758)?;
+        c.g[A0][0] = 0x6;
+        MPEG2_GET_BITS.call(c, 0x003b_1760)?;
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = 0x6;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69cc), c.g[V0][0]);
+        MPEG2_GET_BITS.call(c, 0x003b_1770)?;
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = 0x1;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69c8), c.g[V0][0]);
+        MPEG2_GET_BITS.call(c, 0x003b_1780)?;
+        c.g[V1][0] = 0x510000;
+        c.g[A0][0] = 0x1;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69c4), c.g[V0][0]);
+        MPEG2_GET_BITS.call(c, 0x003b_1790)?;
+        c.g[V1][0] = 0x510000;
+        c.sw((c.g[V1][0] as u32).wrapping_sub(0x69c0), c.g[V0][0]);
+        MPEG2_EXTENSION_AND_USER_DATA.call(c, 0x003b_179c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `RCMP_CODEC::~RCMP_CODEC(this, flags)` (0x42e278): stores the codec vtable
+/// word (0x456810) at `this`, then, when bit 0 of `flags` is set, calls the
+/// function at `D_00509434[0]`.
+pub fn rcmp_codec_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x450000;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6810));
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A1][0] & 0x1;
+        let call_hook = c.g[A1][0] != 0u64;
+        c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+        if call_hook {
+            c.cycles += 4;
+            c.g[V1][0] = 0x510000;
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x6bcc));
+            let target = c.g[V0][0] as u32;
+            call_ptr(c, target, 0x0042_e2a4)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `RCMP_SYSTEM::~RCMP_SYSTEM(this, flags)` (0x42e498): stores the system
+/// vtable word (0x456890) at `this + 0xc`, then deletes the object (through
+/// the function table, 0x317e50) when bit 0 of `flags` is set.
+pub fn rcmp_system_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x450000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6890));
+        c.g[A1][0] = c.g[A1][0] & 0x1;
+        let delete_object = c.g[A1][0] != 0u64;
+        c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+        if delete_object {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e50, 0x0042_e4bc)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -22974,6 +23219,295 @@ pub(crate) mod tests {
             &|c, seed| {
                 mpeg2_stream_setup(c, seed, &mpeg2_extension_stream(seed / 3 % 11));
                 mpeg2_events_at(c, seed, 0x003b_1988, (11, 400, 8), false)
+            },
+        );
+    }
+
+    pub(crate) use crate::game::ui::uivector::tests::leaf_fill;
+
+    /// `cPS2ChunkResolve_v08` (0x003a_dc48) against the generated body.
+    #[test]
+    fn c_ps2_chunk_resolve_v08_003adc48_matches() {
+        check(
+            ee::s13::f_003adc48__generated,
+            c_ps2_chunk_resolve_v08_003adc48,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3adc48, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PS2_SONY_CODEC_INTERNAL_v05` (0x003b_0fa0) against the generated body.
+    #[test]
+    fn ps2_sony_codec_internal_v05_003b0fa0_matches() {
+        check(
+            ee::s13::f_003b0fa0__generated,
+            ps2_sony_codec_internal_v05_003b0fa0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b0fa0, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Gate words of the fakes below (one per fake, in each machine's own RAM).
+    pub(crate) const OC1583_MAGIC: u32 = 0x1583_0001;
+
+    pub(crate) const OC1583_STATIC_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1583_BITS_CTRL: u32 = DATA + 0x20_1000;
+
+    pub(crate) const OC1583_MARKER_CTRL: u32 = DATA + 0x20_2000;
+
+    pub(crate) const OC1583_EXT_CTRL: u32 = DATA + 0x20_3000;
+
+    pub(crate) const OC1583_LOCK_CTRL: u32 = DATA + 0x20_4000;
+
+    pub(crate) const OC1583_UNLOCK_CTRL: u32 = DATA + 0x20_5000;
+
+    /// The GOP first-picture cell (0x510000 - 0x5f78).
+    pub(crate) const OC1583_GOP_CELL: u32 = 0x0050_a088;
+
+    pub(crate) static OC1583_PREV_STATIC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1583_PREV_BITS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1583_PREV_MARKER: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1583_PREV_EXT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1583_PREV_LOCK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1583_PREV_UNLOCK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1583_fake_static_init(c: &mut Cpu) {
+        if c.bus.read32(OC1583_STATIC_CTRL) != OC1583_MAGIC {
+            return fakes::fall_back(c, &OC1583_PREV_STATIC, ee::s13::f_003b0770__generated);
+        }
+        fakes::fake_call(c, 0x003b_0770);
+    }
+
+    pub(crate) fn oc1583_fake_get_bits(c: &mut Cpu) {
+        if c.bus.read32(OC1583_BITS_CTRL) != OC1583_MAGIC {
+            return fakes::fall_back(c, &OC1583_PREV_BITS, ee::s13::f_003b1300__generated);
+        }
+        fakes::fake_call(c, 0x003b_1300);
+    }
+
+    pub(crate) fn oc1583_fake_marker(c: &mut Cpu) {
+        if c.bus.read32(OC1583_MARKER_CTRL) != OC1583_MAGIC {
+            return fakes::fall_back(c, &OC1583_PREV_MARKER, ee::s13::f_003b2360__generated);
+        }
+        fakes::fake_call(c, 0x003b_2360);
+    }
+
+    pub(crate) fn oc1583_fake_ext(c: &mut Cpu) {
+        if c.bus.read32(OC1583_EXT_CTRL) != OC1583_MAGIC {
+            return fakes::fall_back(c, &OC1583_PREV_EXT, ee::s13::f_003b1988__generated);
+        }
+        fakes::fake_call(c, 0x003b_1988);
+    }
+
+    pub(crate) fn oc1583_fake_lock(c: &mut Cpu) {
+        if c.bus.read32(OC1583_LOCK_CTRL) != OC1583_MAGIC {
+            return fakes::fall_back(c, &OC1583_PREV_LOCK, ee::s13::f_003b58a0__generated);
+        }
+        fakes::fake_call(c, 0x003b_58a0);
+    }
+
+    pub(crate) fn oc1583_fake_unlock(c: &mut Cpu) {
+        if c.bus.read32(OC1583_UNLOCK_CTRL) != OC1583_MAGIC {
+            return fakes::fall_back(c, &OC1583_PREV_UNLOCK, ee::s13::f_003b58d8__generated);
+        }
+        fakes::fake_call(c, 0x003b_58d8);
+    }
+
+    pub(crate) fn oc1583_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B0770),
+            oc1583_fake_static_init,
+            &OC1583_PREV_STATIC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B1300),
+            oc1583_fake_get_bits,
+            &OC1583_PREV_BITS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B2360),
+            oc1583_fake_marker,
+            &OC1583_PREV_MARKER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B1988),
+            oc1583_fake_ext,
+            &OC1583_PREV_EXT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58A0),
+            oc1583_fake_lock,
+            &OC1583_PREV_LOCK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003B58D8),
+            oc1583_fake_unlock,
+            &OC1583_PREV_UNLOCK,
+        );
+    }
+
+    /// `RCMP_DECODER_Reset`: the object's method (slot +0x34, `this` offset
+    /// from +0x30) is a logged fake; the unwind index covers the return path.
+    #[test]
+    fn rcmp_decoder_reset_matches() {
+        check(
+            ee::s13::f_003b0680__generated,
+            rcmp_decoder_reset,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003b_0680, 1);
+                let this = fakes::ptr(&mut r);
+                let obj = fakes::ptr(&mut r);
+                let vt = fakes::vtable(c, &mut r, &[0x30]);
+                c.bus.write32(obj, vt);
+                c.bus.write32(this + 0x14, obj);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `RCMP_DECODER_ReleaseChunk`: the function at `self + 0xc` is a logged
+    /// fake (the miss hook); `a1` comes from `self + 4`.
+    #[test]
+    fn rcmp_decoder_release_chunk_matches() {
+        check(
+            ee::s13::f_003b06f8__generated,
+            rcmp_decoder_release_chunk,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003b_06f8, 1);
+                let this = fakes::ptr(&mut r);
+                c.bus.write32(this + 0xc, fakes::FAKE);
+                c.bus.write32(this + 4, r.next_u32());
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `RCMP_GlobalCtors` / `RCMP_GlobalDtors`: the static-init callee is a
+    /// gated logged fake, so its two arguments are compared.
+    #[test]
+    fn rcmp_global_ctors_matches() {
+        oc1583_install();
+        check(
+            ee::s13::f_003b07b8__generated,
+            rcmp_global_ctors,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x003b_07b8, 1);
+                c.bus.write32(OC1583_STATIC_CTRL, OC1583_MAGIC);
+            },
+        );
+    }
+
+    #[test]
+    fn rcmp_global_dtors_matches() {
+        oc1583_install();
+        check(
+            ee::s13::f_003b07d8__generated,
+            rcmp_global_dtors,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x003b_07d8, 1);
+                c.bus.write32(OC1583_STATIC_CTRL, OC1583_MAGIC);
+            },
+        );
+    }
+
+    /// `MPEG2_group_of_pictures_header`: both arms of the first-GOP check,
+    /// and the three callees as logged fakes (one may unwind).
+    #[test]
+    fn mpeg2_group_of_pictures_header_matches() {
+        oc1583_install();
+        check(
+            ee::s13::f_003b16e0__generated,
+            mpeg2_group_of_pictures_header_2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003b_16e0, 9);
+                c.bus.write32(OC1583_BITS_CTRL, OC1583_MAGIC);
+                c.bus.write32(OC1583_MARKER_CTRL, OC1583_MAGIC);
+                c.bus.write32(OC1583_EXT_CTRL, OC1583_MAGIC);
+                let cell = if seed % 2 == 0 {
+                    0x510000 - 0x69b8
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(OC1583_GOP_CELL, cell);
+            },
+        );
+    }
+
+    /// Gate word of the `__builtin_delete` fake below: its own address in the
+    /// machine's RAM (beyond the fakes' call log), armed with `OC1597_MAGIC`.
+    pub(crate) const OC1597_MAGIC: u32 = 0x1597_0001;
+
+    pub(crate) const OC1597_DELETE_CTRL: u32 = DATA + 0x5e_0000;
+
+    pub(crate) static OC1597_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `__builtin_delete`: a logged no-op call while its gate is armed.
+    pub(crate) fn oc1597_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC1597_DELETE_CTRL) != OC1597_MAGIC {
+            return fakes::fall_back(c, &OC1597_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e50);
+    }
+
+    pub(crate) fn oc1597_install_delete() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1597_fake_delete,
+            &OC1597_PREV_DELETE,
+        );
+    }
+
+    #[test]
+    fn rcmp_codec_dtor_matches() {
+        check(
+            ee::s15::f_0042e278__generated,
+            rcmp_codec_dtor,
+            200,
+            &|c, seed| {
+                oc1597_install_delete();
+                let mut r = machine(c, seed, 0x0042_e278, 1);
+                c.bus.write32(OC1597_DELETE_CTRL, OC1597_MAGIC);
+                // D_00509434[0] is the delete fake: a call through the table.
+                c.bus.write32(0x0050_9434, 0x0031_7e50);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = ((r.next_u32() & !1) | (seed & 1)) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn rcmp_system_dtor_matches() {
+        check(
+            ee::s15::f_0042e498__generated,
+            rcmp_system_dtor,
+            200,
+            &|c, seed| {
+                oc1597_install_delete();
+                let mut r = machine(c, seed, 0x0042_e498, 1);
+                c.bus.write32(OC1597_DELETE_CTRL, OC1597_MAGIC);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = ((r.next_u32() & !1) | (seed & 1)) as u64;
             },
         );
     }

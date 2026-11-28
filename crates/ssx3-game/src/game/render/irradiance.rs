@@ -6,7 +6,6 @@ use crate::call::guest;
 use crate::call::Frame;
 pub(crate) use crate::game::fe::feasyncfile::p;
 use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;

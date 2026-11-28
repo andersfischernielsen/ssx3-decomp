@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -116,6 +117,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0019_5328,
         main_menu_on_child_event,
         "cFEStateMainMenu_OnChildEvent",
+    ),
+    (
+        0x0019_4980,
+        c_fe_state_title_on_child_event_00194980,
+        "cFEStateTitle_OnChildEvent",
     ),
 ];
 
@@ -1876,6 +1882,12 @@ pub fn main_menu_on_child_event(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateTitle_OnChildEvent` (0x0019_4980): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_title_on_child_event_00194980(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3059,6 +3071,20 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(OC851_OBJ2);
                 c.g[A2][0] = [0x15u64, 0x16, 0x16, 0x16, 0x17, 0][seed as usize % 6];
                 c.pc = 0x0019_5328;
+            },
+        );
+    }
+
+    /// `cFEStateTitle_OnChildEvent` (0x0019_4980) against the generated body.
+    #[test]
+    fn c_fe_state_title_on_child_event_00194980_matches() {
+        check(
+            ee::s02::f_00194980__generated,
+            c_fe_state_title_on_child_event_00194980,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x194980, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

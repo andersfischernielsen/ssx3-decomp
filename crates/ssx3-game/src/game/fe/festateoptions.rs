@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -418,6 +419,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_ea98,
         fe_screen_select_profile_ctor,
         "FEScreenSelectProfile_ctor",
+    ),
+    (
+        0x001d_dfa8,
+        c_fe_state_options_game_on_deactivate_001ddfa8,
+        "cFEStateOptionsGame_OnDeactivate",
+    ),
+    (
+        0x001d_e010,
+        c_fe_state_options_sound_on_deactivate_001de010,
+        "cFEStateOptionsSound_OnDeactivate",
+    ),
+    (
+        0x001d_e078,
+        c_fe_state_options_hud_on_deactivate_001de078,
+        "cFEStateOptionsHUD_OnDeactivate",
+    ),
+    (
+        0x001d_e0e8,
+        c_fe_state_options_controller_on_deactivate_001de0e8,
+        "cFEStateOptionsController_OnDeactivate",
     ),
 ];
 
@@ -11050,6 +11071,30 @@ pub fn fe_screen_select_profile_ctor(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateOptionsGame_OnDeactivate` (0x001d_dfa8): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_options_game_on_deactivate_001ddfa8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFEStateOptionsSound_OnDeactivate` (0x001d_e010): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_options_sound_on_deactivate_001de010(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFEStateOptionsHUD_OnDeactivate` (0x001d_e078): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_options_hud_on_deactivate_001de078(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFEStateOptionsController_OnDeactivate` (0x001d_e0e8): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_options_controller_on_deactivate_001de0e8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15319,6 +15364,62 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = oc842_machine(c, seed, 0x0018_ea98, 0x18ea98, 1);
                 c.g[A0][0] = sx(DATA + (r.next_u32() & 0x7_fff0));
+            },
+        );
+    }
+
+    /// `cFEStateOptionsGame_OnDeactivate` (0x001d_dfa8) against the generated body.
+    #[test]
+    fn c_fe_state_options_game_on_deactivate_001ddfa8_matches() {
+        check(
+            ee::s04::f_001ddfa8__generated,
+            c_fe_state_options_game_on_deactivate_001ddfa8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1ddfa8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateOptionsSound_OnDeactivate` (0x001d_e010) against the generated body.
+    #[test]
+    fn c_fe_state_options_sound_on_deactivate_001de010_matches() {
+        check(
+            ee::s04::f_001de010__generated,
+            c_fe_state_options_sound_on_deactivate_001de010,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de010, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateOptionsHUD_OnDeactivate` (0x001d_e078) against the generated body.
+    #[test]
+    fn c_fe_state_options_hud_on_deactivate_001de078_matches() {
+        check(
+            ee::s04::f_001de078__generated,
+            c_fe_state_options_hud_on_deactivate_001de078,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de078, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateOptionsController_OnDeactivate` (0x001d_e0e8) against the generated body.
+    #[test]
+    fn c_fe_state_options_controller_on_deactivate_001de0e8_matches() {
+        check(
+            ee::s04::f_001de0e8__generated,
+            c_fe_state_options_controller_on_deactivate_001de0e8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de0e8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

@@ -508,7 +508,7 @@ fn sce_pad_get_slot_max_resume(c: &mut Cpu) {
                 0x00400700 => {
                     c.cycles += 11;
                     c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6200));
-                    c.sw((c.g[SP][0] as u32), 0u64);
+                    c.sw(c.g[SP][0] as u32, 0u64);
                     c.g[A2][0] = 0u64;
                     c.g[A3][0] = c.g[S0][0];
                     c.g[T0][0] = 0x80;
@@ -917,12 +917,12 @@ fn sce_pad_info_mode_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
                     c.g[V0][0] = 0x520000;
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
-                    c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6250));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
                     c.g[S0][0] = c.g[A2][0];
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] == 0u64;
                     c.g[S1][0] = c.g[A3][0];
@@ -1169,7 +1169,7 @@ fn sce_pad_info_mode_resume(c: &mut Cpu) {
                 }
                 0x004000b4 => {
                     c.cycles += 3;
-                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     let t = true;
                     c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x50));
                     if t {
@@ -1194,7 +1194,7 @@ fn sce_pad_info_mode_resume(c: &mut Cpu) {
                 0x004000c8 => {
                     c.cycles += 4;
                     c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

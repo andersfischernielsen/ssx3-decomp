@@ -543,6 +543,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         beint_reward_on_event_result,
         "BERewardInt_OnEventResult",
     ),
+    (
+        0x0015_77e0,
+        oc1600_is_peak_fully_completed,
+        "BERewardInt_IsPeakFullyCompleted",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8252,6 +8257,120 @@ pub fn be_reward_int_unlock_reward(c: &mut Cpu) {
     });
 }
 
+/// `bool BERewardInt_IsPeakFullyCompleted(self, peak, medal, index)` (0x001577e0): true when all three peak medals pass `BERewardInt_IsPeakGoldComplete` and the eight highlight record levels of the score interface sum to at least 24.
+#[allow(unused_assignments, unused_variables, unused_labels, unreachable_code)]
+pub fn oc1600_is_peak_fully_completed(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = 0u64;
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.g[A2][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S2][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[S3][0] = c.g[A0][0];
+        c.g[A0][0] = c.g[S3][0];
+        'l_157810: loop {
+            'b_157884: {
+                'b_157830: {
+                    c.cycles += 6;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x00157820);
+                    c.g[A3][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x00157920,
+                        f: ee::s01::BERewardInt_IsPeakGoldComplete,
+                    }
+                    .call(c, 0x00157820)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        break 'b_157830;
+                    } else {
+                        c.cycles += 2;
+                        let t = true;
+                        c.g[V0][0] = 0u64;
+                        if t {
+                            break 'b_157884;
+                        } else {
+                            break 'b_157830;
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 3i64) as u64;
+                if c.g[V0][0] != 0u64 {
+                    c.g[A0][0] = c.g[S3][0];
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00157810);
+                    }
+                    continue 'l_157810;
+                } else {
+                    c.cycles += 9;
+                    c.g[RA][0] = sx(0x00157844);
+                    c.g[S1][0] = 0u64;
+                    Callee {
+                        addr: 0x0014dc80,
+                        f: ee::s01::BELibrary_GetInstance,
+                    }
+                    .call(c, 0x00157844)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x00157850);
+                    c.g[A1][0] = 0x8;
+                    Callee {
+                        addr: 0x0014dd58,
+                        f: ee::s01::BELibrary_GetInterface,
+                    }
+                    .call(c, 0x00157850)?;
+                    c.g[S0][0] = 0u64;
+                    c.g[S2][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    'l_157860: loop {
+                        c.cycles += 7;
+                        c.g[RA][0] = sx(0x00157868);
+                        c.g[A0][0] = c.g[S2][0];
+                        Callee {
+                            addr: 0x001552b0,
+                            f: ee::s01::BEScoreInt_GetRecordLevel,
+                        }
+                        .call(c, 0x00157868)?;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < 8i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A1][0] = c.g[S0][0];
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00157860);
+                            }
+                            continue 'l_157860;
+                        } else {
+                            c.cycles += 2;
+                            c.g[V0][0] = ((c.g[S1][0] as i64) < 24i64) as u64;
+                            c.g[V0][0] = c.g[V0][0] ^ 0x1;
+                            break 'b_157884;
+                        }
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+            let t = c.g[RA][0] as u32;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+            c.pc = t;
+            return Ok(());
+        }
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10549,6 +10668,32 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00157f20;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::check_reaching;
+    pub(crate) use crate::game::sound::soundsys::tests::oc1600_machine;
+    pub(crate) use crate::game::sound::soundsys::tests::OC1600_CTRL;
+
+    /// The three peak medals (mask bits), then the eight record levels (nibbles) that must
+    /// sum to at least 24.
+    #[test]
+    fn oc1600_is_peak_fully_completed_matches() {
+        check_reaching(
+            ee::s01::f_001577e0__generated,
+            oc1600_is_peak_fully_completed,
+            300,
+            &[0x0015_7820, 0x0015_7844, 0x0015_7850, 0x0015_7868],
+            &|c, seed| {
+                let h = oc1600_machine(c, seed, 0x1600_1, 14);
+                let mask = if h & 3 != 0 { 7 } else { (h >> 4) as u32 & 7 };
+                c.bus.write32(OC1600_CTRL + 0x10, mask);
+                let mut levels = 0u32;
+                for i in 0..8 {
+                    levels |= (((h >> (8 + 3 * i)) % 6) as u32) << (4 * i);
+                }
+                c.bus.write32(OC1600_CTRL + 0x14, levels);
             },
         );
     }

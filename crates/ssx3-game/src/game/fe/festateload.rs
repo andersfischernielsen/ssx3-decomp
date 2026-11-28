@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -86,6 +87,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateEventSelect_TransitionIn",
     ),
     (0x0018_6a08, cfe_state_mem_card_ctor, "cFEStateMemCard_ctor"),
+    (
+        0x0018_6b48,
+        c_fe_state_mem_card_on_widget_notify_00186b48,
+        "cFEStateMemCard_OnWidgetNotify",
+    ),
+    (
+        0x001d_e550,
+        c_fe_state_event_select_v13_001de550,
+        "cFEStateEventSelect_v13",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -837,6 +848,19 @@ pub fn cfe_state_event_select_init_2(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateMemCard_OnWidgetNotify` (0x0018_6b48): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_mem_card_on_widget_notify_00186b48(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x100;
+    ret(c);
+}
+
+/// `cFEStateEventSelect_v13` (0x001d_e550): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_event_select_v13_001de550(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1226,6 +1250,34 @@ pub(crate) mod tests {
                 c.bus.write32(OC791_MASK, r.next_u32() & 0x1e);
                 c.bus.write32(OC791_OBJ + 0x10, r.next_u32());
                 c.bus.write32(GAME_GP - 0xb5c, r.next_u32());
+            },
+        );
+    }
+
+    /// `cFEStateMemCard_OnWidgetNotify` (0x0018_6b48) against the generated body.
+    #[test]
+    fn c_fe_state_mem_card_on_widget_notify_00186b48_matches() {
+        check(
+            ee::s02::f_00186b48__generated,
+            c_fe_state_mem_card_on_widget_notify_00186b48,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x186b48, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateEventSelect_v13` (0x001d_e550) against the generated body.
+    #[test]
+    fn c_fe_state_event_select_v13_001de550_matches() {
+        check(
+            ee::s04::f_001de550__generated,
+            c_fe_state_event_select_v13_001de550,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de550, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

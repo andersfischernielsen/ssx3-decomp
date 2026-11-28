@@ -4488,7 +4488,7 @@ fn sce_sif_rpc_loop_resume(c: &mut Cpu) {
                 0x004273f8 => {
                     c.cycles += 5;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
                     let t = true;
                     c.g[S0][0] = c.g[A0][0];

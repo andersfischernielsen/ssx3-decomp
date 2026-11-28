@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -373,6 +374,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0024_9f80,
         shell_renderer_menu_ctor_2,
         "ShellRendererMenu_ctor",
+    ),
+    (
+        0x0024_d6d0,
+        visual_effects_menu_debug_printf_stub,
+        "VisualEffectsMenu_DebugPrintfStub",
+    ),
+    (
+        0x0025_0aa0,
+        ai_visual_effects_menu_debug_printf_stub,
+        "AIVisualEffectsMenu_DebugPrintfStub",
     ),
 ];
 
@@ -10652,6 +10663,46 @@ pub fn shell_renderer_menu_ctor_2(c: &mut Cpu) {
     })
 }
 
+/// `VisualEffectsMenu_DebugPrintfStub` (0x0024_d6d0): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn visual_effects_menu_debug_printf_stub(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `AIVisualEffectsMenu_DebugPrintfStub` (0x0025_0aa0): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn ai_visual_effects_menu_debug_printf_stub(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11927,6 +11978,60 @@ pub(crate) mod tests {
                 c.g[GP][0] = sx(GAME_GP);
                 c.g[A0][0] = sx(DATA);
                 c.pc = 0x0024_9f80;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::replay::replaycache::tests::leaf_val;
+
+    /// `VisualEffectsMenu_DebugPrintfStub` (0x0024_d6d0) against the generated body.
+    #[test]
+    fn visual_effects_menu_debug_printf_stub_matches() {
+        check(
+            ee::s06::f_0024d6d0__generated,
+            visual_effects_menu_debug_printf_stub,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x24d6d0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `AIVisualEffectsMenu_DebugPrintfStub` (0x0025_0aa0) against the generated body.
+    #[test]
+    fn ai_visual_effects_menu_debug_printf_stub_matches() {
+        check(
+            ee::s06::f_00250aa0__generated,
+            ai_visual_effects_menu_debug_printf_stub,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x250aa0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

@@ -160,6 +160,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cfe_state_profile_load_show_save_title,
         "cFEStateProfileLoad_ShowSaveTitle",
     ),
+    (
+        0x001d_e240,
+        cfe_state_profile_load_ctor_2,
+        "cFEStateProfileLoad_ctor_2",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3328,6 +3333,40 @@ pub fn cfe_state_profile_load_show_save_title(c: &mut Cpu) {
     })
 }
 
+/// The `cFEState` base constructor tail shared by the ctors: the vtable at
+/// `this + 8`, `v0 = this`, then the frame's epilogue.
+pub(crate) fn cfe_state_ctor_tail(c: &mut Cpu, frame: Frame, vtable: u64) {
+    c.g[V1][0] = vtable;
+    c.g[V0][0] = c.g[S0][0];
+    frame.restore_ra(c, 0);
+    let this = c.g[S0][0] as u32;
+    Addr(this.wrapping_add(8)).sw(c, vtable);
+    frame.restore(c, S0, 0x10);
+    frame.close(c);
+}
+
+/// `cFEStateProfileLoad::cFEStateProfileLoad` variant 2 (0x1de240): the
+/// `cFEMemCard` base constructor (0x1d53b0) with `a1 = a2 = 0`, then the
+/// profile-load vtable at `this + 8`.
+pub fn cfe_state_profile_load_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        c.g[A1][0] = 0;
+        frame.save(c, S0, 0x10);
+        c.g[A2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        Callee {
+            addr: 0x001d_53b0,
+            f: ee::s04::f_001d53b0,
+        }
+        .call(c, 0x001d_e25c)?;
+        cfe_state_ctor_tail(c, frame, 0x0046_bfd0);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4857,6 +4896,24 @@ pub(crate) mod tests {
                 let _ = oc846_setup(c, seed, 0x190768, 12);
                 c.pc = 0x0019_0768;
                 c.bus.write32(OC846_MAIL_NULL_OBJ, 0);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::main::all_in_one_main::tests::gate_on;
+    pub(crate) use crate::game::main::all_in_one_main::tests::install_fakes;
+
+    #[test]
+    fn cfe_state_profile_load_ctor_2_matches() {
+        install_fakes();
+        check(
+            ee::s04::f_001de240__generated,
+            cfe_state_profile_load_ctor_2,
+            100,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1de240, 0);
+                gate_on(c);
+                c.g[A0][0] = sx(DATA + 0x1000 + 0x40 * (seed % 3));
             },
         );
     }

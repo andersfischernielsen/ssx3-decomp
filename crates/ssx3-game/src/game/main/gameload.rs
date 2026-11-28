@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -160,6 +161,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         oc681_game_module_can_restart_from_pause,
         "GameModule_CanRestartFromPause",
     ),
+    (0x001d_c930, app_module_unload_001dc930, "AppModule_Unload"),
+    (0x001d_c938, app_module_enter_001dc938, "AppModule_Enter"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6405,6 +6408,18 @@ pub fn game_module_load_state(c: &mut Cpu) {
     });
 }
 
+/// `AppModule_Unload` (0x001d_c930): straight-line leaf. Mechanical port of the generated body.
+pub fn app_module_unload_001dc930(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `AppModule_Enter` (0x001d_c938): straight-line leaf. Mechanical port of the generated body.
+pub fn app_module_enter_001dc938(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8607,6 +8622,34 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x002314d0;
+            },
+        );
+    }
+
+    /// `AppModule_Unload` (0x001d_c930) against the generated body.
+    #[test]
+    fn app_module_unload_001dc930_matches() {
+        check(
+            ee::s04::f_001dc930__generated,
+            app_module_unload_001dc930,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1dc930, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `AppModule_Enter` (0x001d_c938) against the generated body.
+    #[test]
+    fn app_module_enter_001dc938_matches() {
+        check(
+            ee::s04::f_001dc938__generated,
+            app_module_enter_001dc938,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1dc938, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

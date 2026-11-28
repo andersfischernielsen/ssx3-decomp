@@ -128,6 +128,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         fe_state_net_help_popup_on_widget_created,
         "cFEStateNetHelpPopup_OnWidgetCreated",
     ),
+    (
+        0x001d_9f30,
+        c_fe_state_net_help_popup_handle_input_001d9f30,
+        "cFEStateNetHelpPopup_HandleInput",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2539,7 +2544,7 @@ fn fe_state_net_help_popup_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001da0ec => {
                     c.cycles += 1;
-                    c.sw((c.g[S2][0] as u32), c.g[S1][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[S1][0]);
                     pc = 0x001da0f0;
                     continue;
                 }
@@ -2563,6 +2568,13 @@ fn fe_state_net_help_popup_on_widget_created_resume(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// `cFEStateNetHelpPopup_HandleInput` (0x001d_9f30): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_net_help_popup_handle_input_001d9f30(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -3033,6 +3045,20 @@ pub(crate) mod tests {
                 c.pc = 0x001d_9f38;
                 c.g[A0][0] = sx(s);
                 c.g[A1][0] = sx(w);
+            },
+        );
+    }
+
+    /// `cFEStateNetHelpPopup_HandleInput` (0x001d_9f30) against the generated body.
+    #[test]
+    fn c_fe_state_net_help_popup_handle_input_001d9f30_matches() {
+        check(
+            ee::s04::f_001d9f30__generated,
+            c_fe_state_net_help_popup_handle_input_001d9f30,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1d9f30, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

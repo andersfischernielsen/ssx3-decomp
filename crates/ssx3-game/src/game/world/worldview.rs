@@ -2921,8 +2921,8 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4fb0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2935,7 +2935,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lhu((c.g[S2][0] as u32).wrapping_add(0x1a2));
                     c.g[A1][0] = c.g[SP][0];
                     c.lwc1(5, (c.g[S2][0] as u32).wrapping_add(0x158));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x15c));
                     c.sh((c.g[S2][0] as u32).wrapping_add(0x1a2), c.g[V0][0]);
                     c.lwc1(1, (c.g[S2][0] as u32).wrapping_add(0x160));
@@ -2945,7 +2945,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 6);
                     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
-                    c.swc1(5, (c.g[SP][0] as u32));
+                    c.swc1(5, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x10));
@@ -3009,7 +3009,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[A2][0] = 0x490000;
                     c.g[V1][0] = c.lw((c.g[T2][0] as u32).wrapping_add(0x10d8));
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4f98));
-                    c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[T1][0] as u32)));
+                    c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[T1][0] as u32));
                     c.g[A1][0] = c.g[S2][0];
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x170));
                     c.g[A3][0] = 0u64;
@@ -3022,7 +3022,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003aafc0);
-                    c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003aafc0)?;
                     let t = true;
                     c.g[V0][0] = c.g[S2][0];
@@ -3041,7 +3041,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x6c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003aafe0);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003aafe0)?;
                     c.lwc1(5, (c.g[S2][0] as u32).wrapping_add(0x60));
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -3054,7 +3054,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 6);
                     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
-                    c.swc1(5, (c.g[SP][0] as u32));
+                    c.swc1(5, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x10));
@@ -3126,7 +3126,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xac));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003ab0ac);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003ab0ac)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = 0x6;
@@ -3164,7 +3164,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003ab0f4);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003ab0f4)?;
                     c.g[V1][0] = 0x8;
                     c.lwc1(5, (c.g[S2][0] as u32).wrapping_add(0x28));
@@ -3193,7 +3193,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x94));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003ab13c);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003ab13c)?;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x20));
                     let t = (c.g[V1][0] as i64) <= 0;
@@ -3220,7 +3220,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[S6][0]);
                     c.g[A1][0] = c.g[SP][0];
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
                     c.lwc1(0, (c.g[S1][0] as u32).wrapping_add(0x70));
                     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
@@ -3293,7 +3293,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003ab218);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003ab218)?;
                     c.g[V1][0] = 0x7;
                     c.lwc1(5, (c.g[S2][0] as u32).wrapping_add(0x68));
@@ -3313,7 +3313,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 6);
                     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
-                    c.swc1(5, (c.g[SP][0] as u32));
+                    c.swc1(5, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(2, (c.g[SP][0] as u32).wrapping_add(0x10));
@@ -3374,7 +3374,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003ab2d4);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003ab2d4)?;
                     let t = true;
                     c.g[V0][0] = c.g[S2][0];
@@ -3394,7 +3394,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x9c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x003ab2f8);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003ab2f8)?;
                     let t = true;
                     c.g[V0][0] = c.g[S2][0];
@@ -3549,7 +3549,7 @@ fn c_ps2_chunk_resolve_resolve_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x003ab3d8);
                     c.g[A1][0] = 0xa;
                     call_ptr(c, 0x0014dd58, 0x003ab3d8)?;
-                    c.g[A3][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A1][0] = c.g[S0][0] & 0xff;
                     c.g[RA][0] = sx(0x003ab3ec);

@@ -231,6 +231,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptList_GetMovieInfo",
     ),
     (0x0027_66d0, script_list_skip_2, "ScriptList_Skip"),
+    (
+        0x0028_47a8,
+        data_instance_man_on_data_added_002847a8,
+        "DataInstanceMan_OnDataAdded",
+    ),
+    (
+        0x0028_47b0,
+        data_instance_man_on_data_removed_002847b0,
+        "DataInstanceMan_OnDataRemoved",
+    ),
+    (
+        0x0028_47b8,
+        data_instance_man_v04_002847b8,
+        "DataInstanceMan_v04",
+    ),
+    (
+        0x0028_47c0,
+        data_instance_man_v05_002847c0,
+        "DataInstanceMan_v05",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3338,7 +3358,7 @@ fn script_list_add_choice_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0xffffffffffffffff;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S1][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[S5][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[S5][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S2][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[S3][0]);
@@ -3353,7 +3373,7 @@ fn script_list_add_choice_resume(c: &mut Cpu) {
                 }
                 0x00275f44 => {
                     c.cycles += 8;
-                    c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A1][0] = c.g[S5][0];
                     c.g[A2][0] = c.g[S2][0];
                     c.g[A3][0] = c.g[S3][0];
@@ -3466,7 +3486,7 @@ fn script_list_add_choice_resume(c: &mut Cpu) {
                     .call(c, 0x00275fd4)?;
 
                     if c.g[V0][0] != 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                         pc = 0x00276004;
                         continue;
                     }
@@ -3485,7 +3505,7 @@ fn script_list_add_choice_resume(c: &mut Cpu) {
                     .call(c, 0x00275fe8)?;
                     c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     c.g[RA][0] = sx(0x00275ff4);
-                    c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                     Callee {
                         addr: 0x00282bf0,
                         f: ee::s07::ScriptEngine_GetProcessInSeq,
@@ -6482,6 +6502,30 @@ pub(crate) fn slk_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `DataInstanceMan_OnDataAdded` (0x0028_47a8): straight-line leaf. Mechanical port of the generated body.
+pub fn data_instance_man_on_data_added_002847a8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `DataInstanceMan_OnDataRemoved` (0x0028_47b0): straight-line leaf. Mechanical port of the generated body.
+pub fn data_instance_man_on_data_removed_002847b0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `DataInstanceMan_v04` (0x0028_47b8): straight-line leaf. Mechanical port of the generated body.
+pub fn data_instance_man_v04_002847b8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `DataInstanceMan_v05` (0x0028_47c0): straight-line leaf. Mechanical port of the generated body.
+pub fn data_instance_man_v05_002847c0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::main::gamestate::tests::{fake_script_list_stop, PREV_SCRIPT_LIST_STOP};
@@ -8922,6 +8966,62 @@ pub(crate) mod tests {
                 c.g[A0][0] = list as u64;
                 c.g[A1][0] = (((r.next_u32() % 5) as i32) - 2) as u32 as u64;
                 c.g[A2][0] = (r.next_u32() % 2) as u64;
+            },
+        );
+    }
+
+    /// `DataInstanceMan_OnDataAdded` (0x0028_47a8) against the generated body.
+    #[test]
+    fn data_instance_man_on_data_added_002847a8_matches() {
+        check(
+            ee::s07::f_002847a8__generated,
+            data_instance_man_on_data_added_002847a8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847a8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `DataInstanceMan_OnDataRemoved` (0x0028_47b0) against the generated body.
+    #[test]
+    fn data_instance_man_on_data_removed_002847b0_matches() {
+        check(
+            ee::s07::f_002847b0__generated,
+            data_instance_man_on_data_removed_002847b0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847b0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `DataInstanceMan_v04` (0x0028_47b8) against the generated body.
+    #[test]
+    fn data_instance_man_v04_002847b8_matches() {
+        check(
+            ee::s07::f_002847b8__generated,
+            data_instance_man_v04_002847b8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847b8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `DataInstanceMan_v05` (0x0028_47c0) against the generated body.
+    #[test]
+    fn data_instance_man_v05_002847c0_matches() {
+        check(
+            ee::s07::f_002847c0__generated,
+            data_instance_man_v05_002847c0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847c0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

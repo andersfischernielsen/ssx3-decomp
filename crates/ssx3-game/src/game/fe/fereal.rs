@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -70,6 +71,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         fe_screen_sel_multi_ctor,
         "FEScreenSelMulti_ctor",
     ),
+    (
+        0x001a_2b00,
+        fe_module_load_anim_data_2,
+        "FEModule_LoadAnimData",
+    ),
+    (0x001d_cca8, feui_custom_v02_001dcca8, "FEUICustom_v02"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1385,7 +1392,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
                     c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001a3040;
                         continue;
@@ -1398,8 +1405,8 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13a0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1414,7 +1421,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0xb;
                     call_ptr(c, 0x00294f78, 0x001a2fb4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a3044;
                         continue;
@@ -1431,7 +1438,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0xc;
                     call_ptr(c, 0x00294f78, 0x001a2fd0)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a3044;
                         continue;
@@ -1448,7 +1455,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0xa;
                     call_ptr(c, 0x00294f78, 0x001a2fec)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a3044;
                         continue;
@@ -1465,7 +1472,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0xd;
                     call_ptr(c, 0x00294f78, 0x001a3008)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a3044;
                         continue;
@@ -1482,7 +1489,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x9;
                     call_ptr(c, 0x00294f78, 0x001a3024)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a3044;
                         continue;
@@ -1503,7 +1510,7 @@ fn ovui_sound_v02_resume(c: &mut Cpu) {
                 }
                 0x001a3040 => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001a3044;
                     continue;
                 }
@@ -3768,7 +3775,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
                     c.g[V0][0] = (c.g[V1][0] < 0x3cu64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -3785,8 +3792,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xf30));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -3845,7 +3852,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a08c0);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a08c0)?;
                     let t = true;
                     c.g[A1][0] = 0x2;
@@ -3902,7 +3909,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0920);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0920)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a092c);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00194a60, 0x001a092c)?;
@@ -3931,7 +3938,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0954);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0954)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0964);
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
@@ -3962,8 +3969,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1020));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4032,7 +4039,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a09dc);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a09dc)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a09e8);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00195498, 0x001a09e8)?;
@@ -4061,7 +4068,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0a10);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0a10)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0a1c);
                     c.g[A0][0] = c.g[V0][0];
                     Callee {
@@ -4220,7 +4227,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0ae8);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0ae8)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0af8);
                     c.g[A2][0] = 0u64;
@@ -4287,7 +4294,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a0b60);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a0b60)?;
                     c.g[V0][0] = 0x1;
                     c.g[A1][0] = 0x460000;
@@ -4313,7 +4320,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0b98);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0b98)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0ba8);
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
@@ -4343,8 +4350,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10e0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4372,7 +4379,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0bfc);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0bfc)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0c08);
                     c.g[A0][0] = c.g[V0][0];
                     Callee {
@@ -4477,7 +4484,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0c88);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0xb58), 0u64);
                     call_ptr(c, 0x00317d70, 0x001a0c88)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0c98);
                     c.g[A2][0] = 0u64;
@@ -4513,7 +4520,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0cc8);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0cc8)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0cd8);
                     c.g[A2][0] = 0x1;
@@ -4546,7 +4553,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0cfc);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0cfc)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0d08);
                     c.g[A0][0] = c.g[V0][0];
                     Callee {
@@ -4576,7 +4583,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0d38);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0xb58), 0u64);
                     call_ptr(c, 0x00317d70, 0x001a0d38)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0d48);
                     c.g[A2][0] = 0u64;
@@ -4599,7 +4606,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0d68);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0d68)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[A3][0] = 0u64;
@@ -4628,7 +4635,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0da0);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0da0)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a0db0);
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
@@ -4651,7 +4658,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0dd0);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0dd0)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a0de4);
@@ -4742,7 +4749,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0e34);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0e34)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a0e48);
@@ -4808,7 +4815,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0ea0);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0ea0)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0eac);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00192d00, 0x001a0eac)?;
@@ -4840,7 +4847,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0ecc);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0ecc)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0ed8);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00191360, 0x001a0ed8)?;
@@ -4870,8 +4877,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1100));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4886,7 +4893,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0f20);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0f20)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0f2c);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00188ee8, 0x001a0f2c)?;
@@ -4908,7 +4915,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0f4c);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0f4c)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0f58);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x0018a258, 0x001a0f58)?;
@@ -4930,7 +4937,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0f78);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0f78)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0f84);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x0018c0e8, 0x001a0f84)?;
@@ -4952,7 +4959,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0fa4);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0fa4)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0fb0);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x0018c658, 0x001a0fb0)?;
@@ -4976,7 +4983,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a0fd8);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a0fd8)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a0fe4);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x0018d240, 0x001a0fe4)?;
@@ -4998,7 +5005,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1004);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1004)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a1010);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00185a18, 0x001a1010)?;
@@ -5022,7 +5029,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1038);
                     c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[V0][0]);
                     call_ptr(c, 0x00317d70, 0x001a1038)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = 0x2;
                     let t = true;
@@ -5110,7 +5117,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1098);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1098)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = 0x2;
                     let t = true;
@@ -5131,7 +5138,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a10c4);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a10c4)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     let t = true;
                     c.g[A2][0] = 0x1;
@@ -5151,7 +5158,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a10ec);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a10ec)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = 0x2;
                     pc = 0x001a10f8;
@@ -5185,7 +5192,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1120);
                     c.g[S0][0] = c.g[S1][0] & 0xff;
                     call_ptr(c, 0x00317d70, 0x001a1120)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A2][0] = sx(((c.g[S1][0] as u32) as i32 >> 8) as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1134);
@@ -5254,7 +5261,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1184);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1184)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1194);
                     c.g[A2][0] = 0u64;
@@ -5284,8 +5291,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1130));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5334,7 +5341,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a1248);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a1248)?;
                     pc = 0x001a1248;
                     continue;
@@ -5383,7 +5390,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1298);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1298)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = 0u64;
                     let t = true;
@@ -5404,7 +5411,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a12c4);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a12c4)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = 0u64;
                     c.g[A3][0] = 0x1;
@@ -5438,7 +5445,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a12fc);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a12fc)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a1308);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x001f4728, 0x001a1308)?;
@@ -5460,7 +5467,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1328);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1328)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a1334);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x001f3ff8, 0x001a1334)?;
@@ -5482,7 +5489,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1354);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1354)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = 0u64;
                     c.g[RA][0] = sx(0x001a1368);
@@ -5513,7 +5520,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a139c);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a139c)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a13a8);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00194738, 0x001a13a8)?;
@@ -5543,8 +5550,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1150));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5559,7 +5566,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a13f0);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a13f0)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1404);
@@ -5583,7 +5590,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1424);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1424)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1434);
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
@@ -5606,7 +5613,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1454);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1454)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1464);
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
@@ -5629,7 +5636,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1484);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1484)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[RA][0] = sx(0x001a1490);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x001f54b0, 0x001a1490)?;
@@ -5656,7 +5663,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a14b0);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a14b0)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a14c0);
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
@@ -5679,7 +5686,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a14e0);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a14e0)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a14f4);
@@ -5703,7 +5710,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1514);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1514)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[T0][0] = c.g[S1][0] & 0xffff;
@@ -5736,8 +5743,8 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1170));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5752,7 +5759,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1574);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1574)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1588);
@@ -5776,7 +5783,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a15a8);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a15a8)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a15bc);
@@ -5800,7 +5807,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a15dc);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a15dc)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a15f0);
@@ -5824,7 +5831,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1610);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1610)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1624);
@@ -5848,7 +5855,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1644);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1644)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1658);
@@ -5872,7 +5879,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1678);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1678)?;
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a168c);
@@ -5906,7 +5913,7 @@ fn feui_custom_create_state_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -6103,7 +6110,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
                     c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001a2f28;
                         continue;
@@ -6116,8 +6123,8 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1380));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -6132,7 +6139,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x2;
                     call_ptr(c, 0x00294f78, 0x001a2e9c)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a2f2c;
                         continue;
@@ -6149,7 +6156,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x3;
                     call_ptr(c, 0x00294f78, 0x001a2eb8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a2f2c;
                         continue;
@@ -6166,7 +6173,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x1;
                     call_ptr(c, 0x00294f78, 0x001a2ed4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a2f2c;
                         continue;
@@ -6183,7 +6190,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x4;
                     call_ptr(c, 0x00294f78, 0x001a2ef0)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a2f2c;
                         continue;
@@ -6200,7 +6207,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0u64;
                     call_ptr(c, 0x00294f78, 0x001a2f0c)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a2f2c;
                         continue;
@@ -6221,7 +6228,7 @@ fn fe_ui_sound_v02_resume(c: &mut Cpu) {
                 }
                 0x001a2f28 => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001a2f2c;
                     continue;
                 }
@@ -7279,7 +7286,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S0][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S2][0] = c.g[A1][0];
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0xc));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2));
@@ -7298,8 +7305,8 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x11c0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7326,7 +7333,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1730);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1730)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a173c);
                     c.g[A0][0] = c.g[V0][0];
                     Callee {
@@ -7439,7 +7446,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a17b8);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a17b8)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a17c8);
                     c.g[A2][0] = 0x1;
@@ -7508,7 +7515,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1810);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1810)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1824);
@@ -7590,7 +7597,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1884);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1884)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1894);
                     c.g[A2][0] = 0u64;
@@ -7613,7 +7620,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a18b4);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a18b4)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a18c4);
                     c.g[A2][0] = 0x1;
@@ -7639,7 +7646,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a18f0);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0xb5c), 0u64);
                     call_ptr(c, 0x00317d70, 0x001a18f0)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1900);
                     c.g[A2][0] = 0u64;
@@ -7666,7 +7673,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1930);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0xb5c), 0u64);
                     call_ptr(c, 0x00317d70, 0x001a1930)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1940);
                     c.g[A2][0] = 0u64;
@@ -7725,7 +7732,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1990);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1990)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a199c);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00194a60, 0x001a199c)?;
@@ -7776,7 +7783,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a19d4);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a19d4)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a19e4);
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
@@ -7901,7 +7908,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1a58);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1a58)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1a68);
                     c.g[A2][0] = 0u64;
@@ -7929,7 +7936,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1a88);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1a88)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a1a94);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x0018d240, 0x001a1a94)?;
@@ -7989,7 +7996,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1af8);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1af8)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a1b04);
                     c.g[A0][0] = c.g[V0][0];
                     Callee {
@@ -8015,7 +8022,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1b24);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1b24)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a1b30);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x00194738, 0x001a1b30)?;
@@ -8042,7 +8049,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1b50);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1b50)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a1b5c);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x001f3700, 0x001a1b5c)?;
@@ -8081,7 +8088,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1b88);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1b88)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1b98);
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
@@ -8121,7 +8128,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1bc4);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1bc4)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[RA][0] = sx(0x001a1bd0);
                     c.g[A0][0] = c.g[V0][0];
                     call_ptr(c, 0x001f3ff8, 0x001a1bd0)?;
@@ -8142,7 +8149,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1bec);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1bec)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1bfc);
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
@@ -8165,7 +8172,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1c1c);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1c1c)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001a1c2c);
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
@@ -8188,7 +8195,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1c4c);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1c4c)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1c60);
@@ -8212,7 +8219,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001a1c80);
                     c.g[A3][0] = 0u64;
                     call_ptr(c, 0x00317d70, 0x001a1c80)?;
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lb((c.g[S2][0] as u32).wrapping_add(0x44));
                     c.g[RA][0] = sx(0x001a1c94);
@@ -8243,7 +8250,7 @@ fn feui_custom_v05_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -8279,6 +8286,79 @@ pub fn fe_screen_sel_multi_ctor(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     });
+}
+
+/// `FEModule_LoadAnimData` (0x1a2b00), `cRealFE_loadCharAnimations`: opens the
+/// big FE animation file set, creates one `AdfDataSource` (0x18-byte block) per
+/// entry of the anim table, stores it in the animation database and adds it to
+/// the game anim map, resolves the map and closes the file set.
+pub fn fe_module_load_anim_data_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x50);
+        c.g[A0][0] = 0x460000;
+        frame.save(c, S0, 0x40);
+        c.g[A1][0] = 0u64;
+        frame.save(c, S1, 0x30);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1330));
+        frame.save(c, S2, 0x20);
+        c.g[A2][0] = 0x64;
+        frame.save_ra(c, 0x10);
+        c.g[A3][0] = c.g[SP][0];
+        c.g[S0][0] = 0u64;
+        call_ptr(c, 0x003d_ed50, 0x001a_2b30)?;
+        c.g[S2][0] = 0x460000;
+        c.g[S1][0] = sx((c.g[GP][0] as u32).wrapping_sub(0x1730));
+        c.g[A2][0] = 0u64;
+        loop {
+            c.cycles += 20;
+            c.g[A3][0] = 0u64;
+            c.g[A0][0] = 0x18;
+            c.g[A1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1348));
+            call_ptr(c, 0x0031_7d70, 0x001a_2b50)?;
+            c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+            call_ptr(c, 0x0031_1250, 0x001a_2b60)?;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xd08));
+            c.g[A0][0] = c.g[S0][0] & 0xff;
+            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+            c.g[A1][0] = c.g[S0][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xd8c));
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+            c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+            call_ptr(c, 0x0031_4f30, 0x001a_2b88)?;
+            let more = (c.g[S0][0] as i64) <= 0;
+            c.g[A2][0] = 0u64;
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x001a_2b40);
+                }
+                continue;
+            }
+            break;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xd8c));
+        call_ptr(c, 0x0031_50b0, 0x001a_2b98)?;
+        c.g[A0][0] = c.lw(c.g[SP][0] as u32);
+        c.g[A1][0] = 0x64;
+        call_ptr(c, 0x003d_edc0, 0x001a_2ba4)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `FEUICustom_v02` (0x001d_cca8): straight-line leaf. Mechanical port of the generated body.
+pub fn feui_custom_v02_001dcca8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -9970,5 +10050,133 @@ pub(crate) mod tests {
             seen.insert(c.cycles - before);
         }
         assert!(seen.len() >= 12, "only {} paths: {seen:?}", seen.len());
+    }
+
+    pub(crate) use crate::game::util::locale::tests::oc1498_gated_fake;
+    pub(crate) use crate::game::util::locale::tests::OC1498_MAGIC;
+
+    pub(crate) const OC1498_ANM_GATE: u32 = DATA + 0x20_0600;
+
+    // FEModule_LoadAnimData: the file set, allocator, data source, anim map callees.
+    oc1498_gated_fake!(
+        oc1498_anm_addbig,
+        OC1498_ANM_PREV_ADDBIG,
+        OC1498_ANM_GATE,
+        4,
+        ee::s14::f_003ded50__generated,
+        0x003d_ed50
+    );
+
+    oc1498_gated_fake!(
+        oc1498_anm_alloc,
+        OC1498_ANM_PREV_ALLOC,
+        OC1498_ANM_GATE,
+        4,
+        ee::s10::f_00317d70__generated,
+        0x0031_7d70
+    );
+
+    oc1498_gated_fake!(
+        oc1498_anm_source,
+        OC1498_ANM_PREV_SOURCE,
+        OC1498_ANM_GATE,
+        4,
+        ee::s10::f_00311250__generated,
+        0x0031_1250
+    );
+
+    oc1498_gated_fake!(
+        oc1498_anm_add,
+        OC1498_ANM_PREV_ADD,
+        OC1498_ANM_GATE,
+        4,
+        ee::s10::f_00314f30__generated,
+        0x0031_4f30
+    );
+
+    oc1498_gated_fake!(
+        oc1498_anm_resolve,
+        OC1498_ANM_PREV_RESOLVE,
+        OC1498_ANM_GATE,
+        4,
+        ee::s10::f_003150b0__generated,
+        0x0031_50b0
+    );
+
+    oc1498_gated_fake!(
+        oc1498_anm_delbig,
+        OC1498_ANM_PREV_DELBIG,
+        OC1498_ANM_GATE,
+        4,
+        ee::s14::f_003dedc0__generated,
+        0x003d_edc0
+    );
+
+    pub(crate) fn oc1498_anm_hook() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DED50),
+            oc1498_anm_addbig,
+            &OC1498_ANM_PREV_ADDBIG,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317D70),
+            oc1498_anm_alloc,
+            &OC1498_ANM_PREV_ALLOC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311250),
+            oc1498_anm_source,
+            &OC1498_ANM_PREV_SOURCE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00314F30),
+            oc1498_anm_add,
+            &OC1498_ANM_PREV_ADD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003150B0),
+            oc1498_anm_resolve,
+            &OC1498_ANM_PREV_RESOLVE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003DEDC0),
+            oc1498_anm_delbig,
+            &OC1498_ANM_PREV_DELBIG,
+        );
+    }
+
+    /// `FEModule_LoadAnimData` with the database and anim map pointers in RAM
+    /// and unwinds from the fakes.
+    #[test]
+    fn fe_module_load_anim_data_matches() {
+        check(
+            ee::s03::f_001a2b00__generated,
+            fe_module_load_anim_data_2,
+            300,
+            &|c, seed| {
+                oc1498_anm_hook();
+                machine(c, seed, 0x1a_2b00, 3);
+                c.pc = 0x001a_2b00;
+                c.bus.write32(OC1498_ANM_GATE, OC1498_MAGIC);
+                c.bus.write32(OC1498_ANM_GATE + 4, DATA + 0x6000);
+                c.bus.write32(GAME_GP + 0xd08, DATA + 0x6800);
+                c.bus.write32(GAME_GP + 0xd8c, DATA + 0x6900);
+                c.bus.write32(GAME_GP - 0x1730, DATA + 0x6a00);
+            },
+        );
+    }
+
+    /// `FEUICustom_v02` (0x001d_cca8) against the generated body.
+    #[test]
+    fn feui_custom_v02_001dcca8_matches() {
+        check(
+            ee::s04::f_001dcca8__generated,
+            feui_custom_v02_001dcca8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1dcca8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
     }
 }

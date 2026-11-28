@@ -3362,7 +3362,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001d3a04);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001d3a04)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -3388,7 +3388,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001d3a34);
                     c.g[A1][0] = c.g[V0][0];
                     call_ptr(c, 0x00398380, 0x001d3a34)?;
-                    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
                     c.g[A0][0] = 0xffffffffffffffff;
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x7c), c.g[V0][0]);
                     let t = true;
@@ -3449,7 +3449,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001d3a74 => {
                     c.cycles += 4;
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[A1][0] = 0u64;
                     let t = true;
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x94), c.g[S0][0]);
@@ -3462,7 +3462,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001d3a84 => {
                     c.cycles += 4;
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[A1][0] = 0u64;
                     let t = true;
                     c.sw((c.g[V1][0] as u32).wrapping_add(0xa8), c.g[S0][0]);
@@ -3475,7 +3475,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001d3a94 => {
                     c.cycles += 3;
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[A1][0] = 0u64;
                     c.sw((c.g[V1][0] as u32).wrapping_add(0xbc), c.g[S0][0]);
                     pc = 0x001d3aa0;
@@ -3488,7 +3488,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001d3ab4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001d3ab4)?;
                     let t = true;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[S4][0]);
@@ -3520,7 +3520,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3ae8 => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3af0);
-                    c.g[A0][0] = c.lw((c.g[S6][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S6][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3af0)?;
                     let t = c.g[S2][0] != c.g[V0][0];
                     c.g[A0][0] = c.g[S7][0];
@@ -3533,7 +3533,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001d3af8 => {
                     c.cycles += 8;
-                    c.sw((c.g[S1][0] as u32), c.g[S0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[S0][0]);
                     c.g[T0][0] = c.g[S5][0];
                     c.g[A1][0] = c.lb((c.g[S3][0] as u32).wrapping_add(0x44));
                     c.g[A2][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xdc));
@@ -3554,13 +3554,13 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001d3b18 => {
                     c.cycles += 8;
-                    c.g[A2][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A2][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001d3b30);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001d3b30)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xa0));
@@ -3574,7 +3574,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3b38 => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3b40);
-                    c.g[A0][0] = c.lw((c.g[S4][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S4][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3b40)?;
                     let t = c.g[S2][0] == c.g[V0][0];
                     c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x4));
@@ -3615,7 +3615,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                     c.g[A2][0] = 0x440000;
                     c.g[A1][0] = 0x440000;
                     c.g[A0][0] = 0x440000;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[FP][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1558));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[S7][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1540));
@@ -3627,12 +3627,12 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001d3b98 => {
                     c.cycles += 5;
-                    c.g[A0][0] = c.lw((c.g[S5][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S5][0] as u32);
                     c.g[RA][0] = sx(0x001d3ba4);
                     c.g[S1][0] = sx((c.g[S4][0] as u32) << 2);
                     call_ptr(c, 0x00317670, 0x001d3ba4)?;
                     let t = c.g[S2][0] == c.g[V0][0];
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x001d3a50) {
                             return Ok(());
@@ -3646,10 +3646,10 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3bac => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3bb4);
-                    c.g[A0][0] = c.lw((c.g[S6][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S6][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3bb4)?;
                     let t = c.g[S2][0] == c.g[V0][0];
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x001d3a5c) {
                             return Ok(());
@@ -3663,10 +3663,10 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3bbc => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3bc4);
-                    c.g[A0][0] = c.lw((c.g[S7][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S7][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3bc4)?;
                     let t = c.g[S2][0] == c.g[V0][0];
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x001d3a68) {
                             return Ok(());
@@ -3680,7 +3680,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3bcc => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3bd4);
-                    c.g[A0][0] = c.lw((c.g[FP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[FP][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3bd4)?;
                     let t = c.g[S2][0] == c.g[V0][0];
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
@@ -3697,10 +3697,10 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3bdc => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3be4);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3be4)?;
                     let t = c.g[S2][0] == c.g[V0][0];
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x001d3a84) {
                             return Ok(());
@@ -3714,10 +3714,10 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                 0x001d3bec => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001d3bf4);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001d3bf4)?;
                     let t = c.g[S2][0] == c.g[V0][0];
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x001d3a94) {
                             return Ok(());
@@ -3735,7 +3735,7 @@ fn c_fe_state_peak_room_on_widget_created_resume(c: &mut Cpu) {
                     c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
                     c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x4));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);

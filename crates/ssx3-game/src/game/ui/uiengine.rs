@@ -3245,7 +3245,7 @@ fn ui_ascii_to_wide_resume(c: &mut Cpu) {
                 0x00397ad8 => {
                     c.cycles += 2;
                     let t = true;
-                    c.g[V0][0] = c.lb((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[A1][0] as u32);
                     if t {
                         pc = 0x00397af8;
                         continue;
@@ -3258,16 +3258,16 @@ fn ui_ascii_to_wide_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 24);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                     c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
-                    c.sh((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sh(c.g[A0][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2));
-                    c.g[V0][0] = c.lb((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[A1][0] as u32);
                     pc = 0x00397af8;
                     continue;
                 }
                 0x00397af8 => {
                     c.cycles += 2;
                     let t = c.g[V0][0] != 0u64;
-                    c.g[V1][0] = c.lbu((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x00397ae0) {
                             return Ok(());
@@ -3281,7 +3281,7 @@ fn ui_ascii_to_wide_resume(c: &mut Cpu) {
                 0x00397b00 => {
                     c.cycles += 2;
                     let t = c.g[RA][0] as u32;
-                    c.sh((c.g[A0][0] as u32), 0u64);
+                    c.sh(c.g[A0][0] as u32, 0u64);
                     c.pc = t;
                     return Ok(());
                 }

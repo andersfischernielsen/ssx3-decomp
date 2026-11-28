@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -148,6 +149,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0021_2508,
         ov_screen_autosave_shutdown_2,
         "OVScreenAutosave_Shutdown",
+    ),
+    (
+        0x0021_22e0,
+        ov_screen_autosave_handle_input_002122e0,
+        "OVScreenAutosave_HandleInput",
+    ),
+    (0x0021_2788, ov_list_clear, "OVList_Clear"),
+    (
+        0x0022_22a8,
+        ov_screen_autosave_on_widget_action_002222a8,
+        "OVScreenAutosave_OnWidgetAction",
+    ),
+    (
+        0x0022_22b0,
+        ov_screen_autosave_v37_002222b0,
+        "OVScreenAutosave_v37",
     ),
 ];
 
@@ -2520,8 +2537,8 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x470000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1e00));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2586,7 +2603,7 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00211c90);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00211c90)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -2619,7 +2636,7 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00211ce4);
-                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00211ce4)?;
                     c.g[RA][0] = sx(0x00211cec);
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
@@ -2829,7 +2846,7 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x00211ed0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x00211ed0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -2954,7 +2971,7 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00211f9c);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00211f9c)?;
                     c.g[V0][0] = 0x6;
                     pc = 0x00211fa0;
@@ -3008,12 +3025,12 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[V0][0];
                     c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x434));
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x428));
-                    c.g[V1][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x1b0));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1b4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00211fec);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00211fec)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -3043,12 +3060,12 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.cycles += 9;
                     c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x434));
                     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x1c4));
-                    c.g[V1][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x218));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x21c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00212028);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00212028)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = 0x4;
@@ -3073,7 +3090,7 @@ fn ov_screen_profile_save_pda_on_widget_action_2_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0021205c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0021205c)?;
                     pc = 0x0021205c;
                     continue;
@@ -3440,6 +3457,84 @@ pub fn ov_screen_autosave_shutdown_2(c: &mut Cpu) {
         frame.restore(c, S2, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
+        Ok(())
+    });
+}
+
+/// `OVScreenAutosave_HandleInput` (0x0021_22e0): straight-line leaf. Mechanical port of the generated body.
+pub fn ov_screen_autosave_handle_input_002122e0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `OVScreenAutosave_OnWidgetAction` (0x0022_22a8): straight-line leaf. Mechanical port of the generated body.
+pub fn ov_screen_autosave_on_widget_action_002222a8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `OVScreenAutosave_v37` (0x0022_22b0): straight-line leaf. Mechanical port of the generated body.
+pub fn ov_screen_autosave_v37_002222b0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `OVList_Clear(this)` (0x00212788): unlinks and deletes every node of the
+/// list whose sentinel is at `this + 4` (`__builtin_delete` on each node), then
+/// makes the sentinel point to itself. Returns nothing.
+pub fn ov_list_clear(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[SP][0] = sx(sp(c).wrapping_sub(0x30));
+        let s = sp(c);
+        c.sq(17, s.wrapping_add(0x10));
+        c.sq(16, s.wrapping_add(0x20));
+        c.g[S1][0] = c.g[A0][0];
+        let ra = c.g[RA][0];
+        let s = sp(c);
+        c.sd(s, ra);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.g[S0][0] = c.lw(c.g[V0][0] as u32);
+        if c.g[S0][0] == c.g[V0][0] {
+            let s = sp(c);
+            c.lq(16, s.wrapping_add(0x20));
+        } else {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+            loop {
+                c.cycles += 5;
+                c.g[S0][0] = c.lw(c.g[S0][0] as u32);
+                call_ptr(c, 0x0031_7e50, 0x0021_27b8)?;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                let t = c.g[S0][0] != c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                if t {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0021_27b0);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                let s = sp(c);
+                c.lq(16, s.wrapping_add(0x20));
+                break;
+            }
+        }
+        c.cycles += 7;
+        let v0 = c.g[V0][0];
+        c.sw(v0 as u32, v0);
+        let s = sp(c);
+        c.g[RA][0] = c.ld(s);
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        let s = sp(c);
+        c.lq(17, s.wrapping_add(0x10));
+        let v1 = c.g[V1][0];
+        c.sw((v1 as u32).wrapping_add(0x4), v1);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp(c).wrapping_add(0x30));
+        c.pc = t;
         Ok(())
     });
 }
@@ -4496,5 +4591,94 @@ pub(crate) mod tests {
             &oc1024_autosave_shutdown_setup,
         );
         assert!(paths >= 5, "only {paths} paths");
+    }
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::GATE_MAGIC;
+
+    /// `OVScreenAutosave_HandleInput` (0x0021_22e0) against the generated body.
+    #[test]
+    fn ov_screen_autosave_handle_input_002122e0_matches() {
+        check(
+            ee::s05::f_002122e0__generated,
+            ov_screen_autosave_handle_input_002122e0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2122e0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `OVScreenAutosave_OnWidgetAction` (0x0022_22a8) against the generated body.
+    #[test]
+    fn ov_screen_autosave_on_widget_action_002222a8_matches() {
+        check(
+            ee::s05::f_002222a8__generated,
+            ov_screen_autosave_on_widget_action_002222a8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2222a8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `OVScreenAutosave_v37` (0x0022_22b0) against the generated body.
+    #[test]
+    fn ov_screen_autosave_v37_002222b0_matches() {
+        check(
+            ee::s05::f_002222b0__generated,
+            ov_screen_autosave_v37_002222b0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2222b0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Each fake's gate word in the test machine's RAM, and the magic that opens it.
+    pub(crate) const GATE_DELETE: u32 = DATA + 0x20_1542;
+
+    /// `__builtin_delete` (0x317e50), gated: logs the call and returns.
+    pub(crate) fn oc1542_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(GATE_DELETE) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1542_fake_delete),
+                ee::s10::f_00317e50__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0031_7e50);
+    }
+
+    #[test]
+    fn ov_list_clear_matches() {
+        check(
+            ee::s05::f_00212788__generated,
+            ov_list_clear,
+            300,
+            &|c, seed| {
+                machine(c, seed, 0x1542_2788, 5);
+                fakes::hook(
+                    addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+                    oc1542_fake_delete,
+                    fakes::prev_cell(oc1542_fake_delete),
+                );
+                c.bus.write32(GATE_DELETE, GATE_MAGIC);
+                let obj = DATA + 0x20_2000;
+                let head = DATA + 0x20_2100;
+                let count = seed % 5;
+                let mut at = head;
+                for i in 0..count {
+                    let node = DATA + 0x20_2200 + 0x20 * i;
+                    c.bus.write32(at, node);
+                    at = node;
+                }
+                c.bus.write32(at, head);
+                c.bus.write32(obj + 0x4, head);
+                c.g[A0][0] = sx(obj);
+            },
+        );
     }
 }

@@ -2857,16 +2857,16 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x00343c84);
                     c.g[S3][0] = c.g[A1][0];
                     call_ptr(c, 0x002d1bd8, 0x00343c84)?;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = c.g[S3][0] & 0xff;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V0][0] == 0u64;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) >> 8);
                     if t {
@@ -2880,8 +2880,8 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[A0][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -2909,11 +2909,11 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343cd8 => {
                     c.cycles += 7;
-                    c.g[A0][0] = c.lw((c.g[T0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[T0][0] as u32);
                     c.mult(0, 5, 6, 2);
                     c.g[A0][0] = sx((c.g[A0][0] as u32) >> 8);
-                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[A0][0] != c.g[V1][0] {
                         c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
@@ -2925,7 +2925,7 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343cf4 => {
                     c.cycles += 5;
-                    c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V1][0] = 0u64;
                     c.g[S2][0] = 0u64;
                     c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
@@ -2934,7 +2934,7 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343d08 => {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[V0][0] = !(0u64 | c.g[V0][0]);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
@@ -2947,7 +2947,7 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343d18 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
                     let t = (c.g[V0][0] as i64) > 0;
                     c.g[A0][0] = c.g[S0][0];
                     if t {
@@ -2973,12 +2973,12 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.cycles += 10;
                     c.g[RA][0] = sx(0x00343d34);
                     call_ptr(c, 0x002d1bd8, 0x00343d34)?;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = c.g[S3][0] & 0xff;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V0][0] != 0u64 {
                         c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
@@ -3003,8 +3003,8 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) >> 8);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[A0][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -3036,10 +3036,10 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
                     c.g[V1][0] = c.g[V1][0] | 0x4;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
-                    c.sw((c.g[S1][0] as u32), c.g[S3][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[S3][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x114));
                     let t = c.g[V0][0] != 0u64;
-                    c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     if t {
                         pc = 0x00343eb8;
                         continue;
@@ -3111,8 +3111,8 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 0x00343de8 => {
                     c.cycles += 5;
                     c.mult(0, 4, 3, 2);
-                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     let t = c.g[V0][0] != c.g[A2][0];
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     if t {
@@ -3124,19 +3124,19 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343dfc => {
                     c.cycles += 7;
-                    c.g[V0][0] = c.lw((c.g[T0][0] as u32));
-                    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V0][0] = c.lw(c.g[T0][0] as u32);
+                    c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V1][0] = 0u64;
                     c.g[S2][0] = 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) >> 8);
                     c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0xc));
-                    c.sw((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
                     pc = 0x00343e18;
                     continue;
                 }
                 0x00343e18 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     let t = c.g[V0][0] != c.g[A2][0];
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     if t {
@@ -3148,7 +3148,7 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343e24 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
                     let t = (c.g[V0][0] as i64) > 0;
                     c.g[A0][0] = c.g[S0][0];
                     if t {
@@ -3174,12 +3174,12 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.cycles += 10;
                     c.g[RA][0] = sx(0x00343e40);
                     call_ptr(c, 0x002d1bd8, 0x00343e40)?;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = c.g[S3][0] & 0xff;
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V0][0] != 0u64 {
                         c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
@@ -3204,8 +3204,8 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) >> 8);
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[A0][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -3237,10 +3237,10 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
                     c.g[V1][0] = c.g[V1][0] | 0x4;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V1][0]);
-                    c.sw((c.g[S1][0] as u32), c.g[S3][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[S3][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x114));
                     let t = c.g[V0][0] == 0u64;
-                    c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[S2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     if t {
                         pc = 0x00343edc;
                         continue;
@@ -3266,7 +3266,7 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[A0][0] = c.hi[0];
                     let t = true;
-                    c.sw((c.g[S2][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[A0][0]);
                     if t {
                         pc = 0x00343ee4;
                         continue;
@@ -3282,16 +3282,16 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                 }
                 0x00343ee0 => {
                     c.cycles += 1;
-                    c.sw((c.g[S2][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[A0][0]);
                     pc = 0x00343ee4;
                     continue;
                 }
                 0x00343ee4 => {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x00343f18;
                         continue;
@@ -3352,7 +3352,7 @@ fn crowd_man3d_add_instance_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -4383,13 +4383,13 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x003443dc);
                     c.g[S2][0] = c.g[A0][0];
                     call_ptr(c, 0x002d1bd8, 0x003443dc)?;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.g[A1][0] & 0xff;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] != 0u64 {
                         c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
@@ -4414,8 +4414,8 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     c.cycles += 7;
                     c.g[V0][0] = sx((c.g[A1][0] as u32) >> 8);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
@@ -4446,7 +4446,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     c.g[A2][0] = 0x20000000;
                     c.sw((c.g[S2][0] as u32).wrapping_add(0x1f0), c.g[V0][0]);
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x18a8));
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A3][0] = 0u64;
                     c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1e8));
                     c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x14));
@@ -4472,7 +4472,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 }
                 0x00344470 => {
                     c.cycles += 7;
-                    c.sw((c.g[S1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1f0));
                     c.g[S1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[S2][0] as u32).wrapping_add(0x10c), 0u64);
@@ -4553,7 +4553,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
                     call_ptr(c, 0x00317e30, 0x003444ec)?;
                     c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_add(0x10));
-                    c.sw((c.g[V0][0] as u32), c.g[S1][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[S1][0]);
                     let t = c.g[S1][0] == 0u64;
                     c.g[S0][0] = c.g[S4][0];
                     if t {
@@ -4603,7 +4603,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 0x00344534 => {
                     c.cycles += 2;
                     let t = true;
-                    c.sw((c.g[S7][0] as u32), c.g[S4][0]);
+                    c.sw(c.g[S7][0] as u32, c.g[S4][0]);
                     if t {
                         pc = 0x00344540;
                         continue;
@@ -4652,7 +4652,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 0x00344564 => {
                     c.cycles += 5;
                     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1ec));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S3][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S3][0] as u32));
                     c.g[RA][0] = sx(0x00344574);
                     c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0xd0));
                     Callee {
@@ -4704,14 +4704,14 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     c.cycles += 13;
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     c.lwc1(12, (c.g[S2][0] as u32).wrapping_add(0x1dc));
-                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0xd0));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x003445c4);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x003445c4)?;
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10c));
                     c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
@@ -4739,7 +4739,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     .call(c, 0x003445e0)?;
                     c.sw((c.g[S2][0] as u32).wrapping_add(0x114), 0u64);
                     c.g[V0][0] = c.lw((c.g[FP][0] as u32).wrapping_add(0x94));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = (c.g[V1][0] as i64) <= 0;
                     c.sw((c.g[S2][0] as u32).wrapping_add(0x110), c.g[V1][0]);
                     if t {
@@ -4778,7 +4778,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 }
                 0x00344618 => {
                     c.cycles += 3;
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
                     pc = 0x00344624;
@@ -4800,14 +4800,14 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 }
                 0x0034462c => {
                     c.cycles += 2;
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                     c.sw((c.g[S2][0] as u32).wrapping_add(0x114), c.g[V0][0]);
                     pc = 0x00344634;
                     continue;
                 }
                 0x00344634 => {
                     c.cycles += 8;
-                    c.g[A0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[SP][0] as u32);
                     c.g[A1][0] = 0u64;
                     c.g[A2][0] = 0xc4;
                     c.g[RA][0] = sx(0x00344648);
@@ -4835,7 +4835,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 0x00344668 => {
                     c.cycles += 6;
                     c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[A3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
                     let t = c.g[V1][0] == 0u64;
@@ -4849,14 +4849,14 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 }
                 0x00344680 => {
                     c.cycles += 10;
-                    c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     c.g[T1][0] = 0xffffffffffffffff;
                     c.g[A1][0] = sx((c.g[T4][0] as u32).wrapping_add(0x2));
                     c.g[A2][0] = 0x2;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x13c));
-                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.sw((c.g[A0][0] as u32), c.g[V1][0]);
+                    c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[A0][0] as u32, c.g[V1][0]);
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0xc));
                     c.sw((c.g[V1][0] as u32).wrapping_add(0xc), c.g[V0][0]);
                     pc = 0x003446a8;
@@ -4864,7 +4864,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 }
                 0x003446a8 => {
                     c.cycles += 7;
-                    c.sh((c.g[A1][0] as u32), c.g[T1][0]);
+                    c.sh(c.g[A1][0] as u32, c.g[T1][0]);
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x1));
                     let t = (c.g[A2][0] as i64) >= 0;
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x2));
@@ -4882,7 +4882,7 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.mult(0, 3, 16, 11);
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x10));
-                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.g[V1][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0x4));
                     let t = true;
                     c.sh((c.g[A0][0] as u32).wrapping_add(0x13c), c.g[V1][0]);
@@ -4895,9 +4895,9 @@ fn crowd_man3d_group_create_meshes_resume(c: &mut Cpu) {
                 }
                 0x003446dc => {
                     c.cycles += 3;
-                    c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[T0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                    c.sw((c.g[V0][0] as u32), c.g[A3][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[A3][0]);
                     pc = 0x003446e8;
                     continue;
                 }
@@ -5652,7 +5652,7 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00343164);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00343164)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
                     c.g[T4][0] = c.g[V0][0];
@@ -5660,13 +5660,13 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x80));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
                     c.g[A3][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
-                    c.lqc2(1, (c.g[V1][0] as u32));
+                    c.lqc2(1, c.g[V1][0] as u32);
                     c.lqc2(2, (c.g[V1][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V1][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V1][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[SP][0] as u32));
+                    c.sqc2(1, c.g[SP][0] as u32);
                     c.sqc2(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -5675,8 +5675,8 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                     c.g[T2][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
                     c.g[V1][0] = 0xffffffffffffffff;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A3][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V0][0] == c.g[V1][0];
                     c.g[T3][0] = sx((c.g[S1][0] as u32).wrapping_add(0x20));
                     if t {
@@ -5698,13 +5698,13 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                 }
                 0x003431e0 => {
                     c.cycles += 16;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A3][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
-                    c.lqc2(4, (c.g[V0][0] as u32));
+                    c.lqc2(4, c.g[V0][0] as u32);
                     c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(8, (c.g[A0][0] as u32));
+                    c.lqc2(8, c.g[A0][0] as u32);
                     c.lqc2(9, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(10, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(11, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -5729,27 +5729,27 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                     c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
                     c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
                     c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
-                    c.sqc2(12, (c.g[A2][0] as u32));
+                    c.sqc2(12, c.g[A2][0] as u32);
                     c.sqc2(13, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.sqc2(14, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.sqc2(15, (c.g[A2][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[A2][0] as u32));
+                    c.lqc2(1, c.g[A2][0] as u32);
                     c.lqc2(2, (c.g[A2][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[A2][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[A2][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A1][0] as u32));
+                    c.sqc2(1, c.g[A1][0] as u32);
                     c.sqc2(2, (c.g[A1][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A1][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A1][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[A1][0] as u32));
+                    c.lqc2(1, c.g[A1][0] as u32);
                     c.lqc2(2, (c.g[A1][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[A1][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[A1][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[A0][0] as u32));
+                    c.sqc2(1, c.g[A0][0] as u32);
                     c.sqc2(2, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[A0][0] as u32).wrapping_add(0x30));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != c.g[T1][0];
                     c.g[V1][0] = sx((c.g[V0][0] as u32) << 4);
                     if t {
@@ -5765,11 +5765,11 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                 0x003432a4 => {
                     c.cycles += 50;
                     c.g[V0][0] = c.g[T2][0];
-                    c.lqc2(4, (c.g[T4][0] as u32));
+                    c.lqc2(4, c.g[T4][0] as u32);
                     c.lqc2(5, (c.g[T4][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[T4][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[T4][0] as u32).wrapping_add(0x30));
-                    c.lqc2(8, (c.g[SP][0] as u32));
+                    c.lqc2(8, c.g[SP][0] as u32);
                     c.lqc2(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.lqc2(10, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lqc2(11, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -5789,29 +5789,29 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                     c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
                     c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
                     c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
-                    c.sqc2(12, (c.g[T0][0] as u32));
+                    c.sqc2(12, c.g[T0][0] as u32);
                     c.sqc2(13, (c.g[T0][0] as u32).wrapping_add(0x10));
                     c.sqc2(14, (c.g[T0][0] as u32).wrapping_add(0x20));
                     c.sqc2(15, (c.g[T0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[T0][0] as u32));
+                    c.lqc2(1, c.g[T0][0] as u32);
                     c.lqc2(2, (c.g[T0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[T0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[T0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[V0][0] as u32));
+                    c.sqc2(1, c.g[V0][0] as u32);
                     c.sqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.lqc2(1, (c.g[V0][0] as u32));
+                    c.lqc2(1, c.g[V0][0] as u32);
                     c.lqc2(2, (c.g[V0][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[V0][0] as u32).wrapping_add(0x20));
                     c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x30));
-                    c.sqc2(1, (c.g[SP][0] as u32));
+                    c.sqc2(1, c.g[SP][0] as u32);
                     c.sqc2(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sqc2(3, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sqc2(4, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
-                    c.g[V1][0] = sx((c.g[T3][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[T3][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[V1][0] as u32);
                     let t = c.g[V0][0] == 0u64;
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
                     if t {
@@ -5824,7 +5824,7 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                 0x0034336c => {
                     c.cycles += 44;
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.lqc2(3, (c.g[S0][0] as u32));
+                    c.lqc2(3, c.g[S0][0] as u32);
                     c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x60));
@@ -5878,8 +5878,8 @@ fn conveyor_v42_resume(c: &mut Cpu) {
                     c.cycles += 46;
                     c.g[V0][0] = 0x500000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xeb0));
-                    c.lqc2(8, (c.g[V0][0] as u32));
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.lqc2(8, c.g[V0][0] as u32);
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.lqc2(5, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -6519,7 +6519,7 @@ fn conveyor_ctor_2_2_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x003430ec);
                     c.g[S1][0] = c.g[A2][0];
                     Callee {
@@ -6532,12 +6532,12 @@ fn conveyor_ctor_2_2_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x570));
                     c.g[A2][0] = 0x2c;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00343114);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00343114)?;
                     c.g[V0][0] = c.g[S0][0];
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
@@ -6547,7 +6547,7 @@ fn conveyor_ctor_2_2_resume(c: &mut Cpu) {
                 }
                 0x00343120 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

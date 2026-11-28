@@ -268,6 +268,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003e_3b00, ea_file_cd_issue_read, "EAFile_CdIssueRead"),
     (0x003e_3d78, ea_file_cd_mount_disc, "EAFile_CdMountDisc"),
     (0x003e_44b0, ea_file_cd_shutdown, "EAFile_CdShutdown"),
+    (
+        0x003d_e420,
+        eafile_complete_request,
+        "EAFile_CompleteRequest",
+    ),
+    (0x003e_3208, ea_file_platform_open, "EAFile_PlatformOpen"),
+    (0x003e_32f8, eafile_platform_close, "EAFile_PlatformClose"),
+    (
+        0x003e_33b0,
+        eafile_host_read_service,
+        "EAFile_HostReadService",
+    ),
+    (
+        0x003e_34e8,
+        eafile_platform_get_size,
+        "EAFile_PlatformGetSize",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9203,10 +9220,410 @@ pub fn ea_file_shutdown(c: &mut Cpu) {
     })
 }
 
+/// `EAFile_HostReadService` (0x003e33b0): when the request global at 0x519c20 is
+/// set, compares the stream position with the request's (0x450000 table), seeks
+/// with `sceLseek` unless they match, reads with `sceRead` and completes the
+/// request through `EAFile_CompleteRequest`.
+pub fn eafile_host_read_service(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x50));
+        c.g[V0][0] = 0x0052_0000;
+        let sp = r32(c, SP);
+        c.sq(S2, sp.wrapping_add(0x20));
+        c.g[A1][0] = sx(r32(c, V0).wrapping_sub(0x63e0));
+        let a_req = r32(c, V0).wrapping_sub(0x63e0);
+        c.g[V1][0] = c.lw(a_req);
+        c.g[S2][0] = c.g[V0][0];
+        c.sq(S0, sp.wrapping_add(0x40));
+        c.sq(S1, sp.wrapping_add(0x30));
+        c.sq(S3, sp.wrapping_add(0x10));
+        let v1_zero = c.g[V1][0] == 0;
+        let ra = c.g[RA][0];
+        c.sd(sp, ra);
+        if !v1_zero {
+            c.cycles += 6;
+            c.g[V0][0] = 0x0045_0000;
+            let a_4 = r32(c, A1).wrapping_add(0x4);
+            c.g[A0][0] = c.lw(a_4);
+            let a_c40 = r32(c, V0).wrapping_add(0xc40);
+            c.g[V1][0] = c.lw(a_c40);
+            c.g[S3][0] = c.g[V0][0];
+            let pos_differs = c.g[V1][0] != c.g[A0][0];
+            c.g[S1][0] = 0x0045_0000;
+            // Whether the seek runs (the `'b_3e3404` tail).
+            let mut seek = pos_differs;
+            if !pos_differs {
+                c.cycles += 4;
+                let a_c4c = r32(c, S1).wrapping_add(0xc4c);
+                c.g[V1][0] = c.lw(a_c4c);
+                let a_c = r32(c, A1).wrapping_add(0xc);
+                c.g[V0][0] = c.lw(a_c);
+                let same_len = c.g[V1][0] == c.g[V0][0];
+                c.g[S0][0] = sx(r32(c, S2).wrapping_sub(0x63e0));
+                seek = !same_len;
+            }
+            if seek {
+                c.cycles += 5;
+                let a_4b = r32(c, A1).wrapping_add(0x4);
+                c.g[A0][0] = c.lw(a_4b);
+                c.g[A2][0] = 0;
+                let a_c = r32(c, A1).wrapping_add(0xc);
+                c.g[A1][0] = c.lw(a_c);
+                c.g[S0][0] = sx(r32(c, S2).wrapping_sub(0x63e0));
+                call_ptr(c, 0x0042_8168, 0x003e_3418)?;
+            }
+            // The `'b_3e3418` exit.
+            c.cycles += 16;
+            let s0 = r32(c, S0);
+            c.g[A0][0] = c.lw(s0.wrapping_add(0x4));
+            c.g[A1][0] = c.lw(s0.wrapping_add(0x8));
+            c.g[A2][0] = c.lw(s0.wrapping_add(0x10));
+            call_ptr(c, 0x0042_83a0, 0x003e_342c)?;
+            let s0 = r32(c, S0);
+            c.g[A0][0] = c.lw(s0.wrapping_add(0x10));
+            c.g[A2][0] = c.lw(s0.wrapping_add(0x4));
+            c.g[V1][0] = c.lw(s0.wrapping_add(0xc));
+            c.g[V0][0] ^= c.g[A0][0];
+            c.g[A1][0] = c.lw(s0.wrapping_add(0x10));
+            c.g[A0][0] = (c.g[V0][0] < 1) as u64;
+            let a_s3 = r32(c, S3).wrapping_add(0xc40);
+            let a2v = c.g[A2][0];
+            c.sw(a_s3, a2v);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+            let a_req0 = r32(c, S2).wrapping_sub(0x63e0);
+            c.sw(a_req0, 0);
+            let a_c4c = r32(c, S1).wrapping_add(0xc4c);
+            let v1v = c.g[V1][0];
+            c.sw(a_c4c, v1v);
+            Callee {
+                addr: 0x003d_e420,
+                f: ee::s14::EAFile_CompleteRequest,
+            }
+            .call(c, 0x003e_3458)?;
+        }
+        // Epilogue (the `'b_3e3458` exit).
+        c.cycles += 8;
+        c.lq(S0, sp.wrapping_add(0x40));
+        c.g[V0][0] = 0;
+        c.lq(S1, sp.wrapping_add(0x30));
+        c.lq(S2, sp.wrapping_add(0x20));
+        c.lq(S3, sp.wrapping_add(0x10));
+        c.g[RA][0] = c.ld(sp);
+        c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x50));
+        abi::ret(c);
+        Ok(())
+    })
+}
+
+/// `EAFile_CompleteRequest` (0x003de420): completes one file request. Bumps
+/// the outstanding-request counter (the word at 0x519ac0), takes the pending
+/// request at 0x519ad4 when there is one, stores its status word (-1 while the
+/// request is busy; -2, or 1 when `a0` is non-zero, when it is done), and calls
+/// the request's completion handler at +0x28 when there is one. When the
+/// counter falls back to zero it services the queue (`EAFile_ServiceQueue`,
+/// 0x3ddfa8). Converted from the generated body: same registers, cycles, calls.
+pub fn eafile_complete_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 0x520000;
+        frame.save(c, 16, 0x10);
+        c.g[A2][0] = c.g[V1][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6550));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+        let no_request = c.g[A1][0] == 0u64;
+        frame.restore(c, 16, 0x10);
+        'done: {
+            if no_request {
+                break 'done;
+            }
+            // Status word of the request.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+            let busy = c.g[V0][0] != 0u64;
+            c.g[V0][0] = u64::MAX;
+            if !busy {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                c.g[V1][0] = 0x1;
+                if c.g[A0][0] != 0 {
+                    c.g[V0][0] = c.g[V1][0];
+                }
+            }
+            // Store it, then the completion handler.
+            c.cycles += 6;
+            c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+            c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x6550));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x24), 0u64);
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x28));
+            if c.g[V0][0] != 0u64 {
+                c.cycles += 5;
+                c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x14));
+                c.g[A0][0] = c.lw(c.g[A1][0] as u32);
+                c.g[A1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x8));
+                let handler = c.g[V0][0] as u32;
+                call_ptr(c, handler, 0x003d_e494)?;
+            }
+            // Count down; service the queue when it reaches zero.
+            c.cycles += 6;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+            let queue_left = c.g[V1][0] != 0u64;
+            frame.restore(c, 16, 0x10);
+            if !queue_left {
+                c.cycles += 3;
+                c.g[A0][0] = 0u64;
+                Callee {
+                    addr: 0x003d_dfa8,
+                    f: ee::s14::f_003ddfa8,
+                }
+                .call(c, 0x003d_e4b4)?;
+                frame.restore(c, 16, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `EAFile_PlatformOpen(const char *path, int mode, u32 *handle)` (0x3e3208):
+/// resolves the path to a device (kind 1 = the CD image, found through
+/// `EAFile_CdLookup`, its handle tagged with device 1 in the top byte;
+/// kind 2 = host, opened with `sceOpen` with the mode the flags select).
+/// Returns 1 when a handle was stored, else 0. Other kinds return 0 without
+/// writing `*handle`; a failed `sceOpen` stores 0.
+pub fn ea_file_platform_open(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x140);
+        frame.save(c, S0, 0x130);
+        frame.save(c, S1, 0x120);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x110);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = sx(frame.at(c, 0x100));
+        Callee {
+            addr: 0x003e_3098,
+            f: ee::s14::f_003e3098,
+        }
+        .call(c, 0x003e_322c)?;
+        let kind_at = frame.at(c, 0x100);
+        c.g[V1][0] = c.lw(kind_at);
+        c.g[A0][0] = 0x1;
+        c.g[V0][0] = 0x2;
+        let out = c.g[S0][0] as u32;
+        'out: {
+            'dc: {
+                'd8: {
+                    'cc: {
+                        if c.g[V1][0] == c.g[A0][0] {
+                            // Kind 1: the CD image.
+                            c.cycles += 6;
+                            c.g[A1][0] = c.g[S1][0];
+                            c.g[A0][0] = c.g[SP][0];
+                            c.g[A2][0] = c.g[S0][0];
+                            Callee {
+                                addr: 0x003e_4508,
+                                f: ee::s14::f_003e4508,
+                            }
+                            .call(c, 0x003e_324c)?;
+                            let not_found = c.g[V0][0] == 0;
+                            c.g[A0][0] = 0x0100_0000;
+                            if not_found {
+                                break 'dc;
+                            }
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw(out);
+                            c.g[V0][0] = 0x1;
+                            break 'cc;
+                        }
+                        c.cycles += 2;
+                        if c.g[V1][0] != c.g[V0][0] {
+                            c.g[V0][0] = 0;
+                            break 'out;
+                        }
+                        // Kind 2: the host file, mode from the low flag bits.
+                        'ac: {
+                            c.cycles += 3;
+                            c.g[A1][0] = c.g[S1][0] & 0x7;
+                            if c.g[A1][0] == c.g[A0][0] {
+                                c.g[A1][0] = 0x1;
+                                break 'ac;
+                            }
+                            c.cycles += 2;
+                            if c.g[A1][0] == 0 {
+                                c.g[A1][0] = 0x103;
+                                break 'ac;
+                            }
+                            'a4: {
+                                'a9c: {
+                                    'a94: {
+                                        c.cycles += 2;
+                                        let t = c.g[A1][0] == c.g[V1][0];
+                                        c.g[V0][0] = 0x6;
+                                        if t {
+                                            break 'a94;
+                                        }
+                                        c.cycles += 2;
+                                        let t = c.g[A1][0] == c.g[V0][0];
+                                        c.g[V1][0] = u64::MAX;
+                                        if t {
+                                            break 'a9c;
+                                        }
+                                        c.cycles += 2;
+                                        c.g[V0][0] = 0;
+                                        break 'a4;
+                                    }
+                                    c.cycles += 2;
+                                    c.g[A1][0] = 0x203;
+                                    break 'ac;
+                                }
+                                c.cycles += 2;
+                                c.g[A1][0] = 0x603;
+                                break 'ac;
+                            }
+                            // Unknown flags: the kind is stored, result 0.
+                            c.cycles += 2;
+                            c.sw(out, c.g[V1][0]);
+                            break 'out;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[SP][0];
+                        call_ptr(c, 0x0042_7d60, 0x003e_32b4)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        let failed = (c.g[A0][0] as i64) < 0;
+                        c.sw(out, c.g[A0][0]);
+                        if failed {
+                            break 'd8;
+                        }
+                        c.cycles += 3;
+                        c.g[V1][0] = c.lw(kind_at);
+                        c.g[V0][0] = 0x1;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 24);
+                    }
+                    // Handle found (kind 1 or 2): tag it with the device.
+                    c.cycles += 3;
+                    c.g[V1][0] = c.g[A0][0] | c.g[V1][0];
+                    c.sw(out, c.g[V1][0]);
+                    break 'out;
+                }
+                // sceOpen failed.
+                c.cycles += 1;
+                c.sw(out, 0);
+            }
+            // Not found.
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x130);
+        frame.restore(c, S1, 0x120);
+        frame.restore_ra(c, 0x110);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// File device (EAFile platform layer).
+
+/// `int EAFile_PlatformGetSize(u32 handle)` (0x3e34e8): the size of the file
+/// behind `handle`. The device is the top byte of the handle: device 1 asks
+/// the CD entry table (`EAFile_CdGetEntry(handle & 0xffffff, 0, 0, 0)`), any
+/// other device seeks with `sceLseek(fd, 0, 2)` (SEEK_END). Returns the
+/// callee's value in v0. Frame 0x10.
+pub fn eafile_platform_get_size(c: &mut Cpu) {
+    const CD_GET_ENTRY: Callee = Callee {
+        addr: 0x003e_48d8,
+        f: ee::s14::f_003e48d8,
+    };
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x00ff_ffff;
+        c.g[A1][0] = sx(((c.g[A0][0] as u32) as i32 >> 24) as u32);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = 1;
+        let device_one = c.g[A1][0] == c.g[V1][0];
+        c.g[A0][0] = c.g[A0][0] & c.g[V0][0];
+        if device_one {
+            c.cycles += 6;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            CD_GET_ENTRY.call(c, 0x003e_3518)?;
+        } else {
+            c.cycles += 4;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 2;
+            call_ptr(c, 0x0042_8168, 0x003e_352c)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void EAFile_PlatformClose(u32 handle)` (0x3e32f8): closes the file behind
+/// `handle`. Device 2 closes its fd with `sceClose(handle & 0xffffff)`, and if
+/// the slot at `0x450c40` still holds that fd it is set to -1. Other devices
+/// do nothing. Returns 0. Frame 0x20 (s0).
+pub fn eafile_platform_close(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = 0x00ff_ffff;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(((c.g[A0][0] as u32) as i32 >> 24) as u32);
+        c.g[V1][0] = 2;
+        let device_two = c.g[A1][0] == c.g[V1][0];
+        c.g[S0][0] = c.g[A0][0] & c.g[V0][0];
+        'done: {
+            if device_two {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x0042_7fe8, 0x003e_3324)?;
+                c.g[V1][0] = 0x0045_0000;
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc40)).lw(c);
+                let owned = c.g[V0][0] == c.g[S0][0];
+                frame.restore(c, S0, 0x10);
+                if !owned {
+                    break 'done;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = u64::MAX;
+                let minus_one = c.g[V0][0];
+                Addr((c.g[V1][0] as u32).wrapping_add(0xc40)).sw(c, minus_one);
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 4;
+        c.g[V0][0] = 0;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    #[allow(unused_imports)]
+    use crate::game::bx::memblockman::tests::oc1486_hook;
 
     use crate::difftest::scramble;
     use crate::difftest::Rng;
@@ -15680,6 +16097,261 @@ pub(crate) mod tests {
                 c.bus.write32(EA_FILE_TEST_RET_TIMER_REMOVE, 0);
                 c.bus.write32(EA_FILE_TEST_RET_CD_CALLBACK, 0);
                 schedule(c, &mut r, seed, 0x003d_cde0)
+            },
+        );
+    }
+
+    use crate::difftest::fakes::check_reaching;
+
+    pub(crate) use crate::game::bx::memblockman::tests::OC1486_CTRL;
+    pub(crate) use crate::game::bx::memblockman::tests::OC1486_MAGIC;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::oc1493_install_fakes;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1493_CLOSE_GATE;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1493_CLOSE_MAGIC;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1493_SIZE_GATE;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1493_SIZE_MAGIC;
+
+    pub(crate) use crate::game::render::lightman::tests::oc1485_gate;
+    pub(crate) use crate::game::render::lightman::tests::oc1485_install;
+
+    use std::sync::atomic::AtomicUsize;
+
+    /// The host-read fixture: the request global at 0x519c20 (non-zero for the
+    /// main path), the request's position and length words, and the stream
+    /// globals at 0x450c40 / 0x450c4c.
+    pub(crate) fn oc1485_read_setup(c: &mut Cpu, seed: u32, calls: u32) {
+        oc1485_install();
+        let mut r = fakes::machine(c, seed, 0x1485_3e33, calls);
+        oc1485_gate(c);
+        c.bus
+            .write32(0x0051_9c20, if seed % 5 == 0 { 0 } else { 1 });
+        let g = r.next_u32();
+        c.bus.write32(0x0045_0c40, g);
+        c.bus.write32(
+            0x0051_9c24,
+            if seed % 2 == 0 { g } else { g.wrapping_add(1) },
+        );
+        let x = r.next_u32();
+        c.bus.write32(0x0045_0c4c, x);
+        c.bus.write32(
+            0x0051_9c2c,
+            if seed % 3 == 0 { x } else { x.wrapping_add(1) },
+        );
+        c.bus.write32(0x0051_9c28, r.next_u32());
+        c.bus.write32(0x0051_9c30, r.next_u32());
+    }
+
+    #[test]
+    fn host_read_service_matches() {
+        check(
+            ee::s14::f_003e33b0__generated,
+            eafile_host_read_service,
+            300,
+            &|c, seed| oc1485_read_setup(c, seed, 0),
+        );
+    }
+
+    #[test]
+    fn host_read_service_unwinds() {
+        fakes::covered(
+            ee::s14::f_003e33b0__generated,
+            eafile_host_read_service,
+            300,
+            &|c, seed| oc1485_read_setup(c, seed, 3),
+        );
+    }
+
+    #[test]
+    fn host_read_service_reaches_every_call() {
+        fakes::check_reaching(
+            ee::s14::f_003e33b0__generated,
+            eafile_host_read_service,
+            300,
+            &[0x003e_3418, 0x003e_342c, 0x003e_3458],
+            &|c, seed| oc1485_read_setup(c, seed, 0),
+        );
+    }
+
+    /// The completion state at 0x519ab0 (the counter at +0x10, the pending
+    /// request at +0x24), one request, and the handler (a fake outside the
+    /// function table). The seed's hash picks each branch.
+    pub(crate) fn eafile_complete_request_setup(c: &mut Cpu, seed: u32) -> Rng {
+        oc1486_hook();
+        let mut r = fakes::machine(c, seed, 0x1486_0003, 0);
+        c.bus.write32(OC1486_CTRL, OC1486_MAGIC);
+        let h = fakes::mix(seed as u64 ^ 0x3de4_20);
+        let bit = |n: u32| (h >> n) & 1 != 0;
+        let state = 0x0051_9ab0u32;
+        let req = DATA + 0x1000;
+        // A count of 0 before this completion means the queue is serviced.
+        c.bus
+            .write32(state + 0x10, if bit(0) { 0 } else { 3 + (seed % 5) });
+        c.bus.write32(state + 0x24, if bit(1) { 0 } else { req });
+        c.bus.write32(req, r.next_u32());
+        c.bus
+            .write32(req + 0x4, if bit(2) { 0 } else { r.next_u32() });
+        c.bus.write32(req + 0x8, r.next_u32());
+        c.bus.write32(req + 0x14, r.next_u32());
+        c.bus
+            .write32(req + 0x28, if bit(3) { 0 } else { fakes::FAKE + 0x100 });
+        c.g[A0][0] = if bit(4) { 0 } else { sx(r.next_u32()) };
+        r
+    }
+
+    #[test]
+    fn eafile_complete_request_matches() {
+        check_reaching(
+            ee::s14::f_003de420__generated,
+            eafile_complete_request,
+            240,
+            &[0x003d_e494, 0x003d_e4b4],
+            &|c, seed| {
+                eafile_complete_request_setup(c, seed);
+            },
+        );
+    }
+
+    // EAFile_PlatformOpen fixture: the three callees are gated fakes in
+    // their override slots (the gate word lives in this machine's RAM).
+    pub(crate) const PO_GATE: u32 = DATA + 0x1_0000;
+
+    pub(crate) const PO_KIND: u32 = PO_GATE + 4;
+
+    pub(crate) const PO_FOUND: u32 = PO_GATE + 8;
+
+    pub(crate) const PO_CDVAL: u32 = PO_GATE + 0xc;
+
+    pub(crate) const PO_OPEN: u32 = PO_GATE + 0x10;
+
+    pub(crate) const PO_MAGIC: u32 = 0x1492_0a0a;
+
+    pub(crate) static OC1492_PO_PREV_RESOLVE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1492_PO_PREV_CD: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1492_PO_PREV_OPEN: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EAFile_ResolvePath`: writes the kind through the kind pointer (a2).
+    pub(crate) fn oc1492_po_resolve(c: &mut Cpu) {
+        if c.bus.read32(PO_GATE) != PO_MAGIC {
+            return fakes::fall_back(c, &OC1492_PO_PREV_RESOLVE, ee::s14::f_003e3098__generated);
+        }
+        let kind = c.bus.read32(PO_KIND);
+        let kind_ptr = c.g[A2][0] as u32;
+        c.bus.write32(kind_ptr, kind);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `EAFile_CdLookup`: result in v0, the handle through the out pointer (a2).
+    pub(crate) fn oc1492_po_cd_lookup(c: &mut Cpu) {
+        if c.bus.read32(PO_GATE) != PO_MAGIC {
+            return fakes::fall_back(c, &OC1492_PO_PREV_CD, ee::s14::f_003e4508__generated);
+        }
+        let found = c.bus.read32(PO_FOUND);
+        let handle = c.bus.read32(PO_CDVAL);
+        let out = c.g[A2][0] as u32;
+        c.bus.write32(out, handle);
+        c.g[V0][0] = found as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `sceOpen` through the function table: the forced result in v0.
+    pub(crate) fn oc1492_po_open(c: &mut Cpu) {
+        if c.bus.read32(PO_GATE) != PO_MAGIC {
+            return fakes::fall_back(c, &OC1492_PO_PREV_OPEN, ee::s15::f_00427d60__generated);
+        }
+        let ret = c.bus.read32(PO_OPEN);
+        c.g[V0][0] = sx(ret);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn platform_open_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E3098),
+            oc1492_po_resolve,
+            &OC1492_PO_PREV_RESOLVE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E4508),
+            oc1492_po_cd_lookup,
+            &OC1492_PO_PREV_CD,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00427D60),
+            oc1492_po_open,
+            &OC1492_PO_PREV_OPEN,
+        );
+    }
+
+    /// Kind 1/2/other, every flag value, found or not, sceOpen failing or not.
+    #[test]
+    fn ea_file_platform_open_matches() {
+        platform_open_install();
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _r = machine(c, seed, 0x3e_3208, 0);
+            c.bus.write32(PO_GATE, PO_MAGIC);
+            c.bus.write32(PO_KIND, [1, 2, 0, 3][(seed % 4) as usize]);
+            c.bus.write32(PO_FOUND, (seed / 32) % 2);
+            c.bus.write32(PO_CDVAL, 0x0040_0000 + seed);
+            c.bus
+                .write32(PO_OPEN, if seed % 5 == 0 { u32::MAX } else { 0x40 + seed });
+            c.bus.write32(DATA + 0x500, 0x5a5a_0000 + seed);
+            c.g[A0][0] = sx(DATA + 0x400);
+            c.g[A1][0] = ((seed / 4) % 8) as u64;
+            c.g[A2][0] = sx(DATA + 0x500);
+        };
+        check(
+            ee::s14::f_003e3208__generated,
+            ea_file_platform_open,
+            64,
+            setup,
+        );
+    }
+
+    /// `EAFile_PlatformGetSize`: devices 1, 2 and others (the top byte of the
+    /// handle), with the CD entry and lseek answered by the gated fakes.
+    #[test]
+    fn eafile_platform_get_size_matches() {
+        oc1493_install_fakes();
+        fakes::covered(
+            ee::s14::f_003e34e8__generated,
+            eafile_platform_get_size,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3e34e8, 1);
+                c.bus.write32(OC1493_SIZE_GATE, OC1493_SIZE_MAGIC);
+                c.bus.write32(OC1493_SIZE_GATE + 0x8, r.next_u32());
+                c.bus.write32(OC1493_SIZE_GATE + 0x10, r.next_u32());
+                let device = [1u32, 2, 3, 0, 0x81][seed as usize % 5];
+                let word = (device << 24) | (r.next_u32() & 0x00ff_ffff);
+                c.g[A0][0] = sx(word);
+            },
+        );
+    }
+
+    /// `EAFile_PlatformClose`: device 2 with the slot holding the fd, holding
+    /// another value, and other devices (no sceClose).
+    #[test]
+    fn eafile_platform_close_matches() {
+        oc1493_install_fakes();
+        fakes::covered(
+            ee::s14::f_003e32f8__generated,
+            eafile_platform_close,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3e32f8, 1);
+                let handle = r.next_u32() & 0x00ff_ffff;
+                let device = if seed % 2 == 0 {
+                    2
+                } else {
+                    [1u32, 3, 0, 0x81][(seed as usize / 2) % 4]
+                };
+                c.g[A0][0] = sx((device << 24) | handle);
+                let slot = if seed % 3 == 0 { r.next_u32() } else { handle };
+                c.bus.write32(0x0045_0c40, slot);
+                c.bus.write32(OC1493_CLOSE_GATE, OC1493_CLOSE_MAGIC);
             },
         );
     }

@@ -9,7 +9,6 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
-use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -274,7 +273,7 @@ fn section_man_select_peak_lighting_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[V0][0] = (c.g[A1][0] < 0x16u64) as u64;
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x0022e1fc;
                         continue;
@@ -287,8 +286,8 @@ fn section_man_select_peak_lighting_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4b20));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -364,7 +363,7 @@ fn section_man_select_peak_lighting_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0022e214);
                     call_ptr(c, 0x0038ac50, 0x0022e214)?;
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x12d4), c.g[V0][0]);
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.pc = t;

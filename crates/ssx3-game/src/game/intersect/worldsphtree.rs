@@ -315,6 +315,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         nash_find_closest_object_contact,
         "Nash_FindClosestObjectContact",
     ),
+    (
+        0x0033_0778,
+        coll_sphere_tree_reset_transform_00330778,
+        "CollSphereTree_ResetTransform",
+    ),
+    (0x0033_88e0, nash_return_self, "Nash_ReturnSelf"),
+    (
+        0x0034_0a08,
+        coll_volume_refine_triangle_hit_00340a08,
+        "CollVolume_RefineTriangleHit",
+    ),
+    (
+        0x0034_0a10,
+        coll_segment_get_diameter_00340a10,
+        "CollSegment_GetDiameter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -34581,6 +34597,48 @@ pub fn nash_find_closest_object_contact(c: &mut Cpu) {
     guest(c, nash_find_closest_object_contact_body);
 }
 
+/// `CollSphereTree_ResetTransform` (0x0033_0778): straight-line leaf: 1 load(s), 2 store(s). Mechanical port of the generated body.
+pub fn coll_sphere_tree_reset_transform_00330778(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x64));
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x4), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x60), c.g[V0][0]);
+    ret(c);
+}
+
+/// `Nash_ReturnSelf` (0x0033_88e0): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn nash_return_self(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `CollVolume_RefineTriangleHit` (0x0034_0a08): straight-line leaf. Mechanical port of the generated body.
+pub fn coll_volume_refine_triangle_hit_00340a08(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `CollSegment_GetDiameter` (0x0034_0a10): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn coll_segment_get_diameter_00340a10(c: &mut Cpu) {
+    c.cycles += 2;
+    c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0xa0));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
 
@@ -38895,6 +38953,81 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(query);
                 c.g[A2][0] = sx(out);
                 c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::object::railmodifier::tests::leaf_fill;
+    pub(crate) use crate::game::object::railmodifier::tests::leaf_val;
+
+    /// `CollSphereTree_ResetTransform` (0x0033_0778) against the generated body.
+    #[test]
+    fn coll_sphere_tree_reset_transform_00330778_matches() {
+        check(
+            ee::s11::f_00330778__generated,
+            coll_sphere_tree_reset_transform_00330778,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x330778, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `Nash_ReturnSelf` (0x0033_88e0) against the generated body.
+    #[test]
+    fn nash_return_self_matches() {
+        check(
+            ee::s11::f_003388e0__generated,
+            nash_return_self,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3388e0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `CollVolume_RefineTriangleHit` (0x0034_0a08) against the generated body.
+    #[test]
+    fn coll_volume_refine_triangle_hit_00340a08_matches() {
+        check(
+            ee::s11::f_00340a08__generated,
+            coll_volume_refine_triangle_hit_00340a08,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x340a08, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `CollSegment_GetDiameter` (0x0034_0a10) against the generated body.
+    #[test]
+    fn coll_segment_get_diameter_00340a10_matches() {
+        check(
+            ee::s11::f_00340a10__generated,
+            coll_segment_get_diameter_00340a10,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x340a10, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

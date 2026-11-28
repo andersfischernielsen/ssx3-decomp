@@ -13,6 +13,7 @@ pub(crate) use crate::game::fe::feasyncfile::at_5 as at_3;
 pub(crate) use crate::game::fe::feasyncfile::fe_ctor_with_vtable;
 pub(crate) use crate::game::fe::feasyncfile::lw_6 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p;
+use crate::game::fe::fepopupmisc::ui_state_ctor_store;
 pub(crate) use crate::game::fe::festatebonusmaterial::FE_UI_STATE_CTOR;
 pub(crate) use crate::game::fe::festatecharsetup::oc437_fe_state_dtor;
 pub(crate) use crate::game::main::gamemode::low;
@@ -67,6 +68,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001d_e628,
         c_fe_state_transition_ctor_3,
         "cFEStateTransition_ctor_3",
+    ),
+    (
+        0x001d_e558,
+        cfe_state_background_ctor_2,
+        "cFEStateBackground_ctor_2",
+    ),
+    (
+        0x001d_e5f0,
+        cfe_state_transition_ctor_2,
+        "cFEStateTransition_ctor_2",
     ),
 ];
 
@@ -379,6 +390,28 @@ pub fn c_fe_state_transition_ctor_3(c: &mut Cpu) {
     });
 }
 
+/// Vtable of `cFEStateBackground` (0x46bc58 = 0x470000 - 0x43a8).
+pub(crate) const CFE_STATE_BACKGROUND_VTABLE: u32 = 0x0046_bc58;
+
+/// Vtable of `cFEStateTransition` (0x46bb88 = 0x470000 - 0x4478).
+pub(crate) const CFE_STATE_TRANSITION_VTABLE: u32 = 0x0046_bb88;
+
+/// `cFEStateBackground_ctor_2(self)` (0x1de558): `UIState_ctor(self, 0)`, then
+/// the background state's vtable at `self+8`. Returns `self`.
+pub fn cfe_state_background_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        ui_state_ctor_store(c, CFE_STATE_BACKGROUND_VTABLE as u64, 0x001d_e570)
+    });
+}
+
+/// `cFEStateTransition_ctor_2(self)` (0x1de5f0): `UIState_ctor(self, 0)`, then
+/// the transition state's vtable at `self+8`. Returns `self`.
+pub fn cfe_state_transition_ctor_2(c: &mut Cpu) {
+    guest(c, |c| {
+        ui_state_ctor_store(c, CFE_STATE_TRANSITION_VTABLE as u64, 0x001d_e608)
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -519,6 +552,34 @@ pub(crate) mod tests {
             ee::s04::f_001de628__generated,
             c_fe_state_transition_ctor_3,
             0x001d_e628,
+        );
+    }
+
+    /// The object the constructors build (`this`), inside the data window.
+    pub(crate) const CTOR_SELF: u32 = DATA + 0x1000;
+
+    pub(crate) fn ctor_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        let _ = machine(c, seed, salt, 0);
+        c.g[A0][0] = sx(CTOR_SELF);
+    }
+
+    #[test]
+    fn cfe_state_background_ctor_2_matches() {
+        check(
+            ee::s04::f_001de558__generated,
+            cfe_state_background_ctor_2,
+            200,
+            &|c, seed| ctor_fixture(c, seed, 0x001d_e558),
+        );
+    }
+
+    #[test]
+    fn cfe_state_transition_ctor_2_matches() {
+        check(
+            ee::s04::f_001de5f0__generated,
+            cfe_state_transition_ctor_2,
+            200,
+            &|c, seed| ctor_fixture(c, seed, 0x001d_e5f0),
         );
     }
 }

@@ -5,6 +5,7 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -88,6 +89,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0022_0dd0,
         fe_state_lodge_rider_detail_dtor,
         "cFEStateLodgeRiderDetail_dtor",
+    ),
+    (0x0022_0d38, cfe_state_lodge_ctor_2, "cFEStateLodge_ctor_2"),
+    (
+        0x0022_0d98,
+        cfe_state_lodge_rider_detail_ctor_2,
+        "cFEStateLodgeRiderDetail_ctor_2",
     ),
 ];
 
@@ -2110,6 +2117,44 @@ pub fn fe_state_lodge_rider_detail_dtor(c: &mut Cpu) {
     guest(c, |c| oc1002_vtable_dtor(c, 0x0046_d0d0, 0x0022_0dec))
 }
 
+/// `UIState_ctor` (0x39e2a0), called through the function table.
+pub(crate) const UISTATE_CTOR_ADDR: u32 = 0x0039_e2a0;
+
+/// The shape of the four `cFEState*_ctor_2` constructors (14 cycles): a
+/// 0x20 frame holding `s0` and `ra`, `UIState_ctor(this, 0)` through the
+/// function table returning to `ret`, then the vtable word `vtable` stored at
+/// `this + 8`. `this` is read back from `s0` after the call.
+pub(crate) fn fe_state_ctor_2_body(c: &mut Cpu, ret: u32, vtable: u32) -> Flow {
+    c.cycles += 14;
+    let frame = Frame::open(c, 0x20);
+    c.g[A1][0] = 0;
+    frame.save(c, S0, 0x10);
+    frame.save_ra(c, 0);
+    c.g[S0][0] = c.g[A0][0];
+    call_ptr(c, UISTATE_CTOR_ADDR, ret)?;
+    c.g[V0][0] = c.g[S0][0];
+    c.g[V1][0] = sx(vtable);
+    frame.restore_ra(c, 0);
+    let this = c.g[S0][0] as u32;
+    let value = c.g[V1][0];
+    Addr(this.wrapping_add(8)).sw(c, value);
+    frame.restore(c, S0, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
+/// `cFEStateLodge_ctor_2(self)` (0x220d38): `UIState_ctor(self, 0)`, then the
+/// vtable `0x473aa8` at `+8`.
+pub fn cfe_state_lodge_ctor_2(c: &mut Cpu) {
+    guest(c, |c| fe_state_ctor_2_body(c, 0x0022_0d50, 0x0047_3aa8));
+}
+
+/// `cFEStateLodgeRiderDetail_ctor_2(self)` (0x220d98): `UIState_ctor(self, 0)`,
+/// then the vtable `0x4739d8` at `+8`.
+pub fn cfe_state_lodge_rider_detail_ctor_2(c: &mut Cpu) {
+    guest(c, |c| fe_state_ctor_2_body(c, 0x0022_0db0, 0x0047_39d8));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2786,6 +2831,34 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(OC1002_OBJ);
                 c.g[RA][0] = DT_RA as u64;
             },
+        );
+    }
+
+    /// A UI-state constructor: the base `UIState_ctor` is a real port, so the
+    /// plain machine is enough. `self` lives at `DATA + 0x2000`.
+    pub(crate) fn ui_state_ctor_2_case(generated: GuestFn, hand: GuestFn, entry: u32) {
+        check(generated, hand, 200, &|c, seed| {
+            machine(c, seed, entry as u64, 0);
+            c.g[A0][0] = (DATA + 0x2000) as u64;
+            c.pc = entry;
+        });
+    }
+
+    #[test]
+    fn cfe_state_lodge_ctor_2_matches() {
+        ui_state_ctor_2_case(
+            ee::s05::f_00220d38__generated,
+            cfe_state_lodge_ctor_2,
+            0x0022_0d38,
+        );
+    }
+
+    #[test]
+    fn cfe_state_lodge_rider_detail_ctor_2_matches() {
+        ui_state_ctor_2_case(
+            ee::s05::f_00220d98__generated,
+            cfe_state_lodge_rider_detail_ctor_2,
+            0x0022_0d98,
         );
     }
 }

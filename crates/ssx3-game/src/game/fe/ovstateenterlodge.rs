@@ -172,6 +172,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_screen_top_times_ctor,
         "OVScreenTopTimes_ctor",
     ),
+    (
+        0x001f_72e0,
+        ov_enter_lodge_widget_action,
+        "OVScreenEnterLodge_OnWidgetAction",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1946,8 +1951,8 @@ fn ov_screen_top_times_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x470000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xaa0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2006,7 +2011,7 @@ fn ov_screen_top_times_init_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001f7b40);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001f7b40)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -2946,6 +2951,129 @@ pub fn ov_screen_top_times_ctor(c: &mut Cpu) {
     });
 }
 
+/// The game-object cell is `gp - 0x848`; this returns the address `gp - off`.
+pub(crate) fn enter_lodge_gp_cell(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_sub(off)
+}
+
+/// `OVScreenEnterLodge_OnWidgetAction(this, widget, msg)` (0x1f72e0): the
+/// "enter lodge" prompt. A null widget only returns. Message 5 (next) on
+/// widget misc 0 quits to the load screen (`GameModule_QuitToLoadScreen`);
+/// misc 1 closes the top states and sets `this+0x54` (mRemovePDA). Message 6
+/// (prev) sets `this+0x54`, marks the game's overlay done and closes the top
+/// states. Other messages return.
+pub fn ov_enter_lodge_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        let no_widget = c.g[A1][0] == 0;
+        frame.save_ra(c, 0);
+        // `true` when the path leaves through the shared exit (one more cycle
+        // and the `ra` reload); the other paths reload `ra` themselves.
+        let shared_exit = if no_widget {
+            true
+        } else {
+            enter_lodge_dispatch(c, frame)?
+        };
+        if shared_exit {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The message dispatch of [`ov_enter_lodge_widget_action`] for a non-null
+/// widget. Returns whether the shared exit block runs.
+pub(crate) fn enter_lodge_dispatch(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
+    c.cycles += 3;
+    c.g[V0][0] = 5;
+    let is_next = c.g[A2][0] == c.g[V0][0];
+    c.g[V0][0] = 6;
+    if !is_next {
+        c.cycles += 2;
+        let is_prev = c.g[A2][0] == c.g[V0][0];
+        frame.restore_ra(c, 0);
+        if is_prev {
+            enter_lodge_prev(c, frame)?;
+            return Ok(true);
+        }
+        c.cycles += 2;
+        return Ok(false);
+    }
+    c.cycles += 8;
+    c.g[A0][0] = Addr(enter_lodge_gp_cell(c, 0x848)).lw(c);
+    c.g[A2][0] = 1;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x84)).lw(c);
+    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x200)).lw(c);
+    let a2 = c.g[A2][0];
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, a2);
+    c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x18)).lw(c);
+    if c.g[V0][0] == 0 {
+        c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x84)).lw(c);
+        enter_lodge_quit(c, frame)?;
+        return Ok(false);
+    }
+    c.cycles += 2;
+    let is_one = c.g[V0][0] == c.g[A2][0];
+    frame.restore_ra(c, 0);
+    if is_one {
+        enter_lodge_close_states(c, frame)?;
+    } else {
+        c.cycles += 2;
+    }
+    Ok(false)
+}
+
+/// The "quit" arm (message 5, misc 0): mark the state, then
+/// `GameModule_QuitToLoadScreen(state, 0)` (0x230488) with the start-state
+/// word set to 39.
+pub(crate) fn enter_lodge_quit(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 6;
+    c.g[V0][0] = 0x27;
+    let v0 = c.g[V0][0];
+    Addr(enter_lodge_gp_cell(c, 0x172c)).sw(c, v0);
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0023_0488, 0x001f_734c)?;
+    frame.restore_ra(c, 0);
+    Ok(())
+}
+
+/// The "close" arm (message 5, misc 1): `this+0x54 = misc`, then
+/// `UIStateMgr_CloseTopStates(&engine->stack, 1)` (0x39f190).
+pub(crate) fn enter_lodge_close_states(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 7;
+    c.g[A0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x10)).lw(c);
+    c.g[A1][0] = 1;
+    let misc = c.g[V0][0];
+    Addr((c.g[A3][0] as u32).wrapping_add(0x54)).sw(c, misc);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+    call_ptr(c, 0x0039_f190, 0x001f_7368)?;
+    frame.restore_ra(c, 0);
+    Ok(())
+}
+
+/// The message-6 arm: `this+0x54 = 1`, the game's overlay-done flag = 1, then
+/// `UIStateMgr_CloseTopStates(&engine->stack, 1)` (0x39f190). Returns to the
+/// shared exit.
+pub(crate) fn enter_lodge_prev(c: &mut Cpu, _frame: Frame) -> Flow {
+    c.cycles += 10;
+    c.g[A0][0] = Addr(enter_lodge_gp_cell(c, 0x848)).lw(c);
+    c.g[A2][0] = 1;
+    let one = c.g[A2][0];
+    Addr((c.g[A3][0] as u32).wrapping_add(0x54)).sw(c, one);
+    c.g[A1][0] = 1;
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x84)).lw(c);
+    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x200)).lw(c);
+    Addr((c.g[V1][0] as u32).wrapping_add(0x8)).sw(c, one);
+    c.g[A0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x10)).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+    call_ptr(c, 0x0039_f190, 0x001f_7398)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3743,6 +3871,98 @@ pub(crate) mod tests {
                 let mut r = oc1004_setup(c, seed, 0x0022_1160, 1);
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+
+    /// Gate word of the enter-lodge fakes (in the machine's RAM).
+    pub(crate) const ENTER_LODGE_CTRL: u32 = DATA + 0x0020_2300;
+
+    pub(crate) const ENTER_LODGE_MAGIC: u32 = 0x1541_0e1e;
+
+    pub(crate) const ENTER_LODGE_THIS: u32 = DATA + 0x1000;
+
+    pub(crate) const ENTER_LODGE_ENGINE: u32 = DATA + 0x2000;
+
+    pub(crate) const ENTER_LODGE_WIDGET: u32 = DATA + 0x3000;
+
+    pub(crate) const ENTER_LODGE_GAME: u32 = DATA + 0x4000;
+
+    pub(crate) const ENTER_LODGE_STATE: u32 = DATA + 0x5000;
+
+    pub(crate) const ENTER_LODGE_OVERLAY: u32 = DATA + 0x6000;
+
+    pub(crate) static ENTER_LODGE_PREV_QUIT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static ENTER_LODGE_PREV_CLOSE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `GameModule_QuitToLoadScreen` (0x230488): gated, else the body it replaced.
+    pub(crate) fn enter_lodge_fake_quit(c: &mut Cpu) {
+        if c.bus.read32(ENTER_LODGE_CTRL) != ENTER_LODGE_MAGIC {
+            return fakes::fall_back(c, &ENTER_LODGE_PREV_QUIT, ee::s06::f_00230488__generated);
+        }
+        fakes::fake_call(c, 0x0023_0488);
+    }
+
+    /// `UIStateMgr_CloseTopStates` (0x39f190): gated, else the body it replaced.
+    pub(crate) fn enter_lodge_fake_close(c: &mut Cpu) {
+        if c.bus.read32(ENTER_LODGE_CTRL) != ENTER_LODGE_MAGIC {
+            return fakes::fall_back(c, &ENTER_LODGE_PREV_CLOSE, ee::s13::f_0039f190__generated);
+        }
+        fakes::fake_call(c, 0x0039_f190);
+    }
+
+    pub(crate) fn enter_lodge_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s06::OVERRIDE_00230488),
+            enter_lodge_fake_quit,
+            &ENTER_LODGE_PREV_QUIT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_0039F190),
+            enter_lodge_fake_close,
+            &ENTER_LODGE_PREV_CLOSE,
+        );
+    }
+
+    #[test]
+    fn ov_enter_lodge_widget_action_matches() {
+        enter_lodge_install();
+        check(
+            ee::s04::f_001f72e0__generated,
+            ov_enter_lodge_widget_action,
+            300,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x001f_72e0, 0);
+                c.bus.write32(ENTER_LODGE_CTRL, ENTER_LODGE_MAGIC);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), ENTER_LODGE_GAME);
+                c.bus.write32(ENTER_LODGE_GAME + 0x84, ENTER_LODGE_STATE);
+                c.bus
+                    .write32(ENTER_LODGE_STATE + 0x200, ENTER_LODGE_OVERLAY);
+                c.bus.write32(ENTER_LODGE_THIS + 0x10, ENTER_LODGE_ENGINE);
+                c.g[A0][0] = sx(ENTER_LODGE_THIS);
+                // Null widget on every 11th seed; otherwise a widget whose misc
+                // data is 0, 1 or 2, and messages 5 (next), 6 (prev), 7.
+                c.g[A1][0] = if seed % 11 == 0 {
+                    0
+                } else {
+                    sx(ENTER_LODGE_WIDGET)
+                };
+                c.bus.write32(
+                    ENTER_LODGE_WIDGET + 0x18,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 1,
+                        _ => 2,
+                    },
+                );
+                c.g[A2][0] = match seed % 5 {
+                    0 | 2 => 5,
+                    1 => 6,
+                    _ => 7,
+                };
             },
         );
     }

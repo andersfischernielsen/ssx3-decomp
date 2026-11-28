@@ -355,6 +355,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_state_event_switch_load_update,
         "GameStateEventSwitchLoad_Update",
     ),
+    (
+        0x0023_68a0,
+        game_state_event_switch_load_enter_2,
+        "GameStateEventSwitchLoad_Enter",
+    ),
+    (
+        0x0023_6af0,
+        game_state_event_switch_load_exit_00236af0,
+        "GameStateEventSwitchLoad_Exit",
+    ),
+    (
+        0x0023_7030,
+        game_state_replay_playback_update_00237030,
+        "GameStateReplayPlayback_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7199,6 +7214,94 @@ pub fn game_state_event_switch_load_update(c: &mut Cpu) {
     });
 }
 
+/// `GameStateEventSwitchLoad_Exit` (0x0023_6af0): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_event_switch_load_exit_00236af0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameStateReplayPlayback_Update` (0x0023_7030): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_replay_playback_update_00237030(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `GameStateEventSwitchLoad_Enter(self)` (0x2368a0): `BELibrary_SetPhase(0)`,
+/// `Replay_Reset` of the replay at `gp-0x488`'s `+0x28`, then the BE interface
+/// work: unless the flag byte at `0x535bc8 + 0x49` is set, one
+/// `BENewPlayerInt_SetFirstTimeWCFlag(iface, i, 0)` for each of the `0x535bc8 +
+/// 0x30` entries. `self + 0x10` is cleared on every exit that does not unwind.
+pub fn game_state_event_switch_load_enter_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S3, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0;
+        call_ptr(c, 0x0014_de68, 0x0023_68c4)?;
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x488)).lw(c);
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x28)).lw(c);
+        call_ptr(c, 0x0026_f228, 0x0023_68d0)?;
+        call_ptr(c, 0x0014_dc80, 0x0023_68d8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0023_68e4)?;
+        c.g[V1][0] = 0x0053_0000;
+        c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5bc8));
+        c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x49)).lb(c);
+        if c.g[V0][0] != 0 {
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x10), 0u64);
+        } else {
+            c.cycles += 9;
+            c.g[S0][0] = 0;
+            call_ptr(c, 0x0014_dc80, 0x0023_6900)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0x1;
+            call_ptr(c, 0x0014_dd58, 0x0023_690c)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x30)).lw(c);
+            if (c.g[V0][0] as i64) <= 0 {
+                c.sw((c.g[S3][0] as u32).wrapping_add(0x10), 0u64);
+            } else {
+                c.cycles += 1;
+                c.g[A1][0] = c.g[S0][0];
+                loop {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = 0;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    call_ptr(c, 0x0014_5cb0, 0x0023_6930)?;
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x30)).lw(c);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[A1][0] = c.g[S0][0];
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0023_6920);
+                        }
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.sw((c.g[S3][0] as u32).wrapping_add(0x10), 0u64);
+                    break;
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9709,6 +9812,60 @@ pub(crate) mod tests {
                 c.bus.write32(tm + 0x44, (seed / 11) % 2);
                 c.g[A0][0] = sx(this);
                 c.pc = 0x0023_6960;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::machine_rt;
+
+    /// `GameStateEventSwitchLoad_Exit` (0x0023_6af0) against the generated body.
+    #[test]
+    fn game_state_event_switch_load_exit_00236af0_matches() {
+        check(
+            ee::s06::f_00236af0__generated,
+            game_state_event_switch_load_exit_00236af0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x236af0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameStateReplayPlayback_Update` (0x0023_7030) against the generated body.
+    #[test]
+    fn game_state_replay_playback_update_00237030_matches() {
+        check(
+            ee::s06::f_00237030__generated,
+            game_state_replay_playback_update_00237030,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x237030, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `GameStateEventSwitchLoad`'s globals (`D_00535BC8`).
+    pub(crate) const OC1543_SWITCH_GLOBALS: u32 = 0x0053_5bc8;
+
+    /// The generated loop runs `seed % 4` times (0 skips it), and the
+    /// `lb` flag at `+0x49` takes the early exit on every third seed.
+    #[test]
+    fn game_state_event_switch_load_enter_matches() {
+        check(
+            ee::s06::f_002368a0__generated,
+            game_state_event_switch_load_enter_2,
+            200,
+            &|c, seed| {
+                machine_rt(c, seed, 0x2368, 0);
+                c.bus.write32(GAME_GP.wrapping_sub(0x488), DATA + 0x3000);
+                c.bus.write32(DATA + 0x3028, DATA + 0x3100);
+                c.bus
+                    .write8(OC1543_SWITCH_GLOBALS + 0x49, (seed % 3 == 0) as u8);
+                c.bus.write32(OC1543_SWITCH_GLOBALS + 0x30, seed % 4);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                c.pc = 0x0023_68a0;
             },
         );
     }

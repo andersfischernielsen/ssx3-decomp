@@ -11,7 +11,6 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
-#[cfg(test)]
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -26,6 +25,46 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0011_3e18,
         race_state_end_race_enter,
         "RaceStateEndRace_Enter",
+    ),
+    (
+        0x0011_3d18,
+        race_state_pre_race_enter_00113d18,
+        "RaceStatePreRace_Enter",
+    ),
+    (
+        0x0011_3d28,
+        race_state_pre_race_update_00113d28,
+        "RaceStatePreRace_Update",
+    ),
+    (
+        0x0011_3d30,
+        race_state_pre_race_exit_00113d30,
+        "RaceStatePreRace_Exit",
+    ),
+    (
+        0x0011_3e40,
+        race_state_end_race_update_00113e40,
+        "RaceStateEndRace_Update",
+    ),
+    (
+        0x0011_3e48,
+        race_state_end_race_exit_00113e48,
+        "RaceStateEndRace_Exit",
+    ),
+    (
+        0x0011_3e50,
+        race_state_shutdown_enter_00113e50,
+        "RaceStateShutdown_Enter",
+    ),
+    (
+        0x0011_3e70,
+        race_state_shutdown_update_00113e70,
+        "RaceStateShutdown_Update",
+    ),
+    (
+        0x0011_3e78,
+        race_state_shutdown_exit_00113e78,
+        "RaceStateShutdown_Exit",
     ),
 ];
 
@@ -329,6 +368,70 @@ pub fn race_state_end_race_enter(c: &mut Cpu) {
     })
 }
 
+/// `RaceStatePreRace_Enter` (0x0011_3d18): straight-line leaf: 2 store(s). Mechanical port of the generated body.
+pub fn race_state_pre_race_enter_00113d18(c: &mut Cpu) {
+    c.cycles += 3;
+    c.sw((c.g[A1][0] as u32).wrapping_add(0xc), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x4), 0u64);
+    ret(c);
+}
+
+/// `RaceStatePreRace_Update` (0x0011_3d28): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_pre_race_update_00113d28(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStatePreRace_Exit` (0x0011_3d30): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_pre_race_exit_00113d30(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateEndRace_Update` (0x0011_3e40): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_end_race_update_00113e40(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateEndRace_Exit` (0x0011_3e48): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_end_race_exit_00113e48(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateShutdown_Update` (0x0011_3e70): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_shutdown_update_00113e70(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `RaceStateShutdown_Exit` (0x0011_3e78): straight-line leaf. Mechanical port of the generated body.
+pub fn race_state_shutdown_exit_00113e78(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void RaceStateShutdown_Enter(RaceState* self, AI* ai)` (0x113e50): calls
+/// `AI_DestroyAllRiders(ai)` (the second argument moves into `a0`), then
+/// returns. A frame of 0x10 holding `ra`.
+pub fn race_state_shutdown_enter_00113e50(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        Callee {
+            addr: 0x0012_b090,
+            f: ee::s00::AI_DestroyAllRiders,
+        }
+        .call(c, 0x0011_3e60)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -458,6 +561,146 @@ pub(crate) mod tests {
                 c.bus.write32(obj + 0x38, 1 + r.next_u32() % 100);
                 c.bus.write32(obj + 0x3c, 1 + r.next_u32() % 100);
                 fill(c, &mut r, obj + 0x40, 2);
+            },
+        );
+    }
+
+    use crate::difftest::fakes;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::leaf_fill;
+    pub(crate) use crate::game::be::belibrary::tests::OC1535_MAGIC;
+    use std::ptr::addr_of_mut;
+    use std::sync::atomic::AtomicUsize;
+
+    /// `RaceStatePreRace_Enter` (0x0011_3d18) against the generated body.
+    #[test]
+    fn race_state_pre_race_enter_00113d18_matches() {
+        check(
+            ee::s00::f_00113d18__generated,
+            race_state_pre_race_enter_00113d18,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x113d18, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                leaf_fill(c, &mut r, 0x0080_5000, 0x2000, false, 0x0080_5000);
+                c.g[A1][0] = sx(0x0080_5000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStatePreRace_Update` (0x0011_3d28) against the generated body.
+    #[test]
+    fn race_state_pre_race_update_00113d28_matches() {
+        check(
+            ee::s00::f_00113d28__generated,
+            race_state_pre_race_update_00113d28,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113d28, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStatePreRace_Exit` (0x0011_3d30) against the generated body.
+    #[test]
+    fn race_state_pre_race_exit_00113d30_matches() {
+        check(
+            ee::s00::f_00113d30__generated,
+            race_state_pre_race_exit_00113d30,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113d30, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateEndRace_Update` (0x0011_3e40) against the generated body.
+    #[test]
+    fn race_state_end_race_update_00113e40_matches() {
+        check(
+            ee::s00::f_00113e40__generated,
+            race_state_end_race_update_00113e40,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113e40, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateEndRace_Exit` (0x0011_3e48) against the generated body.
+    #[test]
+    fn race_state_end_race_exit_00113e48_matches() {
+        check(
+            ee::s00::f_00113e48__generated,
+            race_state_end_race_exit_00113e48,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113e48, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateShutdown_Update` (0x0011_3e70) against the generated body.
+    #[test]
+    fn race_state_shutdown_update_00113e70_matches() {
+        check(
+            ee::s00::f_00113e70__generated,
+            race_state_shutdown_update_00113e70,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113e70, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RaceStateShutdown_Exit` (0x0011_3e78) against the generated body.
+    #[test]
+    fn race_state_shutdown_exit_00113e78_matches() {
+        check(
+            ee::s00::f_00113e78__generated,
+            race_state_shutdown_exit_00113e78,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113e78, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    pub(crate) const OC1535_AI_GATE: u32 = DATA + 0x20_1000;
+
+    pub(crate) static OC1535_AI_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// `AI_DestroyAllRiders` (0x12b090), gated: logs the call when the gate is on.
+    pub(crate) fn oc1535_fake_destroy_riders(c: &mut Cpu) {
+        if c.bus.read32(OC1535_AI_GATE) != OC1535_MAGIC {
+            return fakes::fall_back(c, &OC1535_AI_PREV, ee::s00::f_0012b090__generated);
+        }
+        fakes::fake_call(c, 0x0012_b090);
+    }
+
+    #[test]
+    fn race_state_shutdown_enter_00113e50_matches() {
+        check(
+            ee::s00::f_00113e50__generated,
+            race_state_shutdown_enter_00113e50,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x113e50, 1);
+                fakes::hook(
+                    addr_of_mut!(ee::s00::OVERRIDE_0012B090),
+                    oc1535_fake_destroy_riders,
+                    &OC1535_AI_PREV,
+                );
+                c.bus.write32(OC1535_AI_GATE, OC1535_MAGIC);
+                c.g[A1][0] = sx(DATA + 0x3000);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

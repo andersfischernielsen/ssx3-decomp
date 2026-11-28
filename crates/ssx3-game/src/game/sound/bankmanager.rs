@@ -10,6 +10,7 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::animation::rideranimbase::sw as sw_3;
@@ -401,6 +402,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SSXAudioSystem_HandleMusicEvent",
     ),
     (0x0028_fc38, ssxaudio_stop_music, "SSXAudioSystem_StopMusic"),
+    (
+        0x0028_f3c8,
+        ssx_audio_on_music_set_event_state,
+        "SSXAudioSystem_OnMusicSetEventState",
+    ),
+    (
+        0x0028_fae0,
+        ssx_audio_restart_race_music,
+        "SSXAudioSystem_RestartRaceMusic",
+    ),
+    (
+        0x002b_9f08,
+        snd_bank_man_is_bank_in_use,
+        "SndBankMan_IsBankInUse",
+    ),
+    (
+        0x002b_9f88,
+        snd_bank_man_get_bank_handle,
+        "SndBankMan_GetBankHandle",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8862,6 +8883,294 @@ pub fn ssxaudio_stop_music(c: &mut Cpu) {
     })
 }
 
+/// `lw off(gp)`: a word of the game's global block.
+pub(crate) fn oc1547_gp_word(c: &mut Cpu, off: u32) -> u64 {
+    let a = (c.g[GP][0] as u32).wrapping_add(off);
+    Addr(a).lw(c)
+}
+
+/// `int SSXAudioSystem_OnMusicSetEventState(cSSXAudio* self, int code)`
+/// (0x0028f3c8). Forwards a music event to the monitor at `self + 0x118` and
+/// returns its changed flag. When the monitor has no song tagged, the song-end
+/// codes (10, 11, 18) also silence the monitor's voice (a virtual call through
+/// the descriptor at `self + 0x5558`) while the global flag at gp+0x530 is set,
+/// and clear `self->mSongPlaying` (+0x530).
+pub fn ssx_audio_on_music_set_event_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        on_music_set_event_state_body(c)?;
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) fn on_music_set_event_state_body(c: &mut Cpu) -> Flow {
+    call_ptr(c, 0x002b_3bc0, 0x0028_f3f4)?;
+    c.g[S3][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, 0x002b_49e0, 0x0028_f400)?;
+    c.g[V1][0] = u64::MAX;
+    let song_tagged = c.g[V0][0] != c.g[V1][0];
+    c.g[V0][0] = c.g[S3][0];
+    if song_tagged {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xa));
+    c.g[V0][0] = (c.g[V0][0] < 0x2) as u64;
+    let song_end_code = c.g[V0][0] != 0;
+    c.g[V1][0] = oc1547_gp_word(c, 0x530);
+    if !song_end_code {
+        c.cycles += 3;
+        c.g[V0][0] = 0x12;
+        if c.g[S0][0] != c.g[V0][0] {
+            c.g[V0][0] = c.g[S3][0];
+            return Ok(());
+        }
+        c.g[V0][0] = c.g[S3][0];
+        c.cycles += 1;
+        c.g[V1][0] = oc1547_gp_word(c, 0x530);
+    }
+    // The stop: only when the global flag (V1) is set.
+    c.cycles += 3;
+    c.g[V0][0] = 0x1;
+    if c.g[V1][0] != c.g[V0][0] {
+        let s2 = c.g[S2][0] as u32;
+        Addr(s2.wrapping_add(0x530)).sw(c, 0);
+    } else {
+        c.cycles += 7;
+        c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x5558)).lw(c);
+        c.g[A1][0] = 0x8;
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x18)).lh(c);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x1c)).lw(c);
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0028_f450)?;
+        let s2 = c.g[S2][0] as u32;
+        Addr(s2.wrapping_add(0x530)).sw(c, 0);
+    }
+    c.cycles += 1;
+    c.g[V0][0] = c.g[S3][0];
+    Ok(())
+}
+
+/// `void SSXAudioSystem_RestartRaceMusic(cSSXAudio* self)` (0x0028fae0).
+/// Drops the race music's monitor entries, then, when no song is playing or
+/// the song is a Peak transition, stops the music, selects and plays a new
+/// song and starts the race music bank.
+pub fn ssx_audio_restart_race_music(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A0][0];
+        restart_race_music_body(c, frame)?;
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) fn restart_race_music_body(c: &mut Cpu, frame: Frame) -> Flow {
+    call_ptr(c, 0x0028_d960, 0x0028_fb04)?;
+    let music_enabled = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x004a_0000;
+    let early_exit = if music_enabled {
+        race_music_branch(c, frame)?
+    } else {
+        false
+    };
+    if !early_exit {
+        c.cycles += 1;
+        frame.restore(c, S0, 0x50);
+    }
+    Ok(())
+}
+
+/// The enabled path. Returns true when it already restored `s0` and leaves
+/// through the epilogue early (the callers skip their own tail).
+pub(crate) fn race_music_branch(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
+    c.cycles += 30;
+    c.g[V1][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x118)).lw(c);
+    c.ldl(5, (c.g[V0][0] as u32).wrapping_add(0x364f));
+    c.ldr(5, (c.g[V0][0] as u32).wrapping_add(0x3648));
+    c.g[S0][0] = 0x004a_0000;
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x118));
+    c.g[S4][0] = c.g[S0][0];
+    c.g[S3][0] = c.g[S1][0];
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+    call_ptr(c, 0x002a_dde0, 0x0028_fb34)?;
+    c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x118)).lw(c);
+    c.ldl(5, (c.g[S0][0] as u32).wrapping_add(0x3657));
+    c.ldr(5, (c.g[S0][0] as u32).wrapping_add(0x3650));
+    c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+    call_ptr(c, 0x002a_dde0, 0x0028_fb4c)?;
+    c.g[V1][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x118)).lw(c);
+    c.g[V0][0] = 0x004a_0000;
+    c.ldl(5, (c.g[V0][0] as u32).wrapping_add(0x365f));
+    c.ldr(5, (c.g[V0][0] as u32).wrapping_add(0x3658));
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d8));
+    call_ptr(c, 0x002a_dde0, 0x0028_fb68)?;
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, 0x002b_49e0, 0x0028_fb70)?;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+    c.g[V0][0] = (c.g[V0][0] < 0x3) as u64;
+    let in_transition = c.g[V0][0] != 0;
+    c.g[A1][0] = 0x12;
+    if !in_transition {
+        c.cycles += 3;
+        c.g[V0][0] = 0x191;
+        if c.g[V1][0] != c.g[V0][0] {
+            c.cycles += 3;
+            c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x530)).lw(c);
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x50);
+                return Ok(true);
+            }
+            c.cycles += 1;
+            c.g[A1][0] = 0x12;
+        }
+    }
+    // After the monitor checks: stop, select, play, and start the race bank.
+    c.cycles += 30;
+    c.g[A0][0] = c.g[S2][0];
+    call_ptr(c, 0x0028_def0, 0x0028_fba8)?;
+    c.g[S1][0] = sx((c.g[S4][0] as u32).wrapping_add(0x3650));
+    c.g[V0][0] = 0x1;
+    c.g[A0][0] = c.g[S3][0];
+    let one = c.g[V0][0];
+    Addr((c.g[S2][0] as u32).wrapping_add(0x5828)).sw(c, one);
+    call_ptr(c, 0x002b_3ac0, 0x0028_fbbc)?;
+    c.g[A0][0] = c.g[S2][0];
+    call_ptr(c, 0x0028_d488, 0x0028_fbc4)?;
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0;
+    c.g[A3][0] = u64::MAX;
+    c.g[T0][0] = 0;
+    c.g[A0][0] = c.g[S2][0];
+    call_ptr(c, 0x0028_cf98, 0x0028_fbdc)?;
+    c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x118)).lw(c);
+    c.g[A0][0] = c.g[S3][0];
+    c.g[S0][0] = Addr(c.g[V0][0] as u32).lw(c);
+    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1d8));
+    call_ptr(c, 0x002b_4908, 0x0028_fbf0)?;
+    c.ldl(6, (c.g[S1][0] as u32).wrapping_add(0x7));
+    c.ldr(6, c.g[S1][0] as u32);
+    c.g[A0][0] = c.g[S0][0];
+    c.g[T1][0] = c.g[V0][0];
+    c.g[A1][0] = 0xbb8;
+    c.g[A3][0] = 0;
+    c.g[T0][0] = 0x4;
+    c.g[T2][0] = 0;
+    c.g[T3][0] = 0;
+    call_ptr(c, 0x002a_dca0, 0x0028_fc18)?;
+    Ok(false)
+}
+
+/// `bool SndBankMan_IsBankInUse(SndBankMan* self, int idx)` (0x2b9f08): true
+/// when the bank entry `idx` (0x60 bytes, table at `self+0xacc`) has state 1
+/// (the "in use" state is the one that asks the bank manager, through
+/// `SND_BankIsInUse`, for its handle). Brackets the work with 0x3b58a0 and
+/// 0x3b58d8.
+pub fn snd_bank_man_is_bank_in_use(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 16, 0x30);
+        frame.save(c, 17, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, 18, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0;
+        call_ptr(c, 0x003b_58a0, 0x002b_9f2c)?;
+        c.g[V1][0] = 0x60;
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(0xacc));
+        c.mult(0, 3, 17, 3);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        c.g[V0][0] = c.lw(r32(c, V1));
+        c.g[V0][0] ^= 1;
+        let ok = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S0][0];
+        if !ok {
+            c.cycles += 6;
+            c.g[A1][0] = c.g[S1][0];
+            Callee {
+                addr: 0x002b_9f88,
+                f: ee::s08::f_002b9f88,
+            }
+            .call(c, 0x002b_9f54)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x003b_65d0, 0x002b_9f5c)?;
+            c.g[V0][0] ^= 1;
+            c.g[S2][0] = (c.g[V0][0] < 0x1) as u64;
+        }
+        c.cycles += 9;
+        call_ptr(c, 0x003b_58d8, 0x002b_9f6c)?;
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int SndBankMan_GetBankHandle(SndBankMan* self, int idx)` (0x2b9f88): the
+/// handle stored in the bank entry `idx` (word +4) when its state is 1, else
+/// -1. Leaves `a1` at the entry address and `v1` at the table base, as the
+/// generated body does.
+pub fn snd_bank_man_get_bank_handle(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = 0x60;
+    c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0xacc));
+    c.mult(0, 5, 5, 2);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+    c.g[V0][0] = c.lw(r32(c, A1));
+    c.g[V0][0] ^= 1;
+    let not_ready = c.g[V0][0] != 0;
+    c.g[V0][0] = u64::MAX;
+    if not_ready {
+        c.cycles += 2;
+        ret(c);
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x4));
+        ret(c);
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13344,6 +13653,125 @@ pub(crate) mod tests {
                 let mut r = oc1032_machine(c, seed, 0x0028_fc38, 1);
                 c.g[A0][0] = sx(OC1032_AUDIO);
                 c.bus.write32(oc1032_result(7), r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes::machine_rt;
+    use crate::game::sound::icepick::worldtriggermanager::tests::oc1548_install_fakes;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::OC1548_CTRL;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::tests::OC1548_MAGIC;
+
+    #[test]
+    fn ssx_audio_on_music_set_event_state_matches() {
+        check(
+            ee::s07::f_0028f3c8__generated,
+            ssx_audio_on_music_set_event_state,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0028_f3c8, 0);
+                let this = DATA + 0x1000;
+                let desc = DATA + 0x1200;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx([10u32, 11, 18, 12, 0x12, 3][(seed % 6) as usize]);
+                c.bus.write32(GAME_GP + 0x530, (seed % 2 == 0) as u32);
+                c.bus.write32(this + 0x5558, desc);
+                c.bus.write16(desc + 0x18, (r.next_u32() % 0x80) as u16);
+                c.bus.write32(desc + 0x1c, 0x0014_06c0);
+                c.bus.write32(this + 0x530, r.next_u32());
+            },
+        );
+    }
+
+    #[test]
+    fn ssx_audio_restart_race_music_matches() {
+        check(
+            ee::s07::f_0028fae0__generated,
+            ssx_audio_restart_race_music,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0028_fae0, 0);
+                let this = DATA + 0x1000;
+                let ptr = DATA + 0x1400;
+                let obj = DATA + 0x1800;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x118, ptr);
+                c.bus.write32(ptr, obj);
+                c.bus.write32(this + 0x530, (seed % 3) as u32);
+                c.bus.write32(this + 0x118 + 0x7, r.next_u32());
+                // The music player's song picker (`MusicPlayer_SelectNextSong`)
+                // scans a bit mask of `count` songs for a set bit: without a
+                // set bit below `count` it never ends. Always give it one.
+                let player = this + 0x118;
+                let count = 1 + seed % 8;
+                c.bus.write32(player + 0x3e4, count);
+                c.bus.write32(player + 0x3f0, seed % count);
+                c.bus
+                    .write64(player + 0x3f8, 1u64 << (r.next_u32() % count));
+                c.bus.write32(GAME_GP + 0x530, (seed % 2) as u32);
+                c.bus.write32(this + 0x5558, DATA + 0x1a00);
+            },
+        );
+    }
+
+    /// `snd_bank_man_is_bank_in_use` against the generated body: bank entries
+    /// in state 1 (the call path) and in other states, both table indices of
+    /// the fixture, and the three gated bracket and check callees. The bank
+    /// handle lookup is the real `SndBankMan_GetBankHandle` body.
+    #[test]
+    fn snd_bank_man_is_bank_in_use_matches() {
+        oc1548_install_fakes();
+        check(
+            ee::s08::f_002b9f08__generated,
+            snd_bank_man_is_bank_in_use,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_9f08, 0);
+                c.bus.write32(OC1548_CTRL, OC1548_MAGIC);
+                let this = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.bus.write32(this + 0xacc, table);
+                for i in 0..4u32 {
+                    let state = match (seed + i) % 3 {
+                        0 => 1,
+                        1 => 0,
+                        _ => 2,
+                    };
+                    c.bus.write32(table + i * 0x60, state);
+                    c.bus.write32(table + i * 0x60 + 4, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `snd_bank_man_get_bank_handle` against the generated body: state 1
+    /// (the -1 result) and other states (the handle), every index of a
+    /// six-entry table.
+    #[test]
+    fn snd_bank_man_get_bank_handle_matches() {
+        check(
+            ee::s08::f_002b9f88__generated,
+            snd_bank_man_get_bank_handle,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x002b_9f88 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let this = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 6) as u64;
+                c.bus.write32(this + 0xacc, table);
+                for i in 0..6u32 {
+                    let state = match (seed + i) % 3 {
+                        0 => 1,
+                        1 => 0,
+                        _ => 2,
+                    };
+                    c.bus.write32(table + i * 0x60, state);
+                    c.bus.write32(table + i * 0x60 + 4, r.next_u32());
+                }
             },
         );
     }

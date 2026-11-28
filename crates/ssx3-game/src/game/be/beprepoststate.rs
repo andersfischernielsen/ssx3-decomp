@@ -735,7 +735,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[V0][0] = (c.g[A1][0] < 0xeu64) as u64;
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x0015649c;
                         continue;
@@ -748,8 +748,8 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5740));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -764,7 +764,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001563c4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -781,7 +781,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001563d4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -798,7 +798,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001563e4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -815,7 +815,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001563f4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -832,7 +832,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156404)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -849,7 +849,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156414)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -866,7 +866,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156424)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -883,7 +883,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156434)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -900,7 +900,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156444)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -917,7 +917,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156454)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -934,7 +934,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156464)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -951,7 +951,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156474)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -968,7 +968,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156484)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -985,7 +985,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00156494)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001564a4;
                         continue;
@@ -996,7 +996,7 @@ fn be_post_race_get_interface_resume(c: &mut Cpu) {
                 0x0015649c => {
                     c.cycles += 2;
                     c.g[V0][0] = 0u64;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001564a4;
                     continue;
                 }

@@ -132,6 +132,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         animcontroller_set_sequences_user_data,
         "AnimController_SetSequencesUserData",
     ),
+    (
+        0x0031_1860,
+        anim_table_get_anim_name_stub,
+        "AnimTable_GetAnimNameStub",
+    ),
+    (
+        0x0031_29e0,
+        anim_controller_play_anim_direct_2,
+        "AnimController_PlayAnimDirect",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3191,6 +3201,86 @@ pub fn animcontroller_set_sequences_user_data(c: &mut Cpu) {
     });
 }
 
+/// `AnimController_PlayAnimDirect(this, anim, id, t)` (0x3129e0): looks up the
+/// anim entry for `anim` (a second lookup when `t` is negative, reading the
+/// blend time from it), then starts the anim through `AnimController_PlayAnimImpl`
+/// and stores its result at `this + 4 * index`.
+pub fn anim_controller_play_anim_direct_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x60);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S3, 0x20);
+        c.mov_s(20, 12);
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0031_15c8,
+            f: ee::s10::f_003115c8,
+        }
+        .call(c, 0x0031_2a18)?;
+        c.mtc1(0, 0);
+        c.c_lt_s(20, 0);
+        let negative = c.fcc();
+        c.g[S3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+        if negative {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0031_15c8,
+                f: ee::s10::f_003115c8,
+            }
+            .call(c, 0x0031_2a34)?;
+            c.lwc1(20, (c.g[V0][0] as u32).wrapping_add(0x10));
+        }
+        c.cycles += 25;
+        c.g[V0][0] = 0x490000;
+        c.g[S0][0] = sx((c.g[S3][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x27f8));
+        c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
+        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A1][0] = sx((c.g[S3][0] as u32) << 3);
+        c.g[T1][0] = c.lw(c.g[V0][0] as u32);
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = c.g[S4][0];
+        c.mov_s(12, 20);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        c.g[T0][0] = 0x1;
+        Callee {
+            addr: 0x0031_1f00,
+            f: ee::s10::f_00311f00,
+        }
+        .call(c, 0x0031_2a70)?;
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        frame.restore(c, S1, 0x40);
+        c.sw(c.g[S0][0] as u32, c.g[V0][0]);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `AnimTable_GetAnimNameStub` (0x0031_1860): straight-line leaf. Mechanical port of the generated body.
+pub fn anim_table_get_anim_name_stub(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x490000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5b40));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4112,6 +4202,96 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    use std::ptr::addr_of_mut;
+
+    /// Gate and mailbox words of the fakes below (one gate word per test,
+    /// each in the machine's own RAM, beyond the fakes' call log).
+    pub(crate) const OC1495_MAGIC: u32 = 0x1495_0001;
+
+    pub(crate) const OC1495_ANIM_CTRL: u32 = DATA + 0x20_2000;
+
+    pub(crate) static OC1495_PREV_GET_ENTRY: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1495_PREV_PLAY_IMPL: AtomicUsize = AtomicUsize::new(0);
+
+    /// `AnimTable_GetEntry` returns the entry in the mailbox word at +4;
+    /// `AnimController_PlayAnimImpl` returns the word at +8.
+    pub(crate) fn oc1495_fake_get_entry(c: &mut Cpu) {
+        if c.bus.read32(OC1495_ANIM_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_GET_ENTRY, ee::s10::f_003115c8__generated);
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.bus.read32(OC1495_ANIM_CTRL + 4) as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn oc1495_fake_play_impl(c: &mut Cpu) {
+        if c.bus.read32(OC1495_ANIM_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_PLAY_IMPL, ee::s10::f_00311f00__generated);
+        }
+        c.cycles += 6;
+        c.g[V0][0] = c.bus.read32(OC1495_ANIM_CTRL + 8) as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn oc1495_install_anim() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_003115C8),
+            oc1495_fake_get_entry,
+            &OC1495_PREV_GET_ENTRY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00311F00),
+            oc1495_fake_play_impl,
+            &OC1495_PREV_PLAY_IMPL,
+        );
+    }
+
+    /// `AnimController_PlayAnimDirect`: a non-negative and a negative `t`
+    /// (the second lookup), with the anim entries of every index 0..3.
+    #[test]
+    fn anim_controller_play_anim_direct_matches() {
+        check(
+            ee::s10::f_003129e0__generated,
+            anim_controller_play_anim_direct_2,
+            300,
+            &|c, seed| {
+                oc1495_install_anim();
+                let mut r = machine(c, seed, 0x0031_29e0, 0);
+                let this = DATA + 0x100;
+                let entry = DATA + 0x400;
+                c.bus.write32(OC1495_ANIM_CTRL, OC1495_MAGIC);
+                c.bus.write32(OC1495_ANIM_CTRL + 4, entry);
+                c.bus.write32(OC1495_ANIM_CTRL + 8, r.next_u32());
+                c.bus.write32(entry + 0xc, seed % 4);
+                c.bus.write32(entry + 0x10, r.f32(4.0));
+                c.bus.write32(this + 0x50, DATA + 0x800);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x900) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.f[12] = if seed % 3 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(4.0)
+                };
+            },
+        );
+    }
+
+    /// `AnimTable_GetAnimNameStub` (0x0031_1860) against the generated body.
+    #[test]
+    fn anim_table_get_anim_name_stub_matches() {
+        check(
+            ee::s10::f_00311860__generated,
+            anim_table_get_anim_name_stub,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x311860, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

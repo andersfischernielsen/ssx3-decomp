@@ -3673,7 +3673,7 @@ fn rider_sphere_tree_collide_sphere_tree_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x98));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
                     let t = c.g[V0][0] == 0u64;
@@ -3763,7 +3763,7 @@ fn rider_sphere_tree_collide_sphere_tree_resume(c: &mut Cpu) {
                 }
                 0x00327fc0 => {
                     c.cycles += 11;
-                    c.lwc1(12, (c.g[S1][0] as u32));
+                    c.lwc1(12, c.g[S1][0] as u32);
                     c.g[A0][0] = c.g[S4][0];
                     c.g[A1][0] = c.g[S0][0];
                     c.g[A2][0] = c.g[S7][0];
@@ -3822,7 +3822,7 @@ fn rider_sphere_tree_collide_sphere_tree_resume(c: &mut Cpu) {
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
                     c.pc = t;

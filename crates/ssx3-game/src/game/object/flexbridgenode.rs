@@ -3424,7 +3424,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.g[A2][0] = 0u64;
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 10);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.swc1(9, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.g[A1][0] = 0x1;
                     c.swc1(10, (c.g[SP][0] as u32).wrapping_add(0x4c));
@@ -3432,7 +3432,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(9, (c.g[SP][0] as u32).wrapping_add(0x48));
                     c.swc1(9, (c.g[SP][0] as u32).wrapping_add(0x44));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3443,9 +3443,9 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
-                    c.sq(2, (c.g[SP][0] as u32));
-                    c.lqc2(3, (c.g[S1][0] as u32));
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.lqc2(3, c.g[S1][0] as u32);
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
@@ -3476,7 +3476,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x44));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3489,14 +3489,14 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.lqc2(3, (c.g[S1][0] as u32));
-                    c.lqc2(4, (c.g[SP][0] as u32));
+                    c.lqc2(3, c.g[S1][0] as u32);
+                    c.lqc2(4, c.g[SP][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
@@ -3539,14 +3539,14 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
-                    c.lqc2(3, (c.g[SP][0] as u32));
+                    c.lqc2(3, c.g[SP][0] as u32);
                     c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.lqc2(3, (c.g[S1][0] as u32));
+                    c.lqc2(3, c.g[S1][0] as u32);
                     c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x40));
@@ -3584,7 +3584,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = ((c.g[A1][0] as i64) < 5i64) as u64;
                     let t = c.g[V1][0] != 0u64;
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x003483d8) {
                             return Ok(());
@@ -3601,7 +3601,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x2b10));
                     c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1828));
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[V1][0] as u32));
+                    c.ldr(7, c.g[V1][0] as u32);
                     c.ldl(8, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
@@ -3614,7 +3614,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x490000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1810));
                     c.ldl(6, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.ldr(6, (c.g[V1][0] as u32));
+                    c.ldr(6, c.g[V1][0] as u32);
                     c.ldl(7, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
@@ -3626,11 +3626,11 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.mov_s(13, 3);
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc0));
                     c.g[A2][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0xc4));
-                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x2b0c));
-                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.lwc1(10, (c.g[V1][0] as u32));
-                    c.lwc1(9, (c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.lwc1(10, c.g[V1][0] as u32);
+                    c.lwc1(9, c.g[V0][0] as u32);
                     c.mov_s(12, 1);
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x8c));
                     c.mul_s(5, 10, 10);
@@ -3649,7 +3649,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.add_s(7, 9, 3);
                     c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3661,12 +3661,12 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.add_s(4, 9, 0);
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.mul_s(1, 7, 7);
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     c.mul_s(3, 4, 4);
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.mul_s(0, 7, 1);
-                    c.lqc2(3, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[S1][0] as u32));
+                    c.lqc2(3, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[S1][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.mov_s(20, 4);
@@ -3678,7 +3678,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(7, (c.g[SP][0] as u32).wrapping_add(0x88));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x84));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3688,10 +3688,10 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
                     c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
-                    c.sq(2, (c.g[SP][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.lqc2(3, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[S1][0] as u32));
+                    c.lqc2(3, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[S1][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -3711,7 +3711,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x88));
                     c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x84));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3722,9 +3722,9 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.sq(2, (c.g[SP][0] as u32));
-                    c.lqc2(3, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[S1][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.lqc2(3, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[S1][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -3745,7 +3745,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(10, (c.g[SP][0] as u32).wrapping_add(0x88));
                     c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x84));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3756,9 +3756,9 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.sq(2, (c.g[SP][0] as u32));
-                    c.lqc2(3, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[S1][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.lqc2(3, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[S1][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -3799,7 +3799,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x84));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3810,9 +3810,9 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.sq(2, (c.g[SP][0] as u32));
-                    c.lqc2(3, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[S1][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.lqc2(3, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[S1][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -3852,7 +3852,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x84));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0x80));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -3863,9 +3863,9 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sqc2(12, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
-                    c.sq(2, (c.g[SP][0] as u32));
-                    c.lqc2(3, (c.g[SP][0] as u32));
-                    c.lqc2(4, (c.g[S1][0] as u32));
+                    c.sq(2, c.g[SP][0] as u32);
+                    c.lqc2(3, c.g[SP][0] as u32);
+                    c.lqc2(4, c.g[S1][0] as u32);
                     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
@@ -3896,7 +3896,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.g[V0][0] = ((c.g[A1][0] as i64) < 24i64) as u64;
 
                     if c.g[V0][0] == 0u64 {
-                        c.g[V0][0] = c.lw((c.g[S6][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[S6][0] as u32);
                         pc = 0x00348998;
                         continue;
                     }
@@ -3922,7 +3922,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                 }
                 0x00348994 => {
                     c.cycles += 1;
-                    c.g[V0][0] = c.lw((c.g[S6][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S6][0] as u32);
                     pc = 0x00348998;
                     continue;
                 }
@@ -3939,7 +3939,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                 }
                 0x003489a0 => {
                     c.cycles += 5;
-                    c.lwc1(0, (c.g[S5][0] as u32));
+                    c.lwc1(0, c.g[S5][0] as u32);
                     c.c_lt_s(2, 0);
 
                     if !c.fcc() {
@@ -3953,9 +3953,9 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                 0x003489b4 => {
                     c.cycles += 76;
                     c.g[V1][0] = 0x2;
-                    c.sw((c.g[S6][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S6][0] as u32, c.g[V0][0]);
                     c.add_s(1, 20, 20);
-                    c.swc1(2, (c.g[S5][0] as u32));
+                    c.swc1(2, c.g[S5][0] as u32);
                     c.g[A1][0] = c.g[S3][0];
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x44), c.g[V1][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x54), 0u64);
@@ -3967,14 +3967,14 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4c), c.g[S4][0]);
                     c.g[AT][0] = 0x40400000;
                     c.mtc1(1, 0);
-                    c.lq(2, (c.g[FP][0] as u32));
-                    c.lq(3, (c.g[SP][0] as u32));
+                    c.lq(2, c.g[FP][0] as u32);
+                    c.lq(3, c.g[SP][0] as u32);
                     c.mul_s(0, 20, 0);
                     c.sq(2, (c.g[S0][0] as u32).wrapping_add(0x20));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0xa4));
                     c.mul_s(0, 20, 0);
-                    c.lq(2, (c.g[FP][0] as u32));
-                    c.sq(3, (c.g[S0][0] as u32));
+                    c.lq(2, c.g[FP][0] as u32);
+                    c.sq(3, c.g[S0][0] as u32);
                     c.sq(2, (c.g[S0][0] as u32).wrapping_add(0x30));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xac), 0u64);
@@ -3983,7 +3983,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x6c), 0u64);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x70), 0u64);
                     c.lqc2(8, (c.g[SP][0] as u32).wrapping_add(0xa0));
-                    c.lqc2(4, (c.g[A0][0] as u32));
+                    c.lqc2(4, c.g[A0][0] as u32);
                     c.lqc2(5, (c.g[A0][0] as u32).wrapping_add(0x10));
                     c.lqc2(6, (c.g[A0][0] as u32).wrapping_add(0x20));
                     c.lqc2(7, (c.g[A0][0] as u32).wrapping_add(0x30));
@@ -4014,7 +4014,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x18c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00348aac);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00348aac)?;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x5c), c.g[V0][0]);
                     c.g[V1][0] = ((0u64 as i64) < (c.g[V0][0] as i64)) as u64;
@@ -4028,7 +4028,7 @@ fn flex_rail_find_closest_point_resume(c: &mut Cpu) {
                     c.mult(0, 2, 2, 3);
                     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x88));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x1a));
 
                     if c.g[V0][0] != c.g[S4][0] {

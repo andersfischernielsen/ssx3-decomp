@@ -2620,6 +2620,71 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         fe_state_net_messenger_show_buddy_info,
         "cFEStateNetMessenger_ShowBuddyInfo",
     ),
+    (
+        0x001a_5768,
+        cfe_state_net_messenger_find_name,
+        "cFEStateNetMessenger_FindName",
+    ),
+    (
+        0x001a_6f70,
+        cfe_state_net_messenger_refresh_roster_entries,
+        "cFEStateNetMessenger_RefreshRosterEntries",
+    ),
+    (
+        0x001a_7bb0,
+        c_fe_state_read_message_popup_on_widget_created_001a7bb0,
+        "cFEStateReadMessagePopup_OnWidgetCreated",
+    ),
+    (
+        0x001b_0d30,
+        cfe_state_challenge_received_popup_show_accept_decline,
+        "cFEStateChallengeReceivedPopup_ShowAcceptDecline",
+    ),
+    (
+        0x001b_6078,
+        c_fe_state_net_config_v21_001b6078,
+        "cFEStateNetConfig_v21",
+    ),
+    (
+        0x001b_6080,
+        cfe_state_net_config_on_widget_list_box,
+        "cFEStateNetConfig_onWidgetListBox",
+    ),
+    (
+        0x001b_ba18,
+        cfe_state_create_step2_is_email_format_valid,
+        "cFEStateCreateStep2_IsEmailFormatValid",
+    ),
+    (
+        0x001b_dca0,
+        cfe_state_lobby_menu_on_widget_pair,
+        "cFEStateLobbyMenu_onWidgetPair",
+    ),
+    (
+        0x001b_ea30,
+        c_fe_state_net_create_room_popup_v21_001bea30,
+        "cFEStateNetCreateRoomPopup_v21",
+    ),
+    (
+        0x001c_0218,
+        cfe_state_online_main_menu_on_child_event_ignore_confirm,
+        "cFEStateOnlineMainMenu_OnChildEventIgnoreConfirm",
+    ),
+    (
+        0x001c_17d8,
+        c_fe_state_net_quick_play_popup_v21_001c17d8,
+        "cFEStateNetQuickPlayPopup_v21",
+    ),
+    (
+        0x001d_e908,
+        c_fe_state_net_account_mem_v29_001de908,
+        "cFEStateNetAccountMem_v29",
+    ),
+    (
+        0x001d_e910,
+        c_fe_state_net_account_mem_v32_001de910,
+        "cFEStateNetAccountMem_v32",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -21043,7 +21108,7 @@ fn cfe_state_net_messenger_v31_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0xe3));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S0][0] = c.g[A0][0];
                     c.g[V0][0] = (c.g[V1][0] < 0x31u64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -21060,8 +21125,8 @@ fn cfe_state_net_messenger_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x16b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -21242,7 +21307,7 @@ fn cfe_state_net_messenger_v31_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -23839,7 +23904,7 @@ fn c_fe_state_net_messenger_show_buddy_presence_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a7528);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a7528)?;
                     c.ldl(2, (c.g[S2][0] as u32).wrapping_add(0x57));
                     c.ldr(2, (c.g[S2][0] as u32).wrapping_add(0x50));
@@ -23916,8 +23981,8 @@ fn c_fe_state_net_messenger_show_buddy_presence_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S5][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1970));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -24028,7 +24093,7 @@ fn c_fe_state_net_messenger_show_buddy_presence_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001a764c);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001a764c)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -24041,7 +24106,7 @@ fn c_fe_state_net_messenger_show_buddy_presence_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[V0][0];
                     c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x180));
                     c.g[A2][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1390));
-                    c.g[A3][0] = c.lb((c.g[A2][0] as u32));
+                    c.g[A3][0] = c.lb(c.g[A2][0] as u32);
                     c.g[T0][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x1));
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x180), c.g[A3][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x181), c.g[T0][0]);
@@ -24105,7 +24170,7 @@ fn c_fe_state_net_messenger_show_buddy_presence_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001a76f4);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001a76f4)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -24145,7 +24210,7 @@ fn c_fe_state_net_messenger_show_buddy_presence_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001a7748);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001a7748)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -31945,7 +32010,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b7118);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b7118)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -31974,8 +32039,8 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x43b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -32036,7 +32101,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b71e0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b71e0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -32161,7 +32226,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b72d0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b72d0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -32304,7 +32369,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b73e0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b73e0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -32384,7 +32449,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b7484);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b7484)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -32451,7 +32516,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b74f8);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b74f8)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -32566,7 +32631,7 @@ fn fe_state_net_account_mem_set_state_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b75c4);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b75c4)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -42651,7 +42716,7 @@ fn net_fe_state_show_net_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[V0][0];
                     c.g[A0][0] = 0x460000;
                     c.g[V0][0] = 0x1;
-                    c.sw((c.g[S0][0] as u32), c.g[S1][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[S1][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1618));
                     c.g[RA][0] = sx(0x001a9d20);
                     c.sw((c.g[S1][0] as u32).wrapping_add(0xbc), c.g[V0][0]);
@@ -44829,7 +44894,7 @@ fn net_fe_state_show_net_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001aa568);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001aa568)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -44845,11 +44910,11 @@ fn net_fe_state_show_net_error_popup_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001aa590);
                     c.g[A0][0] = c.g[S3][0];
                     call_ptr(c, 0x00416810, 0x001aa590)?;
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[RA][0] = sx(0x001aa59c);
                     c.g[A0][0] = c.g[S5][0];
                     call_ptr(c, 0x00416810, 0x001aa59c)?;
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x6b8));
                     let t = c.g[A0][0] == 0u64;
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x7));
@@ -45501,8 +45566,8 @@ fn net_fe_state_show_net_error_popup_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[S0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                     c.g[A0][0] = 0xa;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     let t = c.g[V1][0] != c.g[A0][0];
                     c.g[A0][0] = c.g[SP][0];
                     if t {
@@ -45554,7 +45619,7 @@ fn net_fe_state_show_net_error_popup_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[V0][0];
                     c.g[V0][0] = 0xffffffffffffffff;
                     let t = c.g[A1][0] != c.g[V0][0];
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x001aa820) {
                             return Ok(());
@@ -46942,7 +47007,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xf4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8c0c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8c0c)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = 0x1;
@@ -46968,12 +47033,12 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                 0x001a8c20 => {
                     c.cycles += 8;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[A1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xf8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xfc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8c38);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8c38)?;
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x6b4), 0u64);
@@ -46993,7 +47058,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xfc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8c5c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8c5c)?;
                     let t = true;
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x6b4), 0u64);
@@ -47050,7 +47115,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x6c8));
                     c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6cc));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] == c.g[A1][0];
                     c.g[S3][0] = c.g[A0][0];
                     if t {
@@ -47067,7 +47132,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xf4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8cb0);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8cb0)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = 0u64;
@@ -47135,7 +47200,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                 0x001a8cec => {
                     c.cycles += 4;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6cc));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = c.g[V1][0] == c.g[A0][0];
                     c.g[V0][0] = 0u64;
                     if t {
@@ -47153,14 +47218,14 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                 }
                 0x001a8d00 => {
                     c.cycles += 24;
-                    c.g[V1][0] = c.lw((c.g[A0][0] as u32));
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A0][0] as u32);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[S2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x20), c.g[V0][0]);
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
-                    c.g[S0][0] = c.lw((c.g[V0][0] as u32));
-                    c.sw((c.g[V1][0] as u32), c.g[S0][0]);
+                    c.g[S0][0] = c.lw(c.g[V0][0] as u32);
+                    c.sw(c.g[V1][0] as u32, c.g[S0][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x001a8d2c);
                     c.g[A0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -47168,14 +47233,14 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S0][0]);
                     c.g[A2][0] = c.g[S2][0];
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[A1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xf8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xfc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8d4c);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8d4c)?;
-                    c.g[V1][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S2][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xec));
                     c.g[V0][0] = (c.g[V1][0] < 0x28u64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -47191,8 +47256,8 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1a90));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -47216,7 +47281,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xdc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a8da0);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8da0)?;
                     let t = true;
 
@@ -47240,7 +47305,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xdc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a8dd0);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8dd0)?;
                     pc = 0x001a8dd0;
                     continue;
@@ -47263,7 +47328,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001a8dec);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8dec)?;
                     pc = 0x001a8dec;
                     continue;
@@ -47272,7 +47337,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6cc));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
 
                     if c.g[V1][0] != c.g[A0][0] {
                         c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x4));
@@ -47304,7 +47369,7 @@ fn net_fe_state_on_net_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xfc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8e20);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8e20)?;
                     pc = 0x001a8e20;
                     continue;
@@ -47620,8 +47685,8 @@ fn net_fe_state_handle_net_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1b50));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -47767,7 +47832,7 @@ fn net_fe_state_handle_net_event_resume(c: &mut Cpu) {
                     .call(c, 0x001a8f30)?;
                     c.g[A0][0] = c.g[S0][0];
                     c.g[A1][0] = c.g[SP][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A3][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x001a8f48);
                     c.g[A2][0] = c.g[S0][0];
@@ -47776,7 +47841,7 @@ fn net_fe_state_handle_net_event_resume(c: &mut Cpu) {
                         f: ee::s03::NetFEState_ShowNetErrorPopup,
                     }
                     .call(c, 0x001a8f48)?;
-                    c.g[A1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[RA][0] = sx(0x001a8f54);
                     c.g[A0][0] = c.g[S0][0];
                     Callee {
@@ -47812,7 +47877,7 @@ fn net_fe_state_handle_net_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001a8f7c);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001a8f7c)?;
                     pc = 0x001a8f7c;
                     continue;
@@ -47940,7 +48005,7 @@ fn net_fe_state_on_child_event_default_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[V1][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xf));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = (c.g[V1][0] < 0x8u64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A3][0] = c.g[A0][0];
@@ -47956,8 +48021,8 @@ fn net_fe_state_on_child_event_default_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1c80));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -47971,7 +48036,7 @@ fn net_fe_state_on_child_event_default_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
                     call_ptr(c, 0x0039f190, 0x001a9414)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a942c;
                         continue;
@@ -47993,7 +48058,7 @@ fn net_fe_state_on_child_event_default_resume(c: &mut Cpu) {
                 }
                 0x001a9428 => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001a942c;
                     continue;
                 }
@@ -48255,7 +48320,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[A3][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x69c));
 
                     if c.g[A1][0] != c.g[V0][0] {
@@ -48275,7 +48340,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a97d8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48300,8 +48365,8 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1cf0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -48317,7 +48382,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9810)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48335,7 +48400,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9820)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48353,7 +48418,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9830)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48371,7 +48436,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9840)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48389,7 +48454,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9850)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48407,7 +48472,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9860)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48425,7 +48490,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001a9870)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001a9884;
                         continue;
@@ -48442,7 +48507,7 @@ fn net_fe_state_on_child_event_resume(c: &mut Cpu) {
                         f: ee::s03::NetFEState_OnChildEventDefault,
                     }
                     .call(c, 0x001a9880)?;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001a9884;
                     continue;
                 }
@@ -48663,7 +48728,7 @@ fn net_fe_state_show_challenge_error_popup_resume(c: &mut Cpu) {
                     c.g[S3][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x001ab19c);
                     c.g[S0][0] = c.g[A1][0];
                     Callee {
@@ -48708,8 +48773,8 @@ fn net_fe_state_show_challenge_error_popup_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2800));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -48806,7 +48871,7 @@ fn net_fe_state_show_challenge_error_popup_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -48978,7 +49043,7 @@ fn net_fe_state_show_session_lost_popup_resume(c: &mut Cpu) {
                     c.g[S3][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x001ab2ac);
                     c.g[S0][0] = c.g[A1][0];
                     Callee {
@@ -49023,8 +49088,8 @@ fn net_fe_state_show_session_lost_popup_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[S0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x28a0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -49085,7 +49150,7 @@ fn net_fe_state_show_session_lost_popup_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -49702,7 +49767,7 @@ fn c_fe_use_existing_account_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     let t = c.g[A2][0] == c.g[V0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001ac88c;
                         continue;
@@ -49783,8 +49848,8 @@ fn c_fe_use_existing_account_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2d30));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -50185,7 +50250,7 @@ fn c_fe_use_existing_account_on_widget_action_resume(c: &mut Cpu) {
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
                     c.pc = t;
@@ -50662,7 +50727,7 @@ fn c_fe_state_select_persona_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S2][0] = c.g[A0][0];
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001ad898;
                         continue;
@@ -50675,8 +50740,8 @@ fn c_fe_state_select_persona_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2f30));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -51057,7 +51122,7 @@ fn c_fe_state_select_persona_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -51466,7 +51531,7 @@ fn c_fe_state_select_persona_v31_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001adc04;
                         continue;
@@ -51479,8 +51544,8 @@ fn c_fe_state_select_persona_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x2fa0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -51655,7 +51720,7 @@ fn c_fe_state_select_persona_v31_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2e00));
                     c.g[S0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x90));
                     c.g[RA][0] = sx(0x001adb94);
-                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001adb94)?;
                     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x001adba0);
@@ -51763,7 +51828,7 @@ fn c_fe_state_select_persona_v31_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -51972,7 +52037,7 @@ fn c_fe_state_challenge_popup_on_activate_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x001ae000);
                     c.g[S1][0] = c.g[A0][0];
                     Callee {
@@ -52014,8 +52079,8 @@ fn c_fe_state_challenge_popup_on_activate_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x30f0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -52110,7 +52175,7 @@ fn c_fe_state_challenge_popup_on_activate_resume(c: &mut Cpu) {
                     .call(c, 0x001ae0cc)?;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -53091,7 +53156,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.g[A0][0];
                     let t = c.g[A1][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001aebdc;
                         continue;
@@ -53116,8 +53181,8 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3280));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -53283,7 +53348,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001ae8e8);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ae8e8)?;
                     c.g[RA][0] = sx(0x001ae8f0);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6dc));
@@ -53319,7 +53384,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001ae93c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ae93c)?;
                     let t = true;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
@@ -53383,7 +53448,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001ae9f4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001ae9f4)?;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
                     pc = 0x001ae9f8;
@@ -53492,7 +53557,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001aea98);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001aea98)?;
                     c.g[RA][0] = sx(0x001aeaa0);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x6dc));
@@ -53656,7 +53721,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001aeba4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001aeba4)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -53731,7 +53796,7 @@ fn c_fe_state_challenge_popup_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x001aebe4 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -53980,7 +54045,7 @@ fn c_fe_state_challenge_popup_v31_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[A1][0];
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0xe3));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = (c.g[V1][0] < 0x31u64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[S0][0] = c.g[A0][0];
@@ -53996,8 +54061,8 @@ fn c_fe_state_challenge_popup_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x33a0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -54153,7 +54218,7 @@ fn c_fe_state_challenge_popup_v31_resume(c: &mut Cpu) {
                 0x001af558 => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -54427,13 +54492,13 @@ fn c_fe_state_challenge_received_popup_init_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S2][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x100));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x104));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001afe94);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001afe94)?;
                     c.g[A0][0] = 0x460000;
                     c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
@@ -54624,7 +54689,7 @@ fn c_fe_state_challenge_received_popup_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b0048);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b0048)?;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
                     c.g[A1][0] = 0x7;
@@ -54639,7 +54704,7 @@ fn c_fe_state_challenge_received_popup_init_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
                     let t = c.g[A1][0] as u32;
                     c.g[RA][0] = sx(0x001b0078);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b0078)?;
                     c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x40));
                     c.g[A1][0] = c.g[S0][0];
@@ -54674,7 +54739,7 @@ fn c_fe_state_challenge_received_popup_init_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -54991,7 +55056,7 @@ fn c_fe_state_challenge_received_popup_v31_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.g[A1][0];
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0xe3));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = (c.g[V1][0] < 0x31u64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[S0][0] = c.g[A0][0];
@@ -55007,8 +55072,8 @@ fn c_fe_state_challenge_received_popup_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x36d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -55234,7 +55299,7 @@ fn c_fe_state_challenge_received_popup_v31_resume(c: &mut Cpu) {
                 0x001b0840 => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -55577,7 +55642,7 @@ fn c_fe_state_online_character_select_v31_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A0][0];
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001b1734;
                         continue;
@@ -55590,8 +55655,8 @@ fn c_fe_state_online_character_select_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x38d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -55848,7 +55913,7 @@ fn c_fe_state_online_character_select_v31_resume(c: &mut Cpu) {
                 0x001b174c => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -56285,8 +56350,8 @@ fn c_fe_state_chat_room_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3d40));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -56969,8 +57034,8 @@ fn c_fe_state_chat_room_on_buddy_action_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3da0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -57060,7 +57125,7 @@ fn c_fe_state_chat_room_on_buddy_action_event_resume(c: &mut Cpu) {
                         f: ee::s03::NetFEState_ToggleMessengerBuddy,
                     }
                     .call(c, 0x001b3670)?;
-                    c.g[V1][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[SP][0] as u32);
                     c.g[V0][0] = 0x1;
                     let t = c.g[V1][0] == c.g[V0][0];
                     c.g[A0][0] = c.g[S1][0];
@@ -57584,8 +57649,8 @@ fn c_fe_state_chat_room_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3de0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -58258,7 +58323,7 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     let t = c.g[A1][0] == 0u64;
                     c.g[S0][0] = c.g[A0][0];
                     if t {
@@ -58270,12 +58335,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 }
                 0x001b41c0 => {
                     c.cycles += 5;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001b41d4);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b41d4)?;
                     pc = 0x001b41d4;
                     continue;
@@ -58297,8 +58362,8 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3ee0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -58319,12 +58384,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b4208 => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b4220);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b4220)?;
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
@@ -58353,12 +58418,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b423c => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b4254);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b4254)?;
                     let t = c.g[V0][0] != 0u64;
 
@@ -58422,12 +58487,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b4290 => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x1a8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1ac));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b42a8);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b42a8)?;
 
                     if c.g[V0][0] != 0u64 {
@@ -58484,12 +58549,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b42e8 => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b4300);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b4300)?;
                     let t = c.g[V0][0] != 0u64;
                     c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
@@ -58503,12 +58568,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b4308 => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1570));
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001b4320);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b4320)?;
                     let t = true;
 
@@ -58534,12 +58599,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b4334 => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b434c);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b434c)?;
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
@@ -58568,12 +58633,12 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                 0x001b4368 => {
                     c.cycles += 8;
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1578));
-                    c.g[V1][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[A1][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001b4380);
-                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b4380)?;
                     let t = c.g[V0][0] != 0u64;
 
@@ -58606,7 +58671,7 @@ fn c_fe_state_net_config_update_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b4398)?;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -58895,7 +58960,7 @@ fn c_fe_state_net_config_on_login_popup_event_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[V1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0xf));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S0][0] = c.g[A0][0];
                     c.g[V0][0] = (c.g[V1][0] < 0x8u64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -58912,8 +58977,8 @@ fn c_fe_state_net_config_on_login_popup_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x40b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -59042,7 +59107,7 @@ fn c_fe_state_net_config_on_login_popup_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001b5b54);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b5b54)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -59136,7 +59201,7 @@ fn c_fe_state_net_config_on_login_popup_event_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -59384,7 +59449,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                 0x001b5d58 => {
                     c.cycles += 7;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x80e));
                     c.g[V0][0] = (c.g[V1][0] < 0x37u64) as u64;
@@ -59402,8 +59467,8 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x40d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -59419,7 +59484,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5d98)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59437,7 +59502,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5da8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59455,7 +59520,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5db8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59473,7 +59538,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5dc8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59491,7 +59556,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5dd8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59509,7 +59574,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5de8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59527,7 +59592,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5df8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59545,7 +59610,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001b5e08)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001b5e1c;
                         continue;
@@ -59562,7 +59627,7 @@ fn c_fe_state_net_config_on_child_event_resume(c: &mut Cpu) {
                         f: ee::s03::NetFEState_OnChildEvent,
                     }
                     .call(c, 0x001b5e18)?;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001b5e1c;
                     continue;
                 }
@@ -60014,7 +60079,7 @@ fn c_fe_state_net_account_mem_update_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x001b7cd0);
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2e0));
                     call_ptr(c, 0x00265a68, 0x001b7cd0)?;
@@ -60068,8 +60133,8 @@ fn c_fe_state_net_account_mem_update_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4430));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -60365,7 +60430,7 @@ fn c_fe_state_net_account_mem_update_resume(c: &mut Cpu) {
                 }
                 0x001b7e30 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -61014,8 +61079,8 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[S2][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4520));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -61057,7 +61122,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b7f00);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b7f00)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61137,7 +61202,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b7f88);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b7f88)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61184,7 +61249,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b7fec);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b7fec)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -61200,7 +61265,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b8020);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b8020)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61263,7 +61328,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                 0x001b8070 => {
                     c.cycles += 5;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x2e0));
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = c.g[V0][0] ^ 0x16;
                     let t = c.g[V0][0] != 0u64;
 
@@ -61297,7 +61362,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b80b8);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b80b8)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61329,7 +61394,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b8104);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b8104)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61409,7 +61474,7 @@ fn c_fe_state_net_account_mem_show_error_popup_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b8184);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b8184)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61720,8 +61785,8 @@ fn c_fe_state_net_account_mem_format_not_detected_text_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x45a0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -61736,7 +61801,7 @@ fn c_fe_state_net_account_mem_format_not_detected_text_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b82b4);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b82b4)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -61752,7 +61817,7 @@ fn c_fe_state_net_account_mem_format_not_detected_text_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b82e8);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b82e8)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61784,7 +61849,7 @@ fn c_fe_state_net_account_mem_format_not_detected_text_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b8334);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b8334)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -61816,7 +61881,7 @@ fn c_fe_state_net_account_mem_format_not_detected_text_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b8380);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b8380)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -62060,8 +62125,8 @@ fn c_fe_state_net_account_mem_format_failed_text_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4660));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -62107,7 +62172,7 @@ fn c_fe_state_net_account_mem_format_failed_text_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b8458);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b8458)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -62138,7 +62203,7 @@ fn c_fe_state_net_account_mem_format_failed_text_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001b84a0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001b84a0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -62988,7 +63053,7 @@ fn c_fe_state_net_account_mem_on_child_event_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S0][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6dc));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x3));
                     c.g[V0][0] = (c.g[V1][0] < 0x1bu64) as u64;
@@ -63006,8 +63071,8 @@ fn c_fe_state_net_account_mem_on_child_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x46d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -63754,7 +63819,7 @@ fn c_fe_state_net_account_mem_on_child_event_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001b8824);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001b8824)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -63806,7 +63871,7 @@ fn c_fe_state_net_account_mem_on_child_event_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -64595,7 +64660,7 @@ fn c_fe_state_create_step1_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.g[S2][0] = c.g[A1][0];
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001b9060;
                         continue;
@@ -64608,8 +64673,8 @@ fn c_fe_state_create_step1_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4880));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -64743,7 +64808,7 @@ fn c_fe_state_create_step1_on_widget_action_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.g[V0][0];
                     c.g[A1][0] = c.g[S0][0];
                     c.g[A0][0] = c.g[S1][0];
-                    c.g[A3][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V1][0] as u32);
                     c.g[T0][0] = 0u64;
                     c.g[T1][0] = 0xa;
                     c.g[RA][0] = sx(0x001b8d58);
@@ -65170,7 +65235,7 @@ fn c_fe_state_create_step1_on_widget_action_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8));
                     c.g[S1][0] = c.lh((c.g[S0][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x001b8ffc);
-                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     Callee {
                         addr: 0x001b9558,
                         f: ee::s03::cFEStateCreateStep1_AllFieldsFilled,
@@ -65272,7 +65337,7 @@ fn c_fe_state_create_step1_on_widget_action_resume(c: &mut Cpu) {
                 0x001b9074 => {
                     c.cycles += 4;
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -65535,7 +65600,7 @@ fn c_fe_state_create_step1_on_edit_done_popup_event_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001b9408;
                         continue;
@@ -65548,8 +65613,8 @@ fn c_fe_state_create_step1_on_edit_done_popup_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4940));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -65735,7 +65800,7 @@ fn c_fe_state_create_step1_on_edit_done_popup_event_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -65930,7 +65995,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                 0x001baa88 => {
                     c.cycles += 7;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x18));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x80e));
                     c.g[V0][0] = (c.g[V1][0] < 0x1fu64) as u64;
@@ -65948,8 +66013,8 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4a50));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -65965,7 +66030,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001baac8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001bab1c;
                         continue;
@@ -65983,7 +66048,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001baad8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001bab1c;
                         continue;
@@ -66001,7 +66066,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001baae8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001bab1c;
                         continue;
@@ -66019,7 +66084,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001baaf8)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001bab1c;
                         continue;
@@ -66037,7 +66102,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x001bab08)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001bab1c;
                         continue;
@@ -66054,7 +66119,7 @@ fn c_fe_state_create_step2_on_child_event_resume(c: &mut Cpu) {
                         f: ee::s03::NetFEState_OnChildEvent,
                     }
                     .call(c, 0x001bab18)?;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x001bab1c;
                     continue;
                 }
@@ -66356,7 +66421,7 @@ fn c_fe_state_create_step2_on_created_popup_event_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001bb078;
                         continue;
@@ -66369,8 +66434,8 @@ fn c_fe_state_create_step2_on_created_popup_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4af0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -66545,7 +66610,7 @@ fn c_fe_state_create_step2_on_created_popup_event_resume(c: &mut Cpu) {
                     .call(c, 0x001bb040)?;
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6d0));
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[RA][0] = sx(0x001bb054);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x48));
                     call_ptr(c, 0x003184e8, 0x001bb054)?;
@@ -66589,7 +66654,7 @@ fn c_fe_state_create_step2_on_created_popup_event_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -66887,7 +66952,7 @@ fn c_fe_state_create_duplicate_on_created_popup_event_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001bcb34;
                         continue;
@@ -66900,8 +66965,8 @@ fn c_fe_state_create_duplicate_on_created_popup_event_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4d80));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -67077,7 +67142,7 @@ fn c_fe_state_create_duplicate_on_created_popup_event_resume(c: &mut Cpu) {
                     .call(c, 0x001bcafc)?;
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6d8));
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-                    c.g[A1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[RA][0] = sx(0x001bcb10);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x48));
                     call_ptr(c, 0x003184e8, 0x001bcb10)?;
@@ -67121,7 +67186,7 @@ fn c_fe_state_create_duplicate_on_created_popup_event_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -67592,7 +67657,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S2][0] = c.g[A1][0];
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001bd404;
                         continue;
@@ -67605,8 +67670,8 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4f80));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -67621,7 +67686,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x001bd208 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[S2][0] == c.g[V0][0];
                     c.g[S1][0] = sx((c.g[A0][0] as u32) << 2);
                     if t {
@@ -67748,7 +67813,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x001bd2a8 => {
                     c.cycles += 4;
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x718));
 
                     if c.g[S2][0] != c.g[V1][0] {
@@ -67871,7 +67936,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                 0x001bd350 => {
                     c.cycles += 5;
                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x708));
                     c.g[A0][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x319));
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x768), c.g[A0][0]);
@@ -67949,7 +68014,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                 0x001bd3a8 => {
                     c.cycles += 23;
                     c.g[V1][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(0x319));
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x750), c.g[V1][0]);
                     c.g[RA][0] = sx(0x001bd3c0);
@@ -67960,7 +68025,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x001bd3d0);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x774), c.g[V0][0]);
                     call_ptr(c, 0x0025f180, 0x001bd3d0)?;
-                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[A1][0] = c.g[V0][0];
                     c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x740));
                     c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x8));
@@ -67968,7 +68033,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001bd3f0);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001bd3f0)?;
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x774));
                     c.g[RA][0] = sx(0x001bd3fc);
@@ -68001,7 +68066,7 @@ fn c_fe_state_lobby_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -68246,7 +68311,7 @@ fn c_fe_state_lobby_menu_v31_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.g[A0][0];
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001bd820;
                         continue;
@@ -68259,8 +68324,8 @@ fn c_fe_state_lobby_menu_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5000));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -68304,7 +68369,7 @@ fn c_fe_state_lobby_menu_v31_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x76c));
-                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[RA][0] = sx(0x001bd7b4);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x708));
                     call_ptr(c, 0x0039a708, 0x001bd7b4)?;
@@ -68419,7 +68484,7 @@ fn c_fe_state_lobby_menu_v31_resume(c: &mut Cpu) {
                 0x001bd834 => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -68994,7 +69059,7 @@ fn c_fe_state_online_main_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.g[S2][0] = c.g[A0][0];
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     let t = c.g[A1][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001c011c;
                         continue;
@@ -69086,8 +69151,8 @@ fn c_fe_state_online_main_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5550));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -69188,13 +69253,13 @@ fn c_fe_state_online_main_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
                     c.g[A1][0] = c.g[S2][0];
                     c.g[A2][0] = 0u64;
-                    c.g[A3][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001bffbc);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001bffbc)?;
                     let t = c.g[V0][0] == 0u64;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
@@ -69448,7 +69513,7 @@ fn c_fe_state_online_main_menu_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -69739,7 +69804,7 @@ fn c_fe_state_online_agreement_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     let t = c.g[A1][0] == 0u64;
                     c.g[S0][0] = c.g[A0][0];
                     if t {
@@ -69790,8 +69855,8 @@ fn c_fe_state_online_agreement_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5760));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -69962,7 +70027,7 @@ fn c_fe_state_online_agreement_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x001c0e78 => {
                     c.cycles += 3;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -70249,7 +70314,7 @@ fn c_fe_state_net_quick_play_popup_v31_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xe6));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = (c.g[V1][0] < 0x2du64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[S2][0] = c.g[A0][0];
@@ -70265,8 +70330,8 @@ fn c_fe_state_net_quick_play_popup_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5980));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -70383,7 +70448,7 @@ fn c_fe_state_net_quick_play_popup_v31_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c1ad4);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c1ad4)?;
                     let t = true;
                     c.g[V0][0] = 0u64;
@@ -70463,7 +70528,7 @@ fn c_fe_state_net_quick_play_popup_v31_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -70968,8 +71033,8 @@ fn c_fe_state_net_ssx_world_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5b00));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -71227,8 +71292,8 @@ fn c_fe_state_net_ssx_world_on_widget_action_resume(c: &mut Cpu) {
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(0, (c.g[SP][0] as u32));
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.swc1(0, c.g[SP][0] as u32);
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     let t = true;
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
@@ -71246,9 +71311,9 @@ fn c_fe_state_net_ssx_world_on_widget_action_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
                     pc = 0x001c20a4;
@@ -71813,8 +71878,8 @@ fn c_fe_state_net_quick_messages_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5c20));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -71865,7 +71930,7 @@ fn c_fe_state_net_quick_messages_on_widget_action_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001c27e4);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x0014f678, 0x001c27e4)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A0][0] = c.g[S0][0];
@@ -73314,8 +73379,8 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5e30));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -73569,13 +73634,13 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c381c);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c381c)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3828);
@@ -73592,7 +73657,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3850);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3850)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c385c);
@@ -73609,7 +73674,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3884);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3884)?;
                     c.g[A0][0] = 0x460000;
                     let t = true;
@@ -73644,13 +73709,13 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c38d4);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c38d4)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c38e0);
@@ -73667,7 +73732,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3908);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3908)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3914);
@@ -73684,7 +73749,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c393c);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c393c)?;
                     c.g[A0][0] = 0x460000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5e20));
@@ -73706,7 +73771,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3974);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3974)?;
                     let t = true;
                     c.g[A0][0] = c.g[S3][0];
@@ -73883,13 +73948,13 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0xc));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c3a60);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3a60)?;
                     let t = true;
                     c.g[A0][0] = c.g[S3][0];
@@ -73922,14 +73987,14 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c3aac);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3aac)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3ab8);
@@ -73946,7 +74011,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3ae0);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3ae0)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3aec);
@@ -73963,7 +74028,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3b14);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3b14)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3b20);
@@ -73980,7 +74045,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3b48);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3b48)?;
                     let t = true;
                     c.g[A0][0] = c.g[S3][0];
@@ -74013,14 +74078,14 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001c3b94);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3b94)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3ba0);
@@ -74037,7 +74102,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3bc8);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3bc8)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3bd4);
@@ -74054,7 +74119,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3bfc);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3bfc)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001c3c08);
@@ -74071,7 +74136,7 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3c30);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3c30)?;
                     let t = true;
                     c.g[A0][0] = c.g[S3][0];
@@ -74133,12 +74198,12 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa4));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3c94);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3c94)?;
                     c.lwc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0x1;
                     c.lwc1(2, (c.g[SP][0] as u32).wrapping_add(0x34));
-                    c.lwc1(1, (c.g[SP][0] as u32));
+                    c.lwc1(1, c.g[SP][0] as u32);
                     c.sub_s(0, 0, 2);
                     c.g[AT][0] = 0x41600000;
                     c.mtc1(1, 3);
@@ -74147,9 +74212,9 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.add_s(0, 0, 3);
                     c.add_s(1, 1, 2);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
-                    c.swc1(1, (c.g[SP][0] as u32));
+                    c.swc1(1, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.g[V1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x4b));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x44));
@@ -74159,12 +74224,12 @@ fn c_fe_state_stats_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001c3cf4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001c3cf4)?;
                     c.g[S0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x6e8));
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
                     c.g[RA][0] = sx(0x001c3d04);
-                    c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     call_ptr(c, 0x0025f338, 0x001c3d04)?;
                     c.g[A1][0] = c.g[S0][0];
                     c.g[A2][0] = c.g[V0][0];
@@ -74539,7 +74604,7 @@ fn cfe_state_read_message_popup_load_messages_resume(c: &mut Cpu) {
                     c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2740));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
                     let t = true;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x001a8068;
                         continue;
@@ -74625,7 +74690,7 @@ fn cfe_state_read_message_popup_load_messages_resume(c: &mut Cpu) {
                 }
                 0x001a8004 => {
                     c.cycles += 5;
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x001a8010);
                     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x6d0));
                     call_ptr(c, 0x0041aa88, 0x001a8010)?;
@@ -74909,7 +74974,7 @@ fn cfe_state_read_message_popup_load_messages_resume(c: &mut Cpu) {
                 }
                 0x001a8160 => {
                     c.cycles += 5;
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     c.g[RA][0] = sx(0x001a816c);
                     c.g[A1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x6d0));
                     call_ptr(c, 0x0041aa88, 0x001a816c)?;
@@ -75020,7 +75085,7 @@ fn cfe_state_read_message_popup_load_messages_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -80264,7 +80329,7 @@ fn fe_state_create_step1_validate_account_name_resume(c: &mut Cpu) {
                     .call(c, 0x001b9d98)?;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x001b9da4);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x00416810, 0x001b9da4)?;
                     c.g[S3][0] = c.g[V0][0];
                     let t = c.g[S3][0] != 0u64;
@@ -80336,8 +80401,8 @@ fn fe_state_create_step1_validate_account_name_resume(c: &mut Cpu) {
                 }
                 0x001b9e04 => {
                     c.cycles += 5;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
-                    c.g[V1][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                    c.g[V1][0] = c.lb(c.g[V1][0] as u32);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < 49i64) as u64;
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = ((c.g[V1][0] as i64) < 57i64) as u64;
@@ -80459,9 +80524,9 @@ fn fe_state_create_step1_validate_account_name_resume(c: &mut Cpu) {
                 }
                 0x001b9ec0 => {
                     c.cycles += 5;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
-                    c.g[S0][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[S0][0] = c.lb(c.g[V0][0] as u32);
                     let t = c.g[S0][0] == c.g[S5][0];
                     c.g[A0][0] = c.g[S2][0];
                     if t {
@@ -81902,7 +81967,7 @@ fn fe_state_lobby_menu_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001bceb8);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001bceb8)?;
                     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x001bcec4);
@@ -82485,7 +82550,7 @@ fn fe_state_lobby_menu_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001bd148);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001bd148)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
@@ -82554,7 +82619,7 @@ fn fe_state_lobby_menu_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001bd18c => {
                     c.cycles += 2;
-                    c.sw((c.g[S3][0] as u32), c.g[S0][0]);
+                    c.sw(c.g[S3][0] as u32, c.g[S0][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x18), c.g[S2][0]);
                     pc = 0x001bd194;
                     continue;
@@ -94451,6 +94516,766 @@ pub fn oc1133_net_messenger_popup_v35(c: &mut Cpu) {
         c.pc = t;
         return Ok(());
     });
+}
+
+/// `cFEStateReadMessagePopup_OnWidgetCreated` (0x001a_7bb0): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_read_message_popup_on_widget_created_001a7bb0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFEStateNetConfig_v21` (0x001b_6078): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_net_config_v21_001b6078(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `cFEStateNetCreateRoomPopup_v21` (0x001b_ea30): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_net_create_room_popup_v21_001bea30(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `cFEStateNetQuickPlayPopup_v21` (0x001c_17d8): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_net_quick_play_popup_v21_001c17d8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `cFEStateNetAccountMem_v29` (0x001d_e908): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_net_account_mem_v29_001de908(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `cFEStateNetAccountMem_v32` (0x001d_e910): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_net_account_mem_v32_001de910(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFEStateNetMessenger_RefreshRosterEntries()` (0x1a6f70): for every roster entry `i` of the global session
+/// (`gp+0x238`, created on demand through `0x260f80` / `0x261460` / `0x2613c8` / `0x25b800` before each use)
+/// that has a name (`0x2625c8`) and is flagged (`0x262400`), it asks whether a record (`0x263128`) or messages
+/// (`0x262a38`) exist and, when neither does, creates an entry (`0x261ef8(session, name, 2, buf)`).
+#[allow(unreachable_code, unused_labels)]
+pub fn cfe_state_net_messenger_refresh_roster_entries(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_1a6f98: {
+            c.cycles += 8;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+            let t = c.g[V0][0] != 0u64;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+            if t {
+                break 'b_1a6f98;
+            } else {
+                c.cycles += 2;
+                c.g[RA][0] = sx(0x001a6f98);
+                call_ptr(c, 0x00260f80, 0x001a6f98)?;
+                break 'b_1a6f98;
+            }
+        }
+        'b_1a6fb4: {
+            c.cycles += 4;
+            c.g[RA][0] = sx(0x001a6fa0);
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+            call_ptr(c, 0x00261460, 0x001a6fa0)?;
+            let t = c.g[V0][0] != 0u64;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+            if t {
+                break 'b_1a6fb4;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x001a6fb0);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                call_ptr(c, 0x002613c8, 0x001a6fb0)?;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                break 'b_1a6fb4;
+            }
+        }
+        'b_1a6fc8: {
+            c.cycles += 2;
+            let t = c.g[V0][0] != 0u64;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+            if t {
+                break 'b_1a6fc8;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x001a6fc4);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                call_ptr(c, 0x0025b800, 0x001a6fc4)?;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                break 'b_1a6fc8;
+            }
+        }
+        'b_1a7194: {
+            c.cycles += 5;
+            c.g[RA][0] = sx(0x001a6fd0);
+            c.g[S2][0] = 0u64;
+            call_ptr(c, 0x00262598, 0x001a6fd0)?;
+            c.g[S3][0] = c.g[V0][0];
+            let t = (c.g[S3][0] as i64) <= 0;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            if t {
+                break 'b_1a7194;
+            } else {
+                c.cycles += 1;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                'l_1a6fe0: loop {
+                    'b_1a6ff0: {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] != 0u64;
+
+                        if t {
+                            break 'b_1a6ff0;
+                        } else {
+                            c.cycles += 2;
+                            c.g[RA][0] = sx(0x001a6ff0);
+                            call_ptr(c, 0x00260f80, 0x001a6ff0)?;
+                            break 'b_1a6ff0;
+                        }
+                    }
+                    'b_1a700c: {
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x001a6ff8);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        call_ptr(c, 0x00261460, 0x001a6ff8)?;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        if t {
+                            break 'b_1a700c;
+                        } else {
+                            c.cycles += 3;
+                            c.g[RA][0] = sx(0x001a7008);
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            call_ptr(c, 0x002613c8, 0x001a7008)?;
+                            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            break 'b_1a700c;
+                        }
+                    }
+                    'b_1a7020: {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        if t {
+                            break 'b_1a7020;
+                        } else {
+                            c.cycles += 3;
+                            c.g[RA][0] = sx(0x001a701c);
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                            call_ptr(c, 0x0025b800, 0x001a701c)?;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            break 'b_1a7020;
+                        }
+                    }
+                    'b_1a7184: {
+                        'b_1a7180: {
+                            c.cycles += 5;
+                            c.g[RA][0] = sx(0x001a7028);
+                            c.g[A1][0] = c.g[S2][0];
+                            call_ptr(c, 0x002625c8, 0x001a7028)?;
+                            c.g[S0][0] = c.g[V0][0];
+                            let t = c.g[S0][0] == 0u64;
+                            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            if t {
+                                break 'b_1a7180;
+                            } else {
+                                'b_1a7044: {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] != 0u64;
+
+                                    if t {
+                                        break 'b_1a7044;
+                                    } else {
+                                        c.cycles += 2;
+                                        c.g[RA][0] = sx(0x001a7044);
+                                        call_ptr(c, 0x00260f80, 0x001a7044)?;
+                                        break 'b_1a7044;
+                                    }
+                                }
+                                'b_1a7060: {
+                                    c.cycles += 4;
+                                    c.g[RA][0] = sx(0x001a704c);
+                                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                    call_ptr(c, 0x00261460, 0x001a704c)?;
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                    if t {
+                                        break 'b_1a7060;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[RA][0] = sx(0x001a705c);
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        call_ptr(c, 0x002613c8, 0x001a705c)?;
+                                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        break 'b_1a7060;
+                                    }
+                                }
+                                'b_1a7074: {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                    if t {
+                                        break 'b_1a7074;
+                                    } else {
+                                        c.cycles += 3;
+                                        c.g[RA][0] = sx(0x001a7070);
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                                        call_ptr(c, 0x0025b800, 0x001a7070)?;
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        break 'b_1a7074;
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x001a707c);
+                                c.g[A1][0] = c.g[S2][0];
+                                call_ptr(c, 0x00262400, 0x001a707c)?;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                if t {
+                                    break 'b_1a7180;
+                                } else {
+                                    'b_1a7094: {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] != 0u64;
+
+                                        if t {
+                                            break 'b_1a7094;
+                                        } else {
+                                            c.cycles += 2;
+                                            c.g[RA][0] = sx(0x001a7094);
+                                            call_ptr(c, 0x00260f80, 0x001a7094)?;
+                                            break 'b_1a7094;
+                                        }
+                                    }
+                                    'b_1a70b0: {
+                                        c.cycles += 4;
+                                        c.g[RA][0] = sx(0x001a709c);
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        call_ptr(c, 0x00261460, 0x001a709c)?;
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        if t {
+                                            break 'b_1a70b0;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[RA][0] = sx(0x001a70ac);
+                                            c.g[A0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                            call_ptr(c, 0x002613c8, 0x001a70ac)?;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                            break 'b_1a70b0;
+                                        }
+                                    }
+                                    'b_1a70c4: {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        if t {
+                                            break 'b_1a70c4;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[RA][0] = sx(0x001a70c0);
+                                            c.g[A0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                                            call_ptr(c, 0x0025b800, 0x001a70c0)?;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                            break 'b_1a70c4;
+                                        }
+                                    }
+                                    'b_1a70e4: {
+                                        c.cycles += 6;
+                                        c.g[RA][0] = sx(0x001a70cc);
+                                        c.g[A1][0] = c.g[S0][0];
+                                        call_ptr(c, 0x00263128, 0x001a70cc)?;
+                                        c.g[S1][0] = c.g[V0][0];
+                                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        let t = c.g[V0][0] != 0u64;
+
+                                        if t {
+                                            break 'b_1a70e4;
+                                        } else {
+                                            c.cycles += 2;
+                                            c.g[RA][0] = sx(0x001a70e4);
+                                            call_ptr(c, 0x00260f80, 0x001a70e4)?;
+                                            break 'b_1a70e4;
+                                        }
+                                    }
+                                    'b_1a7100: {
+                                        c.cycles += 4;
+                                        c.g[RA][0] = sx(0x001a70ec);
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        call_ptr(c, 0x00261460, 0x001a70ec)?;
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        if t {
+                                            break 'b_1a7100;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[RA][0] = sx(0x001a70fc);
+                                            c.g[A0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                            call_ptr(c, 0x002613c8, 0x001a70fc)?;
+                                            c.g[V0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                            break 'b_1a7100;
+                                        }
+                                    }
+                                    'b_1a7114: {
+                                        c.cycles += 2;
+                                        let t = c.g[V0][0] != 0u64;
+                                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                        if t {
+                                            break 'b_1a7114;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.g[RA][0] = sx(0x001a7110);
+                                            c.g[A0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                                            call_ptr(c, 0x0025b800, 0x001a7110)?;
+                                            c.g[A0][0] =
+                                                c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                            break 'b_1a7114;
+                                        }
+                                    }
+                                    c.cycles += 4;
+                                    c.g[RA][0] = sx(0x001a711c);
+                                    c.g[A1][0] = c.g[S0][0];
+                                    call_ptr(c, 0x00262a38, 0x001a711c)?;
+                                    if c.g[S1][0] != 0u64 {
+                                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                        break 'b_1a7184;
+                                    } else {
+                                        c.cycles += 2;
+                                        if c.g[V0][0] != 0u64 {
+                                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                                            break 'b_1a7184;
+                                        } else {
+                                            'b_1a7140: {
+                                                c.cycles += 3;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                                let t = c.g[V0][0] != 0u64;
+
+                                                if t {
+                                                    break 'b_1a7140;
+                                                } else {
+                                                    c.cycles += 2;
+                                                    c.g[RA][0] = sx(0x001a7140);
+                                                    call_ptr(c, 0x00260f80, 0x001a7140)?;
+                                                    break 'b_1a7140;
+                                                }
+                                            }
+                                            'b_1a715c: {
+                                                c.cycles += 4;
+                                                c.g[RA][0] = sx(0x001a7148);
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                                call_ptr(c, 0x00261460, 0x001a7148)?;
+                                                let t = c.g[V0][0] != 0u64;
+                                                c.g[V0][0] =
+                                                    c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                                if t {
+                                                    break 'b_1a715c;
+                                                } else {
+                                                    c.cycles += 3;
+                                                    c.g[RA][0] = sx(0x001a7158);
+                                                    c.g[A0][0] =
+                                                        c.lw(
+                                                            (c.g[GP][0] as u32).wrapping_add(0x238)
+                                                        );
+                                                    call_ptr(c, 0x002613c8, 0x001a7158)?;
+                                                    c.g[V0][0] =
+                                                        c.lw(
+                                                            (c.g[GP][0] as u32).wrapping_add(0x238)
+                                                        );
+                                                    break 'b_1a715c;
+                                                }
+                                            }
+                                            'b_1a7170: {
+                                                c.cycles += 2;
+                                                let t = c.g[V0][0] != 0u64;
+                                                c.g[A0][0] =
+                                                    c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                                if t {
+                                                    break 'b_1a7170;
+                                                } else {
+                                                    c.cycles += 3;
+                                                    c.g[RA][0] = sx(0x001a716c);
+                                                    c.g[A0][0] = c
+                                                        .lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                                                    call_ptr(c, 0x0025b800, 0x001a716c)?;
+                                                    c.g[A0][0] =
+                                                        c.lw(
+                                                            (c.g[GP][0] as u32).wrapping_add(0x238)
+                                                        );
+                                                    break 'b_1a7170;
+                                                }
+                                            }
+                                            c.cycles += 4;
+                                            c.g[A1][0] = c.g[S0][0];
+                                            c.g[A2][0] = 0x2;
+                                            c.g[RA][0] = sx(0x001a7180);
+                                            c.g[A3][0] = c.g[SP][0];
+                                            call_ptr(c, 0x00261ef8, 0x001a7180)?;
+                                            break 'b_1a7180;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        break 'b_1a7184;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001a6fe0);
+                        }
+                        continue 'l_1a6fe0;
+                    } else {
+                        c.cycles += 1;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                        break 'b_1a7194;
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.pc = t;
+        Ok(())
+    })
+}
+
+/// `int cFEStateNetMessenger::FindName(const char* name)` (0x1A5768): the
+/// index of the first entry of the list at +0x6e8..+0x6ec whose name
+/// (`strcasecmp` of the entry's first word) matches, or -1.
+pub fn cfe_state_net_messenger_find_name(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = 0;
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, S1);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x6ec));
+        c.g[V1][0] = c.lw(this.wrapping_add(0x6e8));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+        let empty = c.g[V0][0] == 0;
+        c.g[S2][0] = c.g[A1][0];
+        let mut found = false;
+        if !empty {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(this.wrapping_add(0x6e8));
+            loop {
+                c.cycles += 8;
+                c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[A1][0] = c.g[S2][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                call_ptr(c, 0x0041_aa88, 0x001a_57b8)?;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S0][0];
+                    found = true;
+                    break;
+                }
+                c.g[V0][0] = c.lw(this.wrapping_add(0x6ec));
+                c.cycles += 7;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                c.g[V1][0] = c.lw(this.wrapping_add(0x6e8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 2) as u32);
+                c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V0][0] = c.lw(this.wrapping_add(0x6e8));
+                if event_due(c) {
+                    deliver_event_here(c, 0x001a_57a0);
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cFEStateChallengeReceivedPopup::ShowAcceptDecline(void)` (0x1B0D30):
+/// clear the popup's result word (+0x6d4), then, when the screen at +0x40 is
+/// set, look up three widgets by hash (the `0x4635f8`, `0x463468` and
+/// `0x463618` strings) and call the virtual method of each one found, with
+/// the accept/decline sounds as arguments.
+pub fn cfe_state_challenge_received_popup_show_accept_decline(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        let this = r32(c, S1);
+        c.sw(this.wrapping_add(0x6d4), 0u64);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x40));
+        let no_screen = c.g[V0][0] == 0;
+        c.g[A0][0] = 0x0046_0000;
+        if !no_screen {
+            c.cycles += 8;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x35f8));
+            call_ptr(c, 0x0031_7670, 0x001b_0d5c)?;
+            c.g[A0][0] = c.lw(this.wrapping_add(0x40));
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_d860, 0x001b_0d68)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            if c.g[S0][0] != 0 {
+                c.cycles += 5;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x40));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
+                let target = c.g[V1][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x001b_0d88)?;
+            }
+            c.cycles += 9;
+            c.g[A0][0] = 0x0046_0000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3468));
+            call_ptr(c, 0x0031_7670, 0x001b_0d94)?;
+            c.g[A0][0] = c.lw(this.wrapping_add(0x40));
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_d860, 0x001b_0da0)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            if c.g[S0][0] != 0 {
+                c.cycles += 5;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
+                let target = c.g[V1][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x001b_0dc0)?;
+            }
+            c.cycles += 9;
+            c.g[A0][0] = 0x0046_0000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3618));
+            call_ptr(c, 0x0031_7670, 0x001b_0dcc)?;
+            c.g[A0][0] = c.lw(this.wrapping_add(0x40));
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_d860, 0x001b_0dd8)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = 0x0046_0000;
+            if c.g[S0][0] != 0 {
+                c.cycles += 5;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x37b0));
+                call_ptr(c, 0x0031_7670, 0x001b_0dec)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x003a_1000, 0x001b_0df8)?;
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int cFEStateNetConfig::onWidgetListBox(void* widget, int id, int kind)`
+/// (0x1B6080): answer 0x101 (not handled) for `kind >= 2`; otherwise 1 when
+/// the list-box count at +0x6d4 is above 1, else 0.
+pub fn cfe_state_net_config_on_widget_list_box(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[A2][0] = (c.g[A2][0] < 0x2) as u64;
+    c.g[V0][0] = 0x101;
+    if c.g[A2][0] != 0 {
+        c.cycles += 4;
+        c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6d4));
+        c.g[A0][0] = 0x1;
+        c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        if c.g[A0][0] == 0 {
+            c.g[V0][0] = 0;
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `bool cFEStateCreateStep2::IsEmailFormatValid(const char* email)`
+/// (0x1BBA18): the address has a non-empty part before one `@` and a `.`
+/// after it. The scan keeps the first `.`-after-`@` position and the `@` flag
+/// (`s2`); the result is `s0 != 0 && s2 != 0`. The string is read by `strlen`
+/// first.
+pub fn cfe_state_create_step2_is_email_format_valid(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[A0][0] = c.g[S1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0;
+        call_ptr(c, 0x0041_6810, 0x001b_ba3c)?;
+        c.g[S0][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        let longer = (c.g[A0][0] as i64) > 0;
+        c.g[V1][0] = 0;
+        if longer {
+            c.cycles += 3;
+            c.g[A2][0] = 0x40;
+            c.g[A1][0] = 0x1;
+            c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.lb(c.g[V0][0] as u32);
+                let differs = c.g[V0][0] != c.g[A2][0];
+                c.g[V0][0] ^= 0x2e;
+                if differs {
+                    c.cycles += 1;
+                    if c.g[V0][0] == 0 {
+                        c.g[S0][0] = c.g[A1][0];
+                    }
+                } else {
+                    c.cycles += 2;
+                    c.g[S2][0] = 0x1;
+                }
+                c.cycles += 4;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001b_ba58);
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        if c.g[S2][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = (0u64 < c.g[S0][0]) as u64;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cFEStateLobbyMenu::onWidgetPair(int id, int kind)` (0x1BDCA0): with
+/// the first pair (`a2 == 1`) or a non-zero `a2`, the result is 0x101 at
+/// once. Otherwise scan the four-word list at +0x718 for `a1` (at most four
+/// entries); on a match, `v1` is the byte at +0x318 of the entry's pointer
+/// (the list at +0x708). Always returns 0x101.
+pub fn cfe_state_lobby_menu_on_widget_pair(c: &mut Cpu) {
+    'body: {
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        if c.g[A2][0] == c.g[V0][0] {
+            break 'body;
+        }
+        c.cycles += 2;
+        let second_pair = c.g[A2][0] != 0;
+        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0x718));
+        if second_pair {
+            break 'body;
+        }
+        c.cycles += 3;
+        c.g[A2][0] = 0;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x708));
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+            let differs = c.g[A1][0] != c.g[V0][0];
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            if differs {
+                c.cycles += 4;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+                c.g[V0][0] = ((c.g[A2][0] as i64) < 4) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+                if !more {
+                    break 'body;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x001b_dcc0);
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                c.g[V1][0] = c.lbu((c.g[V0][0] as u32).wrapping_add(0x318));
+                break 'body;
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0x101;
+    ret(c);
+}
+
+/// `void cFEStateOnlineMainMenu::OnChildEventIgnoreConfirm(self, popup, kind)`
+/// (0x1C0218): every popup event except kind 0xf (the confirm) goes to the
+/// base `cFEStateNet::onPopupEvent`.
+pub fn cfe_state_online_main_menu_on_child_event_ignore_confirm(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0xf;
+        let confirm = c.g[A2][0] == c.g[V0][0];
+        frame.save_ra(c, 0);
+        if !confirm {
+            c.cycles += 2;
+            call_ptr(c, 0x001a_97b8, 0x001c_0230)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -121399,6 +122224,262 @@ pub(crate) mod tests {
             oc1133_net_messenger_popup_v35,
             162,
             &|c, seed| oc1133_messenger_setup(c, seed, 0x1a4b20, &[15, 16, 17, 3, 0x100, 0]),
+        );
+    }
+
+    pub(crate) use crate::game::be::belibrary::tests::OC1528_BASE;
+    pub(crate) use crate::game::be::belibrary::tests::OC1528_COUNT;
+
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::oc1528_machine;
+
+    /// `cFEStateReadMessagePopup_OnWidgetCreated` (0x001a_7bb0) against the generated body.
+    #[test]
+    fn c_fe_state_read_message_popup_on_widget_created_001a7bb0_matches() {
+        check(
+            ee::s03::f_001a7bb0__generated,
+            c_fe_state_read_message_popup_on_widget_created_001a7bb0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1a7bb0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateNetConfig_v21` (0x001b_6078) against the generated body.
+    #[test]
+    fn c_fe_state_net_config_v21_001b6078_matches() {
+        check(
+            ee::s03::f_001b6078__generated,
+            c_fe_state_net_config_v21_001b6078,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1b6078, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateNetCreateRoomPopup_v21` (0x001b_ea30) against the generated body.
+    #[test]
+    fn c_fe_state_net_create_room_popup_v21_001bea30_matches() {
+        check(
+            ee::s03::f_001bea30__generated,
+            c_fe_state_net_create_room_popup_v21_001bea30,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1bea30, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateNetQuickPlayPopup_v21` (0x001c_17d8) against the generated body.
+    #[test]
+    fn c_fe_state_net_quick_play_popup_v21_001c17d8_matches() {
+        check(
+            ee::s03::f_001c17d8__generated,
+            c_fe_state_net_quick_play_popup_v21_001c17d8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1c17d8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateNetAccountMem_v29` (0x001d_e908) against the generated body.
+    #[test]
+    fn c_fe_state_net_account_mem_v29_001de908_matches() {
+        check(
+            ee::s04::f_001de908__generated,
+            c_fe_state_net_account_mem_v29_001de908,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de908, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateNetAccountMem_v32` (0x001d_e910) against the generated body.
+    #[test]
+    fn c_fe_state_net_account_mem_v32_001de910_matches() {
+        check(
+            ee::s04::f_001de910__generated,
+            c_fe_state_net_account_mem_v32_001de910,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de910, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    // ---- cFEStateNetMessenger_RefreshRosterEntries -----------------------
+
+    /// `cFEStateNetMessenger_RefreshRosterEntries`: every session call is a
+    /// gated fake. The session global (`gp+0x238`) is zero on one seed in
+    /// five (the lazy-init calls run), the count is 0..4, and the per-call
+    /// zero mask decides name / flag / record / message answers.
+    #[test]
+    fn cfe_state_net_messenger_refresh_roster_entries_matches() {
+        fakes::check_reaching(
+            ee::s03::f_001a6f70__generated,
+            cfe_state_net_messenger_refresh_roster_entries,
+            400,
+            &[0x001a_6f98, 0x001a_7028, 0x001a_7180],
+            &|c, seed| {
+                let mut r = oc1528_machine(c, seed, 0x1a6f70, 14);
+                c.bus
+                    .write32(GAME_GP + 0x238, if seed % 5 == 0 { 0 } else { OC1528_BASE });
+                c.bus.write32(GAME_GP.wrapping_sub(0xc8), r.next_u32());
+                c.bus
+                    .write32(OC1528_COUNT, if seed % 7 == 0 { 0 } else { 1 + seed % 4 });
+                c.pc = 0x001a_6f70;
+            },
+        );
+    }
+
+    // Fixture objects, all in DATA+0x280000 and up: clear of the fake log,
+    // the fakes' returned pointers and the allocator's regions.
+
+    /// The object under test (`this`).
+    pub(crate) const OC1539_OBJ: u32 = DATA + 0x28_0000;
+
+    /// A string the string functions read.
+    pub(crate) const OC1539_STR: u32 = DATA + 0x2b_0000;
+
+    pub(crate) fn oc1539_w(c: &mut Cpu, a: u32, v: u32) {
+        c.bus.write32(a, v);
+    }
+
+    /// A NUL-terminated string at `a`.
+    pub(crate) fn oc1539_str(c: &mut Cpu, a: u32, s: &[u8]) {
+        for (k, b) in s.iter().enumerate() {
+            c.bus.write8(a + k as u32, *b);
+        }
+        c.bus.write8(a + s.len() as u32, 0);
+    }
+
+    #[test]
+    fn cfe_state_net_messenger_find_name_matches() {
+        const NAMES: [&[u8]; 4] = [b"Alpha", b"Bravo", b"Charlie", b"Delta"];
+        check(
+            ee::s03::f_001a5768__generated,
+            cfe_state_net_messenger_find_name,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x001a_5768, 0);
+                let this = OC1539_OBJ;
+                let begin = this + 0x1000;
+                let count = seed % 5;
+                oc1539_w(c, this + 0x6e8, begin);
+                oc1539_w(c, this + 0x6ec, begin + 4 * count);
+                for i in 0..count {
+                    let elem = this + 0x2000 + 0x40 * i;
+                    let name = this + 0x3000 + 0x20 * i;
+                    oc1539_w(c, begin + 4 * i, elem);
+                    oc1539_w(c, elem, name);
+                    oc1539_str(c, name, NAMES[i as usize]);
+                }
+                let needle: &[u8] = if seed % 2 == 0 && count > 0 {
+                    NAMES[(seed % count) as usize]
+                } else {
+                    b"Zulu"
+                };
+                oc1539_str(c, OC1539_STR, needle);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = OC1539_STR as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_challenge_received_popup_show_accept_decline_matches() {
+        check(
+            ee::s03::f_001b0d30__generated,
+            cfe_state_challenge_received_popup_show_accept_decline,
+            120,
+            &|c, seed| {
+                machine_rt(c, seed, 0x001b_0d30, 4);
+                let this = OC1539_OBJ;
+                let screen = this + 0x2000;
+                oc1539_w(c, this + 0x40, if seed % 4 == 0 { 0 } else { screen });
+                c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_net_config_on_widget_list_box_matches() {
+        check(
+            ee::s03::f_001b6080__generated,
+            cfe_state_net_config_on_widget_list_box,
+            40,
+            &|c, seed| {
+                machine(c, seed, 0x001b_6080, 0);
+                let this = OC1539_OBJ;
+                c.g[A0][0] = this as u64;
+                c.g[A2][0] = (seed % 4) as u64;
+                oc1539_w(c, this + 0x6d4, seed % 3);
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_create_step2_is_email_format_valid_matches() {
+        const CASES: [&[u8]; 7] = [b"a@b.c", b"a.b@c", b"@x", b"", b"abc", b"a.@b", b"x.y@z.w"];
+        check(
+            ee::s03::f_001bba18__generated,
+            cfe_state_create_step2_is_email_format_valid,
+            140,
+            &|c, seed| {
+                machine_rt(c, seed, 0x001b_ba18, 2);
+                oc1539_str(c, OC1539_STR, CASES[(seed % 7) as usize]);
+                c.g[A1][0] = OC1539_STR as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_lobby_menu_on_widget_pair_matches() {
+        check(
+            ee::s03::f_001bdca0__generated,
+            cfe_state_lobby_menu_on_widget_pair,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x001b_dca0, 0);
+                let this = OC1539_OBJ;
+                let pair = this + 0x2000;
+                for k in 0..4u32 {
+                    oc1539_w(c, this + 0x718 + 4 * k, 10 + k);
+                    oc1539_w(c, this + 0x708 + 4 * k, pair);
+                }
+                c.bus.write8(pair + 0x318, (seed % 256) as u8);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (10 + seed % 5) as u64;
+                c.g[A2][0] = (seed % 3) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_state_online_main_menu_on_child_event_ignore_confirm_matches() {
+        check(
+            ee::s03::f_001c0218__generated,
+            cfe_state_online_main_menu_on_child_event_ignore_confirm,
+            40,
+            &|c, seed| {
+                machine_rt(c, seed, 0x001c_0218, 2);
+                c.g[A0][0] = OC1539_OBJ as u64;
+                c.g[A1][0] = (OC1539_OBJ + 0x1000) as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0xf
+                } else {
+                    (seed % 16) as u64
+                };
+            },
         );
     }
 }

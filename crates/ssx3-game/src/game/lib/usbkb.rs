@@ -54,6 +54,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0040_d430, sce_usb_kb_set_read_mode, "sceUsbKbSetReadMode"),
     (0x0040_d4a0, sce_usb_kb_clear_rbuf, "sceUsbKbClearRbuf"),
+    (
+        0x0040_cf48,
+        libusbkb_set_led_status_callback_0040cf48,
+        "libusbkb_SetLEDStatusCallback",
+    ),
+    (
+        0x0040_cf68,
+        libusbkb_set_led_mode_callback_0040cf68,
+        "libusbkb_SetLEDModeCallback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2553,6 +2563,36 @@ pub fn sce_usb_kb_sync(c: &mut Cpu) {
     })
 }
 
+/// `libusbkb_SetLEDStatusCallback` (0x0040_cf48): straight-line leaf: 2 load(s). Mechanical port of the generated body.
+pub fn libusbkb_set_led_status_callback_0040cf48(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = 0x530000;
+    c.g[A1][0] = 0x530000;
+    c.g[V1][0] = c.lbu((c.g[V0][0] as u32).wrapping_sub(0x6ebf));
+    c.g[A0][0] = c.lbu((c.g[A1][0] as u32).wrapping_sub(0x6eff));
+    c.g[V0][0] = 0xffffffffffffffff;
+    c.g[V1][0] = c.g[V1][0] ^ c.g[A0][0];
+    if c.g[V1][0] == 0 {
+        c.g[V0][0] = 0u64;
+    }
+    ret(c);
+}
+
+/// `libusbkb_SetLEDModeCallback` (0x0040_cf68): straight-line leaf: 2 load(s). Mechanical port of the generated body.
+pub fn libusbkb_set_led_mode_callback_0040cf68(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = 0x530000;
+    c.g[A1][0] = 0x530000;
+    c.g[V1][0] = c.lbu((c.g[V0][0] as u32).wrapping_sub(0x6ebf));
+    c.g[A0][0] = c.lbu((c.g[A1][0] as u32).wrapping_sub(0x6eff));
+    c.g[V0][0] = 0xffffffffffffffff;
+    c.g[V1][0] = c.g[V1][0] ^ c.g[A0][0];
+    if c.g[V1][0] == 0 {
+        c.g[V0][0] = 0u64;
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::ee;
@@ -3840,6 +3880,36 @@ pub(crate) mod tests {
                     }
                 }
                 mode
+            },
+        );
+    }
+
+    use crate::difftest::fakes::machine;
+
+    /// `libusbkb_SetLEDStatusCallback` (0x0040_cf48) against the generated body.
+    #[test]
+    fn libusbkb_set_led_status_callback_0040cf48_matches() {
+        check(
+            ee::s15::f_0040cf48__generated,
+            libusbkb_set_led_status_callback_0040cf48,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x40cf48, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `libusbkb_SetLEDModeCallback` (0x0040_cf68) against the generated body.
+    #[test]
+    fn libusbkb_set_led_mode_callback_0040cf68_matches() {
+        check(
+            ee::s15::f_0040cf68__generated,
+            libusbkb_set_led_mode_callback_0040cf68,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x40cf68, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

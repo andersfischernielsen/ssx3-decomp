@@ -513,6 +513,29 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "WScriptMan_CheckRiderGate",
     ),
     (0x0030_bd20, wscript_man_load_state, "WScriptMan_LoadState"),
+    (0x0030_7128, wscript_mission_ctor, "WScriptMission_ctor"),
+    (0x0030_71c8, wscript_mission_dtor, "WScriptMission_dtor"),
+    (0x0030_71f0, wscript_mission_v04, "WScriptMission_v04"),
+    (0x0030_7240, wscript_mission_v02, "WScriptMission_v02"),
+    (0x0030_72b0, wscript_mission_v17, "WScriptMission_v17"),
+    (0x0030_7308, wscript_mission_v18, "WScriptMission_v18"),
+    (0x0030_74c0, wscript_mission_v19, "WScriptMission_v19"),
+    (0x0030_7568, wscript_mission_v20, "WScriptMission_v20"),
+    (
+        0x0030_b4b8,
+        w_script_man_render_0030b4b8,
+        "WScriptMan_Render",
+    ),
+    (
+        0x0030_d3d8,
+        w_script_process_is_mission_0030d3d8,
+        "WScriptProcess_IsMission",
+    ),
+    (
+        0x0030_d480,
+        w_script_mission_is_mission_0030d480,
+        "WScriptMission_IsMission",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7987,12 +8010,12 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.g[S1][0];
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
                     c.g[S2][0] = 0u64;
-                    c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0030bd6c);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0030bd6c)?;
                     pc = 0x0030bd70;
                     continue;
@@ -8035,7 +8058,7 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                 }
                 0x0030bd98 => {
                     c.cycles += 3;
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     c.g[RA][0] = sx(0x0030bda4);
                     c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2b4));
                     Callee {
@@ -8085,7 +8108,7 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                 }
                 0x0030bdc0 => {
                     c.cycles += 3;
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     c.g[RA][0] = sx(0x0030bdcc);
                     c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x2b4));
                     Callee {
@@ -8144,7 +8167,7 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                 }
                 0x0030be08 => {
                     c.cycles += 3;
-                    c.g[A0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                     let t = c.g[A0][0] == 0u64;
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
                     if t {
@@ -8177,7 +8200,7 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                 }
                 0x0030be24 => {
                     c.cycles += 11;
-                    c.g[V0][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S3][0] as u32);
                     c.g[A1][0] = c.g[SP][0];
                     c.g[A2][0] = 0x4;
                     c.g[S0][0] = 0u64;
@@ -8185,9 +8208,9 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0030be44);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0030be44)?;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
 
                     if (c.g[V0][0] as i64) <= 0 {
                         c.sw((c.g[S1][0] as u32).wrapping_add(0x2a8), 0u64);
@@ -8199,7 +8222,7 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                 }
                 0x0030be50 => {
                     c.cycles += 2;
-                    c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
                     pc = 0x0030be58;
                     continue;
                 }
@@ -8212,7 +8235,7 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0030be74);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0030be74)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28c));
                     c.g[A1][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
@@ -8223,15 +8246,15 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                     c.g[A2][0] = c.g[V0][0];
                     c.g[A1][0] = c.g[S3][0];
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x0030bea0);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x002259a8, 0x0030bea0)?;
-                    c.g[V0][0] = c.lw((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
                     c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
-                        c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[S3][0] as u32);
                         if back_edge_unwinds(c, 0x0030be58) {
                             return Ok(());
                         }
@@ -8271,6 +8294,476 @@ fn wscript_man_load_state_resume(c: &mut Cpu) {
                 }
             }
         }
+    });
+}
+
+/// `WScriptMan_Render` (0x0030_b4b8): straight-line leaf. Mechanical port of the generated body.
+pub fn w_script_man_render_0030b4b8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `WScriptProcess_IsMission` (0x0030_d3d8): straight-line leaf. Mechanical port of the generated body.
+pub fn w_script_process_is_mission_0030d3d8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `WScriptMission_IsMission` (0x0030_d480): straight-line leaf. Mechanical port of the generated body.
+pub fn w_script_mission_is_mission_0030d480(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+pub(crate) const WSMAN_IS_PROCESS_ACTIVE: Callee = Callee {
+    addr: 0x0030_b898,
+    f: ee::s10::f_0030b898,
+};
+
+pub(crate) const WSMAN_LOOKUP_FUNC: Callee = Callee {
+    addr: 0x0030_9b70,
+    f: ee::s10::f_00309b70,
+};
+
+pub(crate) const WSPROC_CTOR: Callee = Callee {
+    addr: 0x0030_7598,
+    f: ee::s10::f_00307598,
+};
+
+pub(crate) const WSPROC_DTOR: Callee = Callee {
+    addr: 0x0030_7738,
+    f: ee::s10::f_00307738,
+};
+
+pub(crate) const WSPROC_V04: Callee = Callee {
+    addr: 0x0030_7c40,
+    f: ee::s10::f_00307c40,
+};
+
+/// `WScriptMission_ctor` (0x307128, `cWScriptMission_cWScriptMission`): the
+/// process base constructor, then the vtable, the entry points of the
+/// mission's four-entry list (looked up one by one) and the list's tail.
+/// Returns `self`.
+pub fn wscript_mission_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S2, 0x40);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S3, 0x30);
+        c.g[S1][0] = c.g[T0][0];
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+        WSPROC_CTOR.call(c, 0x0030_715c)?;
+        c.g[S3][0] = sx((c.g[S2][0] as u32).wrapping_add(0x68));
+        c.g[V0][0] = 0x490000;
+        c.g[S5][0] = 3;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x65d0));
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x5c), c.g[V0][0]);
+        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x50));
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x64), c.g[S1][0]);
+        c.sw((c.g[S2][0] as u32).wrapping_add(0x60), c.g[V1][0]);
+        loop {
+            c.cycles += 8;
+            c.g[A1][0] = c.lw(c.g[S4][0] as u32);
+            c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_sub(1));
+            c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
+            c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(4));
+            WSMAN_LOOKUP_FUNC.call(c, 0x0030_7194)?;
+            c.sw(c.g[S3][0] as u32, c.g[V0][0]);
+            let more = (c.g[S5][0] as i64) >= 0;
+            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0030_7180);
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WScriptMission_dtor` (0x3071c8, `cWScriptMission__cWScriptMission`): the
+/// process base destructor after setting the mission vtable.
+pub fn wscript_mission_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x490000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x65d0));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x5c), c.g[V0][0]);
+        WSPROC_DTOR.call(c, 0x0030_71e4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WScriptMission_v04` (0x3071f0, `WScriptMission_processStart`): the
+/// record of the mission's index in its owner's table, its start hook at
+/// 0x10f2b8, then `WScriptProcess_v04(self)`.
+pub fn wscript_mission_v04(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+        c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x28));
+        call_ptr(c, 0x0010_f2b8, 0x0030_7224)?;
+        c.g[A0][0] = c.g[S0][0];
+        WSPROC_V04.call(c, 0x0030_722c)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WScriptMission_v02` (0x307240, `WScriptMission_processComplete`): when the
+/// process is still active, the mission's two state callbacks, then the
+/// audio hook and `big challenge complete` on its result.
+pub fn wscript_mission_v02(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+        WSMAN_IS_PROCESS_ACTIVE.call(c, 0x0030_725c)?;
+        if c.g[V0][0] == 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 15;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x30));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0030_7278)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x90));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x94));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0030_728c)?;
+            call_ptr(c, 0x0028_b180, 0x0030_7294)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0029_d8e0, 0x0030_729c)?;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WScriptMission_v17` (0x3072b0, `WScriptMission_missionRestart`): when the
+/// process is in state 2 (update), its first callback; then the second.
+pub fn wscript_mission_v17(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 2;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        let not_update = c.g[V0][0] != c.g[V1][0];
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
+        if !not_update {
+            c.cycles += 5;
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x30));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
+            let target = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0030_72e0)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+        let target = c.g[V1][0] as u32;
+        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, target, 0x0030_72f4)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `WScriptMission_v18` (0x307308; reference `cWScriptMission_missionPass`).
+/// One pass over a mission object in `a0`: its process at `+0x10`, a child
+/// count at `+0x20`, a callback at `+0x6c`. Runs the pass calls, then the
+/// mission's setup and deactivation scripts.
+pub fn wscript_mission_v18(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        'head: {
+            c.g[S0][0] = 0;
+            call_ptr(c, 0x0014_dc80, 0x0030_7328)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0xa;
+            call_ptr(c, 0x0014_dd58, 0x0030_7334)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A1][0] = Addr(c.g[S1][0] as u32).off(0x20).lw(c);
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0015_3d78, 0x0030_7344)?;
+            let t = c.g[V0][0] != 0;
+            c.g[A2][0] = 1;
+            if t {
+                break 'head;
+            }
+            c.cycles += 15;
+            c.g[A1][0] = Addr(c.g[S1][0] as u32).off(0x20).lw(c);
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0015_4160, 0x0030_7358)?;
+            c.g[A1][0] = Addr(c.g[S1][0] as u32).off(0x20).lw(c);
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, 0x0015_3fa0, 0x0030_7364)?;
+            c.g[S0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_dc80, 0x0030_736c)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0xb;
+            call_ptr(c, 0x0014_dd58, 0x0030_7378)?;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0015_11b0, 0x0030_7384)?;
+            c.g[S0][0] = c.g[V0][0];
+        }
+        'tail: {
+            'pass: {
+                c.cycles += 26;
+                call_ptr(c, 0x0014_dc80, 0x0030_7390)?;
+                c.g[A1][0] = 0;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0014_dd58, 0x0030_739c)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0014_4c98, 0x0030_73a4)?;
+                c.g[V1][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A3][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+                c.g[A2][0] = c.g[S0][0];
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x84).lw(c);
+                c.g[V0][0] = Addr(c.g[A3][0] as u32).lw(c);
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).off(0xc).lw(c);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x28).lw(c);
+                call_ptr(c, 0x0010_f2d8, 0x0030_73d0)?;
+                c.g[A1][0] = Addr(c.g[S1][0] as u32).off(0x20).lw(c);
+                c.g[A0][0] = c.g[S2][0];
+                call_ptr(c, 0x0015_3fd8, 0x0030_73dc)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V0][0] = u64::MAX;
+                let t = c.g[S0][0] == c.g[V0][0];
+                c.g[A2][0] = 0;
+                if t {
+                    break 'pass;
+                }
+                'child: {
+                    c.cycles += 6;
+                    c.g[A1][0] = Addr(c.g[S1][0] as u32).off(0x20).lw(c);
+                    c.g[A0][0] = c.g[S2][0];
+                    call_ptr(c, 0x0015_41d0, 0x0030_73fc)?;
+                    c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x6c).lw(c);
+                    let t = c.g[A2][0] == 0;
+                    c.g[A0][0] = c.g[S2][0];
+                    if t {
+                        break 'child;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, 0x0030_ac98, 0x0030_7414)?;
+                    c.g[A0][0] = c.g[S2][0];
+                }
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x0015_3e28, 0x0030_7420)?;
+                let t = c.g[V0][0] == 0;
+                c.g[A1][0] = c.g[S0][0];
+                if t {
+                    break 'tail;
+                }
+                c.cycles += 13;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A2][0] = 0;
+                call_ptr(c, 0x0015_4010, 0x0030_7434)?;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 1;
+                call_ptr(c, 0x0015_4080, 0x0030_7444)?;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 1;
+                call_ptr(c, 0x0015_41d0, 0x0030_7454)?;
+                break 'tail;
+            }
+            c.cycles += 3;
+            c.g[A2][0] = Addr(c.g[S1][0] as u32).off(0x6c).lw(c);
+            let t = c.g[A2][0] == 0;
+            if t {
+                break 'tail;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, 0x0030_ac98, 0x0030_7474)?;
+        }
+        c.cycles += 19;
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+        call_ptr(c, 0x0030_8db8, 0x0030_747c)?;
+        c.g[A0][0] = Addr(c.g[S1][0] as u32).off(0x10).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x0030_9b00, 0x0030_7488)?;
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x84).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x28).lw(c);
+        call_ptr(c, 0x0026_f228, 0x0030_7498)?;
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x84).lw(c);
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(0x28).lw(c);
+        call_ptr(c, 0x0026_f7b8, 0x0030_74a8)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `WScriptMission_v19` (0x3074c0): the short mission step. Asks the process
+/// (`+0x10`, count at `+0x20`) for a value, runs its callback when that value
+/// is zero, and terminates the process when its first word (state) is 2.
+pub fn wscript_mission_v19(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, 0x0014_dc80, 0x0030_74d8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0xa;
+        call_ptr(c, 0x0014_dd58, 0x0030_74e4)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x20).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, 0x0015_3e80, 0x0030_74f4)?;
+        'pass: {
+            if c.g[V0][0] != 0 {
+                c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x70).lw(c);
+                break 'pass;
+            }
+            c.cycles += 5;
+            c.g[A1][0] = Addr(c.g[S0][0] as u32).off(0x20).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = 1;
+            call_ptr(c, 0x0015_40f0, 0x0030_750c)?;
+            c.g[A2][0] = Addr(c.g[S0][0] as u32).off(0x70).lw(c);
+        }
+        'mid: {
+            'mid_a: {
+                c.cycles += 2;
+                if c.g[A2][0] == 0 {
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x5c).lw(c);
+                    break 'mid_a;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x10).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x0030_ac98, 0x0030_7524)?;
+                c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+                break 'mid;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0xa0).lh(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0xa4).lw(c);
+            let t = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, t, 0x0030_753c)?;
+            c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        }
+        'end: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x2;
+            if c.g[V1][0] != c.g[V0][0] {
+                frame.restore(c, S0, 0x20);
+                break 'end;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0030_7d78, 0x0030_7554)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `WScriptMission_v20` (0x307568): forwards the mission's process callback
+/// (`+0x10`) to the process manager when the mission has one (`+0x74`).
+pub fn wscript_mission_v20(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = Addr(c.g[A1][0] as u32).off(0x74).lw(c);
+        let t = c.g[A2][0] == 0;
+        frame.restore_ra(c, 0);
+        if !t {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(c.g[A1][0] as u32).off(0x10).lw(c);
+            call_ptr(c, 0x0030_ac98, 0x0030_7588)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
     });
 }
 
@@ -12220,6 +12713,391 @@ pub(crate) mod tests {
             wscript_man_load_state,
             180,
             &ls_setup,
+        );
+    }
+
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes::machine_rt;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc1576_no_prev;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::world as world_2;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::GATE;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::MAGIC;
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::SELF;
+
+    /// `WScriptMan_Render` (0x0030_b4b8) against the generated body.
+    #[test]
+    fn w_script_man_render_0030b4b8_matches() {
+        check(
+            ee::s10::f_0030b4b8__generated,
+            w_script_man_render_0030b4b8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x30b4b8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `WScriptProcess_IsMission` (0x0030_d3d8) against the generated body.
+    #[test]
+    fn w_script_process_is_mission_0030d3d8_matches() {
+        check(
+            ee::s10::f_0030d3d8__generated,
+            w_script_process_is_mission_0030d3d8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x30d3d8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `WScriptMission_IsMission` (0x0030_d480) against the generated body.
+    #[test]
+    fn w_script_mission_is_mission_0030d480_matches() {
+        check(
+            ee::s10::f_0030d480__generated,
+            w_script_mission_is_mission_0030d480,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x30d480, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    pub(crate) const OBJ_2: u32 = DATA + 0x0070_8000;
+
+    pub(crate) const MGR: u32 = DATA + 0x0070_9000;
+
+    pub(crate) const STATE: u32 = DATA + 0x0070_a000;
+
+    /// Gated fake of `WScriptProcess_ctor` (0x307598).
+    pub(crate) fn oc1576_fake_process_ctor(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1576_fake_process_ctor),
+                oc1576_no_prev,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0030_7598, ra);
+    }
+
+    /// Gated fake of `WScriptMan_LookupFunc` (0x309b70).
+    pub(crate) fn oc1576_fake_lookup_func(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1576_fake_lookup_func), oc1576_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0030_9b70, ra);
+    }
+
+    /// Gated fake of `WScriptProcess_dtor` (0x307738).
+    pub(crate) fn oc1576_fake_process_dtor(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1576_fake_process_dtor),
+                oc1576_no_prev,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0030_7738, ra);
+    }
+
+    /// Gated fake of the rider start hook (0x10f2b8).
+    pub(crate) fn oc1576_fake_rider_flag(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1576_fake_rider_flag), oc1576_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0010_f2b8, ra);
+    }
+
+    /// Gated fake of `WScriptProcess_processStart` (0x307c40).
+    pub(crate) fn oc1576_fake_process_v04(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1576_fake_process_v04), oc1576_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0030_7c40, ra);
+    }
+
+    /// Gated fake of `WScriptMan_IsProcessActive` (0x30b898): its result is
+    /// the mailbox word (GATE + 4).
+    pub(crate) fn oc1576_fake_is_active(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1576_fake_is_active), oc1576_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0030_b898, ra);
+        c.g[V0][0] = c.bus.read32(GATE + 4) as u64;
+    }
+
+    /// Gated fake of the audio hook (0x28b180).
+    pub(crate) fn oc1576_fake_bx_audio(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(c, fakes::prev_cell(oc1576_fake_bx_audio), oc1576_no_prev);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0028_b180, ra);
+    }
+
+    /// Gated fake of `cSSXAudio_BigChallengeComplete` (0x29d8e0).
+    pub(crate) fn oc1576_fake_big_challenge(c: &mut Cpu) {
+        if c.bus.read32(GATE) != MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1576_fake_big_challenge),
+                oc1576_no_prev,
+            );
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x0029_d8e0, ra);
+    }
+
+    /// `WScriptMission_ctor`: the base constructor's fake, then the four
+    /// list entries through the lookup fake, the list at `self`'s `+0x40`.
+    #[test]
+    fn wscript_mission_ctor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00307598),
+            oc1576_fake_process_ctor,
+            fakes::prev_cell(oc1576_fake_process_ctor),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00309B70),
+            oc1576_fake_lookup_func,
+            fakes::prev_cell(oc1576_fake_lookup_func),
+        );
+        check(
+            ee::s10::f_00307128__generated,
+            wscript_mission_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0030_7128, 0);
+                c.bus.write32(GATE, MAGIC);
+                for i in 0..4u32 {
+                    c.bus.write32(OBJ_2 + 0x40 + 4 * i, r.next_u32());
+                }
+                c.bus.write32(OBJ_2 + 0x50, r.next_u32());
+                c.bus.write32(SELF + 0x10, MGR);
+                c.g[A0][0] = sx(SELF);
+                c.g[A3][0] = sx(OBJ_2);
+                c.g[T0][0] = sx(0x0040_1000 + seed);
+            },
+        );
+    }
+
+    /// `WScriptMission_dtor`: the base destructor's fake, after the vtable store.
+    #[test]
+    fn wscript_mission_dtor_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00307738),
+            oc1576_fake_process_dtor,
+            fakes::prev_cell(oc1576_fake_process_dtor),
+        );
+        check(
+            ee::s10::f_003071c8__generated,
+            wscript_mission_dtor,
+            100,
+            &|c, seed| {
+                let _ = machine_rt(c, seed, 0x0030_71c8, 0);
+                c.bus.write32(GATE, MAGIC);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    /// `WScriptMission_v04`: the record of the mission's index, the rider
+    /// start hook's fake, then `WScriptProcess_v04`'s fake.
+    #[test]
+    fn wscript_mission_v04_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s00::OVERRIDE_0010F2B8),
+            oc1576_fake_rider_flag,
+            fakes::prev_cell(oc1576_fake_rider_flag),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00307C40),
+            oc1576_fake_process_v04,
+            fakes::prev_cell(oc1576_fake_process_v04),
+        );
+        check(
+            ee::s10::f_003071f0__generated,
+            wscript_mission_v04,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0030_71f0, 0);
+                c.bus.write32(GATE, MAGIC);
+                world_2(c, &mut r, (seed >> 2) & 0xf);
+                c.bus.write32(OBJ_2, seed % 4);
+                c.bus.write32(SELF + 0x10, OBJ_2);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    /// `WScriptMission_v02`: the process-active fake (its result from the
+    /// mailbox: zero and not zero), the two state callbacks and the audio hooks.
+    #[test]
+    fn wscript_mission_v02_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030B898),
+            oc1576_fake_is_active,
+            fakes::prev_cell(oc1576_fake_is_active),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s07::OVERRIDE_0028B180),
+            oc1576_fake_bx_audio,
+            fakes::prev_cell(oc1576_fake_bx_audio),
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_0029D8E0),
+            oc1576_fake_big_challenge,
+            fakes::prev_cell(oc1576_fake_big_challenge),
+        );
+        check(
+            ee::s10::f_00307240__generated,
+            wscript_mission_v02,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0030_7240, 4);
+                c.bus.write32(GATE, MAGIC);
+                c.bus.write32(GATE + 4, seed % 2);
+                c.bus.write32(SELF + 0x10, MGR);
+                c.bus.write32(SELF + 0x5c, STATE);
+                c.bus.write16(STATE + 0x30, (r.next_u32() % 0x40) as u16);
+                c.bus.write32(STATE + 0x34, fakes::FAKE);
+                c.bus.write16(STATE + 0x90, (r.next_u32() % 0x40) as u16);
+                c.bus.write32(STATE + 0x94, fakes::FAKE);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    /// `WScriptMission_v17`: the state word (update or not), both callbacks
+    /// through the miss hook.
+    #[test]
+    fn wscript_mission_v17_matches() {
+        check(
+            ee::s10::f_003072b0__generated,
+            wscript_mission_v17,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0030_72b0, 4);
+                let state = if seed % 2 == 0 { 2 } else { seed % 5 };
+                c.bus.write32(SELF, state);
+                c.bus.write32(SELF + 0x5c, STATE);
+                c.bus.write16(STATE + 0x20, (r.next_u32() % 0x40) as u16);
+                c.bus.write32(STATE + 0x24, fakes::FAKE);
+                c.bus.write16(STATE + 0x30, (r.next_u32() % 0x40) as u16);
+                c.bus.write32(STATE + 0x34, fakes::FAKE);
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    pub(crate) const OC1577_SEEDS: u32 = 150;
+
+    /// Gate word of the `WScriptMan_CallProcessFunc` fake (0 = the real body).
+    pub(crate) const OC1577_CTRL: u32 = DATA + 0x9000;
+
+    pub(crate) const OC1577_MAGIC: u32 = 0x1577_0a01;
+
+    pub(crate) static OC1577_PREV_CALL: AtomicUsize = AtomicUsize::new(0);
+
+    /// `WScriptMan_CallProcessFunc` would run the Luno VM on a zeroed script
+    /// (runaway in `LunoVM_Execute`): the fixtures call a logging fake instead.
+    pub(crate) fn oc1577_fake_call_process_func(c: &mut Cpu) {
+        if c.bus.read32(OC1577_CTRL) != OC1577_MAGIC {
+            return fakes::fall_back(c, &OC1577_PREV_CALL, ee::s10::f_0030ac98__generated);
+        }
+        fakes::fake_call(c, 0x0030_ac98);
+    }
+
+    /// Hook the fake (once per process) and open its gate in this machine.
+    pub(crate) fn oc1577_gate(c: &mut Cpu) {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0030AC98),
+            oc1577_fake_call_process_func,
+            &OC1577_PREV_CALL,
+        );
+        c.bus.write32(OC1577_CTRL, OC1577_MAGIC);
+    }
+
+    pub(crate) const OC1577_MISSION: u32 = DATA + 0x1000;
+
+    pub(crate) const OC1577_PROC: u32 = DATA + 0x2000;
+
+    pub(crate) const OC1577_WORLD: u32 = DATA + 0x3000;
+
+    pub(crate) const OC1577_WSTRUCT: u32 = DATA + 0x3100;
+
+    pub(crate) const OC1577_TABLE: u32 = DATA + 0x3300;
+
+    pub(crate) const OC1577_VT: u32 = DATA + 0x3400;
+
+    /// The mission fixture of the three WScriptMission ports: the mission, its
+    /// process, the world lookup chain (gp-0x848 -> world -> +0x84 -> +0xc
+    /// table), and a vtable whose `+0xa4` is the leaf at 0x1406c0 (returns 0).
+    pub(crate) fn oc1577_mission(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        elf_image(c);
+        let mut r = machine_rt(c, seed, salt, 0);
+        oc1577_gate(c);
+        let gp = c.g[GP][0] as u32;
+        let m = OC1577_MISSION;
+        c.g[A0][0] = sx(m);
+        c.bus.write32(gp.wrapping_sub(0x848), OC1577_WORLD);
+        c.bus.write32(OC1577_WORLD + 0x84, OC1577_WSTRUCT);
+        c.bus.write32(OC1577_WSTRUCT + 0xc, OC1577_TABLE);
+        c.bus.write32(OC1577_PROC, r.next_u32() % 4);
+        c.bus.write32(m + 0x10, OC1577_PROC);
+        c.bus.write32(m + 0x20, r.next_u32() % 3);
+        c.bus.write32(m + 0x5c, OC1577_VT);
+        c.bus.write32(m + 0x6c, (seed % 3 != 0) as u32);
+        c.bus.write32(m + 0x70, r.next_u32() % 3);
+        c.bus.write32(m + 0x74, (seed % 2) as u32);
+        c.bus.write32(OC1577_VT + 0xa4, 0x0014_06c0);
+        r
+    }
+
+    #[test]
+    fn wscript_mission_v18_matches() {
+        check(
+            ee::s10::f_00307308__generated,
+            wscript_mission_v18,
+            OC1577_SEEDS,
+            &|c, seed| {
+                oc1577_mission(c, seed, 0x1577_0018);
+            },
+        );
+    }
+
+    #[test]
+    fn wscript_mission_v19_matches() {
+        check(
+            ee::s10::f_003074c0__generated,
+            wscript_mission_v19,
+            OC1577_SEEDS,
+            &|c, seed| {
+                oc1577_mission(c, seed, 0x1577_0019);
+            },
+        );
+    }
+
+    #[test]
+    fn wscript_mission_v20_matches() {
+        check(
+            ee::s10::f_00307568__generated,
+            wscript_mission_v20,
+            OC1577_SEEDS,
+            &|c, seed| {
+                oc1577_mission(c, seed, 0x1577_0020);
+            },
         );
     }
 }

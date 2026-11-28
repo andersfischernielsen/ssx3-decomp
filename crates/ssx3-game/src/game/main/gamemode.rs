@@ -200,6 +200,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         gm_handler8_pick_opponents,
         "GMHandler8_PickOpponents",
     ),
+    (0x0023_ac10, gm_handler1_v07_0023ac10, "GMHandler1_v07"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8403,6 +8404,12 @@ pub fn gm_handler8_pick_opponents(c: &mut Cpu) {
     });
 }
 
+/// `GMHandler1_v07` (0x0023_ac10): straight-line leaf. Mechanical port of the generated body.
+pub fn gm_handler1_v07_0023ac10(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::main::game::tests::fake_get_be;
@@ -10553,6 +10560,20 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x0023b0a8;
+            },
+        );
+    }
+
+    /// `GMHandler1_v07` (0x0023_ac10) against the generated body.
+    #[test]
+    fn gm_handler1_v07_0023ac10_matches() {
+        check(
+            ee::s06::f_0023ac10__generated,
+            gm_handler1_v07_0023ac10,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x23ac10, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

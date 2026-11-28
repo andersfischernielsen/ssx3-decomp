@@ -587,8 +587,8 @@ fn cfe_state_rule_select_get_rule_value_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x470));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1214,8 +1214,8 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V0][0] = 0x460000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1307,7 +1307,7 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                 }
                 0x00191a48 => {
                     c.cycles += 7;
-                    c.sb((c.g[V0][0] as u32), 0u64);
+                    c.sb(c.g[V0][0] as u32, 0u64);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
                     let t = (c.g[V1][0] as i64) >= 0;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
@@ -1379,7 +1379,7 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[V0][0];
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x48));
                     let t = c.g[S0][0] == 0u64;
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     if t {
                         pc = 0x00191b18;
                         continue;
@@ -1392,9 +1392,9 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x440000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1058));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[RA][0] = sx(0x00191b0c);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x00317670, 0x00191b0c)?;
                     c.g[A0][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x00191b18);
@@ -1408,17 +1408,17 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x4a0000;
                     c.g[S2][0] = 0u64;
                     c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x16a8));
-                    c.g[V1][0] = c.lb((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x1));
                     c.g[A1][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x2));
-                    c.sb((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V1][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x1), c.g[A0][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x2), c.g[A1][0]);
                     c.g[S6][0] = 0xfffffffffffffffe;
                     c.g[V0][0] = 0x4a0000;
                     c.g[S3][0] = 0x1000000;
                     c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x13a0));
-                    c.g[V1][0] = c.lb((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x1));
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x11), c.g[A0][0]);
@@ -1464,7 +1464,7 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00191bbc);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00191bbc)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x1;
@@ -1472,7 +1472,7 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00191bd4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00191bd4)?;
                     c.g[V0][0] = ((c.g[S2][0] as i64) < 9i64) as u64;
                     pc = 0x00191bd8;
@@ -1491,12 +1491,12 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                 }
                 0x00191be0 => {
                     c.cycles += 6;
-                    c.g[V1][0] = c.lbu((c.g[SP][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[SP][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     let t = true;
-                    c.sb((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x00191c04;
                         continue;
@@ -1507,7 +1507,7 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                 0x00191bf8 => {
                     c.cycles += 3;
                     c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x58));
-                    c.sb((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     pc = 0x00191c04;
                     continue;
@@ -1518,7 +1518,7 @@ fn cfe_state_rule_select_init_resume(c: &mut Cpu) {
                     c.g[S2][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
                     c.g[V0][0] = ((c.g[S2][0] as i64) < 11i64) as u64;
                     let t = c.g[V0][0] != 0u64;
-                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S5][0] as u32)));
+                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S5][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x00191b60) {
                             return Ok(());
@@ -2496,14 +2496,14 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
                     c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x16a8));
-                    c.g[A2][0] = c.lb((c.g[T1][0] as u32));
+                    c.g[A2][0] = c.lb(c.g[T1][0] as u32);
                     c.g[A3][0] = c.lb((c.g[T1][0] as u32).wrapping_add(0x1));
                     c.g[T0][0] = c.lb((c.g[T1][0] as u32).wrapping_add(0x2));
-                    c.sb((c.g[SP][0] as u32), c.g[A2][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[A2][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x1), c.g[A3][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x2), c.g[T0][0]);
                     c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x16b0));
-                    c.g[V0][0] = c.lb((c.g[A3][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[A3][0] as u32);
                     c.g[A1][0] = c.lb((c.g[A3][0] as u32).wrapping_add(0x1));
                     c.g[A2][0] = c.lb((c.g[A3][0] as u32).wrapping_add(0x2));
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -2541,7 +2541,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                 0x00191474 => {
                     c.cycles += 2;
                     let t = c.g[S2][0] == 0u64;
-                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add((c.g[S7][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[S7][0] as u32));
                     if t {
                         pc = 0x001917a8;
                         continue;
@@ -2569,15 +2569,15 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x48));
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1018));
                     c.g[V1][0] = 0x440000;
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1008));
-                    c.g[S4][0] = c.lb((c.g[A0][0] as u32));
+                    c.g[S4][0] = c.lb(c.g[A0][0] as u32);
                     c.g[V0][0] = sx((c.g[S4][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                    c.g[S1][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[S1][0] = c.lb(c.g[V1][0] as u32);
                     c.g[RA][0] = sx(0x001914c4);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001914c4)?;
                     c.g[A1][0] = c.g[V0][0];
                     c.g[RA][0] = sx(0x001914d0);
@@ -2601,8 +2601,8 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[S1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x510));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2891,7 +2891,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001917a8);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001917a8)?;
                     pc = 0x001917a8;
                     continue;
@@ -2905,7 +2905,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                 0x001917ac => {
                     c.cycles += 2;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[V0][0] = c.lbu((c.g[SP][0] as u32));
+                    c.g[V0][0] = c.lbu(c.g[SP][0] as u32);
                     if t {
                         pc = 0x001917cc;
                         continue;
@@ -2918,7 +2918,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lbu((c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                    c.sb((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
                     let t = true;
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V1][0]);
                     if t {
@@ -2932,7 +2932,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = sx((c.g[S5][0] as u32).wrapping_add(0x58));
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
-                    c.sb((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
                     pc = 0x001917d8;
                     continue;
                 }
@@ -2977,8 +2977,8 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                 0x00191814 => {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x48));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     let t = c.g[V1][0] != 0u64;
                     c.g[V0][0] = 0x460000;
                     if t {
@@ -3024,7 +3024,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0019187c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0019187c)?;
                     pc = 0x0019187c;
                     continue;
@@ -3047,7 +3047,7 @@ fn rule_select_fill_rule_list_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00191898);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00191898)?;
                     pc = 0x00191898;
                     continue;
@@ -4174,8 +4174,8 @@ fn cfe_state_rule_select_set_rule_value_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4b0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;

@@ -909,6 +909,111 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_engine_queue_finish_scripts_4,
         "ScriptEngine_QueueFinishScripts",
     ),
+    (
+        0x0028_1168,
+        script_view_obj_get_binding_count_00281168,
+        "ScriptViewObj_GetBindingCount",
+    ),
+    (
+        0x0028_47e8,
+        script_engine_seq_listener_on_advance_002847e8,
+        "ScriptEngine_SeqListenerOnAdvance",
+    ),
+    (
+        0x0028_47f0,
+        script_engine_seq_listener_on_end_002847f0,
+        "ScriptEngine_SeqListenerOnEnd",
+    ),
+    (
+        0x0028_47f8,
+        script_engine_seq_listener_v05_002847f8,
+        "ScriptEngine_SeqListener_v05",
+    ),
+    (
+        0x0028_4800,
+        script_engine_seq_listener_v07_00284800,
+        "ScriptEngine_SeqListener_v07",
+    ),
+    (
+        0x0028_4808,
+        script_engine_seq_listener_v08_00284808,
+        "ScriptEngine_SeqListener_v08",
+    ),
+    (
+        0x0028_4810,
+        script_engine_seq_listener_v11_00284810,
+        "ScriptEngine_SeqListener_v11",
+    ),
+    (
+        0x0028_4820,
+        script_engine_script_db_load_bank_00284820,
+        "ScriptEngine_ScriptDbLoadBank",
+    ),
+    (
+        0x0028_4828,
+        script_engine_script_db_cancel_bank_00284828,
+        "ScriptEngine_ScriptDbCancelBank",
+    ),
+    (
+        0x0028_4830,
+        script_engine_script_db_unload_bank_00284830,
+        "ScriptEngine_ScriptDbUnloadBank",
+    ),
+    (
+        0x0028_4838,
+        script_engine_script_db_v10_00284838,
+        "ScriptEngine_ScriptDb_v10",
+    ),
+    (
+        0x0028_4840,
+        script_engine_script_db_v11_00284840,
+        "ScriptEngine_ScriptDb_v11",
+    ),
+    (
+        0x0028_4848,
+        script_engine_script_db_v12_00284848,
+        "ScriptEngine_ScriptDb_v12",
+    ),
+    (
+        0x0028_4940,
+        script_dummy_obj_get_binding_count_00284940,
+        "ScriptDummyObj_GetBindingCount",
+    ),
+    (
+        0x0028_4948,
+        script_dummy_obj_get_binding_00284948,
+        "ScriptDummyObj_GetBinding",
+    ),
+    (
+        0x0028_49b8,
+        script_audio_obj_get_binding_count_002849b8,
+        "ScriptAudioObj_GetBindingCount",
+    ),
+    (
+        0x0028_49c0,
+        script_audio_obj_get_binding_002849c0,
+        "ScriptAudioObj_GetBinding",
+    ),
+    (
+        0x0028_4a88,
+        script_obj_cam_get_binding_count_00284a88,
+        "ScriptObjCam_GetBindingCount",
+    ),
+    (
+        0x0028_4a90,
+        script_obj_cam_get_binding_00284a90,
+        "ScriptObjCam_GetBinding",
+    ),
+    (
+        0x0028_4b50,
+        rider_script_obj_get_binding_count_00284b50,
+        "RiderScriptObj_GetBindingCount",
+    ),
+    (
+        0x0028_4b58,
+        rider_script_obj_get_binding_00284b58,
+        "RiderScriptObj_GetBinding",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -18056,6 +18161,144 @@ pub fn script_engine_queue_finish_scripts_4(c: &mut Cpu) {
     });
 }
 
+/// `ScriptViewObj_GetBindingCount` (0x0028_1168): straight-line leaf. Mechanical port of the generated body.
+pub fn script_view_obj_get_binding_count_00281168(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0xa;
+    ret(c);
+}
+
+/// `ScriptEngine_SeqListenerOnAdvance` (0x0028_47e8): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_seq_listener_on_advance_002847e8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_SeqListenerOnEnd` (0x0028_47f0): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_seq_listener_on_end_002847f0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_SeqListener_v05` (0x0028_47f8): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_seq_listener_v05_002847f8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `ScriptEngine_SeqListener_v07` (0x0028_4800): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_seq_listener_v07_00284800(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_SeqListener_v08` (0x0028_4808): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_seq_listener_v08_00284808(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_SeqListener_v11` (0x0028_4810): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_seq_listener_v11_00284810(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `ScriptEngine_ScriptDbLoadBank` (0x0028_4820): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_script_db_load_bank_00284820(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `ScriptEngine_ScriptDbCancelBank` (0x0028_4828): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_script_db_cancel_bank_00284828(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_ScriptDbUnloadBank` (0x0028_4830): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_script_db_unload_bank_00284830(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_ScriptDb_v10` (0x0028_4838): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_script_db_v10_00284838(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_ScriptDb_v11` (0x0028_4840): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_script_db_v11_00284840(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptEngine_ScriptDb_v12` (0x0028_4848): straight-line leaf. Mechanical port of the generated body.
+pub fn script_engine_script_db_v12_00284848(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `ScriptDummyObj_GetBindingCount` (0x0028_4940): straight-line leaf. Mechanical port of the generated body.
+pub fn script_dummy_obj_get_binding_count_00284940(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `ScriptDummyObj_GetBinding` (0x0028_4948): straight-line leaf. Mechanical port of the generated body.
+pub fn script_dummy_obj_get_binding_00284948(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// `ScriptAudioObj_GetBindingCount` (0x0028_49b8): straight-line leaf. Mechanical port of the generated body.
+pub fn script_audio_obj_get_binding_count_002849b8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `ScriptAudioObj_GetBinding` (0x0028_49c0): straight-line leaf. Mechanical port of the generated body.
+pub fn script_audio_obj_get_binding_002849c0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// `ScriptObjCam_GetBindingCount` (0x0028_4a88): straight-line leaf. Mechanical port of the generated body.
+pub fn script_obj_cam_get_binding_count_00284a88(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `ScriptObjCam_GetBinding` (0x0028_4a90): straight-line leaf. Mechanical port of the generated body.
+pub fn script_obj_cam_get_binding_00284a90(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `RiderScriptObj_GetBindingCount` (0x0028_4b50): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_script_obj_get_binding_count_00284b50(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `RiderScriptObj_GetBinding` (0x0028_4b58): straight-line leaf. Mechanical port of the generated body.
+pub fn rider_script_obj_get_binding_00284b58(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::game::intersect::riderspheretree::tests::oc430_install_fakes;
@@ -24557,6 +24800,318 @@ pub(crate) mod tests {
             100,
             &|c, seed| {
                 let _ = oc738_queue_finish_fixture(c, seed, 0x27_a861);
+            },
+        );
+    }
+
+    /// `ScriptViewObj_GetBindingCount` (0x0028_1168) against the generated body.
+    #[test]
+    fn script_view_obj_get_binding_count_00281168_matches() {
+        check(
+            ee::s07::f_00281168__generated,
+            script_view_obj_get_binding_count_00281168,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x281168, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_SeqListenerOnAdvance` (0x0028_47e8) against the generated body.
+    #[test]
+    fn script_engine_seq_listener_on_advance_002847e8_matches() {
+        check(
+            ee::s07::f_002847e8__generated,
+            script_engine_seq_listener_on_advance_002847e8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847e8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_SeqListenerOnEnd` (0x0028_47f0) against the generated body.
+    #[test]
+    fn script_engine_seq_listener_on_end_002847f0_matches() {
+        check(
+            ee::s07::f_002847f0__generated,
+            script_engine_seq_listener_on_end_002847f0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847f0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// An edge-case 64-bit register value (0, 1, -1, small, random).
+    #[allow(dead_code)]
+    pub(crate) fn leaf_val(r: &mut Rng) -> u64 {
+        match r.next_u32() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => u64::MAX,
+            3 => (r.next_u32() % 64) as u64,
+            4 => sx(r.next_u32()),
+            5 => r.next_u32() as u64,
+            6 => 0x8000_0000,
+            _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        }
+    }
+
+    /// `ScriptEngine_SeqListener_v05` (0x0028_47f8) against the generated body.
+    #[test]
+    fn script_engine_seq_listener_v05_002847f8_matches() {
+        check(
+            ee::s07::f_002847f8__generated,
+            script_engine_seq_listener_v05_002847f8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2847f8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_SeqListener_v07` (0x0028_4800) against the generated body.
+    #[test]
+    fn script_engine_seq_listener_v07_00284800_matches() {
+        check(
+            ee::s07::f_00284800__generated,
+            script_engine_seq_listener_v07_00284800,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284800, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_SeqListener_v08` (0x0028_4808) against the generated body.
+    #[test]
+    fn script_engine_seq_listener_v08_00284808_matches() {
+        check(
+            ee::s07::f_00284808__generated,
+            script_engine_seq_listener_v08_00284808,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284808, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_SeqListener_v11` (0x0028_4810) against the generated body.
+    #[test]
+    fn script_engine_seq_listener_v11_00284810_matches() {
+        check(
+            ee::s07::f_00284810__generated,
+            script_engine_seq_listener_v11_00284810,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284810, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_ScriptDbLoadBank` (0x0028_4820) against the generated body.
+    #[test]
+    fn script_engine_script_db_load_bank_00284820_matches() {
+        check(
+            ee::s07::f_00284820__generated,
+            script_engine_script_db_load_bank_00284820,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284820, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_ScriptDbCancelBank` (0x0028_4828) against the generated body.
+    #[test]
+    fn script_engine_script_db_cancel_bank_00284828_matches() {
+        check(
+            ee::s07::f_00284828__generated,
+            script_engine_script_db_cancel_bank_00284828,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284828, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_ScriptDbUnloadBank` (0x0028_4830) against the generated body.
+    #[test]
+    fn script_engine_script_db_unload_bank_00284830_matches() {
+        check(
+            ee::s07::f_00284830__generated,
+            script_engine_script_db_unload_bank_00284830,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284830, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_ScriptDb_v10` (0x0028_4838) against the generated body.
+    #[test]
+    fn script_engine_script_db_v10_00284838_matches() {
+        check(
+            ee::s07::f_00284838__generated,
+            script_engine_script_db_v10_00284838,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284838, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_ScriptDb_v11` (0x0028_4840) against the generated body.
+    #[test]
+    fn script_engine_script_db_v11_00284840_matches() {
+        check(
+            ee::s07::f_00284840__generated,
+            script_engine_script_db_v11_00284840,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284840, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptEngine_ScriptDb_v12` (0x0028_4848) against the generated body.
+    #[test]
+    fn script_engine_script_db_v12_00284848_matches() {
+        check(
+            ee::s07::f_00284848__generated,
+            script_engine_script_db_v12_00284848,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284848, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptDummyObj_GetBindingCount` (0x0028_4940) against the generated body.
+    #[test]
+    fn script_dummy_obj_get_binding_count_00284940_matches() {
+        check(
+            ee::s07::f_00284940__generated,
+            script_dummy_obj_get_binding_count_00284940,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284940, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptDummyObj_GetBinding` (0x0028_4948) against the generated body.
+    #[test]
+    fn script_dummy_obj_get_binding_00284948_matches() {
+        check(
+            ee::s07::f_00284948__generated,
+            script_dummy_obj_get_binding_00284948,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x284948, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptAudioObj_GetBindingCount` (0x0028_49b8) against the generated body.
+    #[test]
+    fn script_audio_obj_get_binding_count_002849b8_matches() {
+        check(
+            ee::s07::f_002849b8__generated,
+            script_audio_obj_get_binding_count_002849b8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2849b8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptAudioObj_GetBinding` (0x0028_49c0) against the generated body.
+    #[test]
+    fn script_audio_obj_get_binding_002849c0_matches() {
+        check(
+            ee::s07::f_002849c0__generated,
+            script_audio_obj_get_binding_002849c0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2849c0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptObjCam_GetBindingCount` (0x0028_4a88) against the generated body.
+    #[test]
+    fn script_obj_cam_get_binding_count_00284a88_matches() {
+        check(
+            ee::s07::f_00284a88__generated,
+            script_obj_cam_get_binding_count_00284a88,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284a88, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `ScriptObjCam_GetBinding` (0x0028_4a90) against the generated body.
+    #[test]
+    fn script_obj_cam_get_binding_00284a90_matches() {
+        check(
+            ee::s07::f_00284a90__generated,
+            script_obj_cam_get_binding_00284a90,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284a90, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderScriptObj_GetBindingCount` (0x0028_4b50) against the generated body.
+    #[test]
+    fn rider_script_obj_get_binding_count_00284b50_matches() {
+        check(
+            ee::s07::f_00284b50__generated,
+            rider_script_obj_get_binding_count_00284b50,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x284b50, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `RiderScriptObj_GetBinding` (0x0028_4b58) against the generated body.
+    #[test]
+    fn rider_script_obj_get_binding_00284b58_matches() {
+        check(
+            ee::s07::f_00284b58__generated,
+            rider_script_obj_get_binding_00284b58,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x284b58, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

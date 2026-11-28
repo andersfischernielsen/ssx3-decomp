@@ -553,6 +553,116 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0027_03f0, replay_step_frame_3, "Replay_StepFrame"),
     (0x0027_09d8, replay_on_rider_event_3, "Replay_OnRiderEvent"),
     (0x0027_1758, replay_load_saved_2, "Replay_LoadSaved"),
+    (
+        0x0027_2680,
+        in_seq_curve_track_stop_00272680,
+        "InSeq_CurveTrackStop",
+    ),
+    (
+        0x0027_52f0,
+        in_seq_curve_track_get_value_ptr_002752f0,
+        "InSeq_CurveTrackGetValuePtr",
+    ),
+    (
+        0x0027_52f8,
+        in_seq_curve_track_v05_002752f8,
+        "InSeq_CurveTrack_v05",
+    ),
+    (
+        0x0027_5300,
+        in_seq_curve_track_get_next_event_time_00275300,
+        "InSeq_CurveTrackGetNextEventTime",
+    ),
+    (
+        0x0027_5308,
+        in_seq_curve_track_get_type_00275308,
+        "InSeq_CurveTrackGetType",
+    ),
+    (
+        0x0027_5310,
+        in_seq_curve_track_get_channel_00275310,
+        "InSeq_CurveTrackGetChannel",
+    ),
+    (
+        0x0027_5318,
+        in_seq_curve_track_is_started_00275318,
+        "InSeq_CurveTrackIsStarted",
+    ),
+    (
+        0x0027_5328,
+        in_seq_span_track_get_value_ptr_00275328,
+        "InSeq_SpanTrackGetValuePtr",
+    ),
+    (
+        0x0027_5330,
+        in_seq_span_track_v05_00275330,
+        "InSeq_SpanTrack_v05",
+    ),
+    (
+        0x0027_5338,
+        in_seq_span_track_get_type_00275338,
+        "InSeq_SpanTrackGetType",
+    ),
+    (
+        0x0027_5340,
+        in_seq_span_track_get_channel_00275340,
+        "InSeq_SpanTrackGetChannel",
+    ),
+    (
+        0x0027_5348,
+        in_seq_span_track_is_started_00275348,
+        "InSeq_SpanTrackIsStarted",
+    ),
+    (
+        0x0027_5358,
+        in_seq_event_track_get_value_ptr_00275358,
+        "InSeq_EventTrackGetValuePtr",
+    ),
+    (
+        0x0027_5360,
+        in_seq_event_track_v05_00275360,
+        "InSeq_EventTrack_v05",
+    ),
+    (
+        0x0027_5368,
+        in_seq_event_track_get_type_00275368,
+        "InSeq_EventTrackGetType",
+    ),
+    (
+        0x0027_5370,
+        in_seq_event_track_get_channel_00275370,
+        "InSeq_EventTrackGetChannel",
+    ),
+    (
+        0x0027_5378,
+        in_seq_event_track_is_started_00275378,
+        "InSeq_EventTrackIsStarted",
+    ),
+    (
+        0x0027_5388,
+        in_seq_ramp_track_get_value_ptr_00275388,
+        "InSeq_RampTrackGetValuePtr",
+    ),
+    (
+        0x0027_5390,
+        in_seq_ramp_track_v05_00275390,
+        "InSeq_RampTrack_v05",
+    ),
+    (
+        0x0027_5398,
+        in_seq_ramp_track_get_type_00275398,
+        "InSeq_RampTrackGetType",
+    ),
+    (
+        0x0027_53a0,
+        in_seq_ramp_track_get_channel_002753a0,
+        "InSeq_RampTrackGetChannel",
+    ),
+    (
+        0x0027_53a8,
+        in_seq_ramp_track_is_started_002753a8,
+        "InSeq_RampTrackIsStarted",
+    ),
 ];
 
 /// `void WorldStateStream_Reset(WorldStateStream *stream)` (0x26d628):
@@ -9998,7 +10108,7 @@ fn replay_write_save_block_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S1][0] = c.g[A2][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x638));
                     let t = c.g[V1][0] != c.g[V0][0];
                     c.g[S2][0] = c.g[A1][0];
@@ -10011,7 +10121,7 @@ fn replay_write_save_block_resume(c: &mut Cpu) {
                 }
                 0x002710d4 => {
                     c.cycles += 3;
-                    c.sw((c.g[S1][0] as u32), 0u64);
+                    c.sw(c.g[S1][0] as u32, 0u64);
                     let t = true;
                     c.g[V0][0] = 0u64;
                     if t {
@@ -10067,8 +10177,8 @@ fn replay_write_save_block_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1820));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -10303,9 +10413,9 @@ fn replay_write_save_block_resume(c: &mut Cpu) {
                 0x002711fc => {
                     c.cycles += 4;
                     c.g[V0][0] = 0x1;
-                    c.sw((c.g[S1][0] as u32), c.g[A0][0]);
+                    c.sw(c.g[S1][0] as u32, c.g[A0][0]);
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x63c));
-                    c.sw((c.g[S2][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[S2][0] as u32, c.g[V1][0]);
                     pc = 0x0027120c;
                     continue;
                 }
@@ -10314,7 +10424,7 @@ fn replay_write_save_block_resume(c: &mut Cpu) {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -11208,7 +11318,7 @@ fn replay_recycle_oldest_snapshot_2_resume(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[A2][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[A3][0] = 0u64;
                     pc = 0x002701b0;
                     continue;
@@ -11261,7 +11371,7 @@ fn replay_recycle_oldest_snapshot_2_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002701e4)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0027022c;
                         continue;
@@ -11343,7 +11453,7 @@ fn replay_recycle_oldest_snapshot_2_resume(c: &mut Cpu) {
                 }
                 0x00270228 => {
                     c.cycles += 1;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x0027022c;
                     continue;
                 }
@@ -11361,6 +11471,171 @@ fn replay_recycle_oldest_snapshot_2_resume(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// `InSeq_CurveTrackStop` (0x0027_2680): straight-line leaf: 8 store(s). Mechanical port of the generated body.
+pub fn in_seq_curve_track_stop_00272680(c: &mut Cpu) {
+    c.cycles += 9;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x24), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x8), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0xc), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x10), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x14), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x18), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x1c), 0u64);
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x20), 0u64);
+    ret(c);
+}
+
+/// `InSeq_CurveTrackGetValuePtr` (0x0027_52f0): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_curve_track_get_value_ptr_002752f0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c));
+    ret(c);
+}
+
+/// `InSeq_CurveTrack_v05` (0x0027_52f8): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_curve_track_v05_002752f8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
+    ret(c);
+}
+
+/// `InSeq_CurveTrackGetNextEventTime` (0x0027_5300): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_curve_track_get_next_event_time_00275300(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0xffffffffffffffff;
+    ret(c);
+}
+
+/// `InSeq_CurveTrackGetType` (0x0027_5308): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_curve_track_get_type_00275308(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `InSeq_CurveTrackGetChannel` (0x0027_5310): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_curve_track_get_channel_00275310(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+    ret(c);
+}
+
+/// `InSeq_CurveTrackIsStarted` (0x0027_5318): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_curve_track_is_started_00275318(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+    ret(c);
+}
+
+/// `InSeq_SpanTrackGetValuePtr` (0x0027_5328): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_span_track_get_value_ptr_00275328(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x28));
+    ret(c);
+}
+
+/// `InSeq_SpanTrack_v05` (0x0027_5330): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_span_track_v05_00275330(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x24));
+    ret(c);
+}
+
+/// `InSeq_SpanTrackGetType` (0x0027_5338): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_span_track_get_type_00275338(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x2;
+    ret(c);
+}
+
+/// `InSeq_SpanTrackGetChannel` (0x0027_5340): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_span_track_get_channel_00275340(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+    ret(c);
+}
+
+/// `InSeq_SpanTrackIsStarted` (0x0027_5348): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_span_track_is_started_00275348(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+    ret(c);
+}
+
+/// `InSeq_EventTrackGetValuePtr` (0x0027_5358): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_event_track_get_value_ptr_00275358(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x20));
+    ret(c);
+}
+
+/// `InSeq_EventTrack_v05` (0x0027_5360): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_event_track_v05_00275360(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x1c));
+    ret(c);
+}
+
+/// `InSeq_EventTrackGetType` (0x0027_5368): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_event_track_get_type_00275368(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x3;
+    ret(c);
+}
+
+/// `InSeq_EventTrackGetChannel` (0x0027_5370): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_event_track_get_channel_00275370(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+    ret(c);
+}
+
+/// `InSeq_EventTrackIsStarted` (0x0027_5378): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_event_track_is_started_00275378(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+    ret(c);
+}
+
+/// `InSeq_RampTrackGetValuePtr` (0x0027_5388): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_ramp_track_get_value_ptr_00275388(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x24));
+    ret(c);
+}
+
+/// `InSeq_RampTrack_v05` (0x0027_5390): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_ramp_track_v05_00275390(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x20));
+    ret(c);
+}
+
+/// `InSeq_RampTrackGetType` (0x0027_5398): straight-line leaf. Mechanical port of the generated body.
+pub fn in_seq_ramp_track_get_type_00275398(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `InSeq_RampTrackGetChannel` (0x0027_53a0): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_ramp_track_get_channel_002753a0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+    ret(c);
+}
+
+/// `InSeq_RampTrackIsStarted` (0x0027_53a8): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn in_seq_ramp_track_is_started_002753a8(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+    c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -16415,6 +16690,384 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x002701a0;
+            },
+        );
+    }
+
+    /// An edge-case 64-bit register value (0, 1, -1, small, random).
+    #[allow(dead_code)]
+    pub(crate) fn leaf_val(r: &mut Rng) -> u64 {
+        match r.next_u32() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => u64::MAX,
+            3 => (r.next_u32() % 64) as u64,
+            4 => sx(r.next_u32()),
+            5 => r.next_u32() as u64,
+            6 => 0x8000_0000,
+            _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        }
+    }
+
+    /// Fill `size` bytes at `start` with zero / small / random words, or, when
+    /// `chase` is set, with pointers (16-byte aligned) into `ptr_lo..ptr_lo + 0x200`.
+    #[allow(dead_code)]
+    pub(crate) fn leaf_fill(
+        c: &mut Cpu,
+        r: &mut Rng,
+        start: u32,
+        size: u32,
+        chase: bool,
+        ptr_lo: u32,
+    ) {
+        for i in 0..size / 4 {
+            let w = if chase {
+                ptr_lo + 16 * (r.next_u32() % 32)
+            } else {
+                match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.next_u32() % 16,
+                    _ => r.next_u32(),
+                }
+            };
+            c.bus.write32(start + 4 * i, w);
+        }
+    }
+
+    /// `InSeq_CurveTrackStop` (0x0027_2680) against the generated body.
+    #[test]
+    fn in_seq_curve_track_stop_00272680_matches() {
+        check(
+            ee::s07::f_00272680__generated,
+            in_seq_curve_track_stop_00272680,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x272680, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_CurveTrackGetValuePtr` (0x0027_52f0) against the generated body.
+    #[test]
+    fn in_seq_curve_track_get_value_ptr_002752f0_matches() {
+        check(
+            ee::s07::f_002752f0__generated,
+            in_seq_curve_track_get_value_ptr_002752f0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2752f0, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_CurveTrack_v05` (0x0027_52f8) against the generated body.
+    #[test]
+    fn in_seq_curve_track_v05_002752f8_matches() {
+        check(
+            ee::s07::f_002752f8__generated,
+            in_seq_curve_track_v05_002752f8,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2752f8, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_CurveTrackGetNextEventTime` (0x0027_5300) against the generated body.
+    #[test]
+    fn in_seq_curve_track_get_next_event_time_00275300_matches() {
+        check(
+            ee::s07::f_00275300__generated,
+            in_seq_curve_track_get_next_event_time_00275300,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x275300, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_CurveTrackGetType` (0x0027_5308) against the generated body.
+    #[test]
+    fn in_seq_curve_track_get_type_00275308_matches() {
+        check(
+            ee::s07::f_00275308__generated,
+            in_seq_curve_track_get_type_00275308,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x275308, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_CurveTrackGetChannel` (0x0027_5310) against the generated body.
+    #[test]
+    fn in_seq_curve_track_get_channel_00275310_matches() {
+        check(
+            ee::s07::f_00275310__generated,
+            in_seq_curve_track_get_channel_00275310,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275310, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_CurveTrackIsStarted` (0x0027_5318) against the generated body.
+    #[test]
+    fn in_seq_curve_track_is_started_00275318_matches() {
+        check(
+            ee::s07::f_00275318__generated,
+            in_seq_curve_track_is_started_00275318,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275318, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_SpanTrackGetValuePtr` (0x0027_5328) against the generated body.
+    #[test]
+    fn in_seq_span_track_get_value_ptr_00275328_matches() {
+        check(
+            ee::s07::f_00275328__generated,
+            in_seq_span_track_get_value_ptr_00275328,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275328, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_SpanTrack_v05` (0x0027_5330) against the generated body.
+    #[test]
+    fn in_seq_span_track_v05_00275330_matches() {
+        check(
+            ee::s07::f_00275330__generated,
+            in_seq_span_track_v05_00275330,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275330, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_SpanTrackGetType` (0x0027_5338) against the generated body.
+    #[test]
+    fn in_seq_span_track_get_type_00275338_matches() {
+        check(
+            ee::s07::f_00275338__generated,
+            in_seq_span_track_get_type_00275338,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x275338, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_SpanTrackGetChannel` (0x0027_5340) against the generated body.
+    #[test]
+    fn in_seq_span_track_get_channel_00275340_matches() {
+        check(
+            ee::s07::f_00275340__generated,
+            in_seq_span_track_get_channel_00275340,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275340, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_SpanTrackIsStarted` (0x0027_5348) against the generated body.
+    #[test]
+    fn in_seq_span_track_is_started_00275348_matches() {
+        check(
+            ee::s07::f_00275348__generated,
+            in_seq_span_track_is_started_00275348,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275348, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_EventTrackGetValuePtr` (0x0027_5358) against the generated body.
+    #[test]
+    fn in_seq_event_track_get_value_ptr_00275358_matches() {
+        check(
+            ee::s07::f_00275358__generated,
+            in_seq_event_track_get_value_ptr_00275358,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275358, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_EventTrack_v05` (0x0027_5360) against the generated body.
+    #[test]
+    fn in_seq_event_track_v05_00275360_matches() {
+        check(
+            ee::s07::f_00275360__generated,
+            in_seq_event_track_v05_00275360,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275360, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_EventTrackGetType` (0x0027_5368) against the generated body.
+    #[test]
+    fn in_seq_event_track_get_type_00275368_matches() {
+        check(
+            ee::s07::f_00275368__generated,
+            in_seq_event_track_get_type_00275368,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x275368, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_EventTrackGetChannel` (0x0027_5370) against the generated body.
+    #[test]
+    fn in_seq_event_track_get_channel_00275370_matches() {
+        check(
+            ee::s07::f_00275370__generated,
+            in_seq_event_track_get_channel_00275370,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275370, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_EventTrackIsStarted` (0x0027_5378) against the generated body.
+    #[test]
+    fn in_seq_event_track_is_started_00275378_matches() {
+        check(
+            ee::s07::f_00275378__generated,
+            in_seq_event_track_is_started_00275378,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275378, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_RampTrackGetValuePtr` (0x0027_5388) against the generated body.
+    #[test]
+    fn in_seq_ramp_track_get_value_ptr_00275388_matches() {
+        check(
+            ee::s07::f_00275388__generated,
+            in_seq_ramp_track_get_value_ptr_00275388,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275388, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_RampTrack_v05` (0x0027_5390) against the generated body.
+    #[test]
+    fn in_seq_ramp_track_v05_00275390_matches() {
+        check(
+            ee::s07::f_00275390__generated,
+            in_seq_ramp_track_v05_00275390,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x275390, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_RampTrackGetType` (0x0027_5398) against the generated body.
+    #[test]
+    fn in_seq_ramp_track_get_type_00275398_matches() {
+        check(
+            ee::s07::f_00275398__generated,
+            in_seq_ramp_track_get_type_00275398,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x275398, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_RampTrackGetChannel` (0x0027_53a0) against the generated body.
+    #[test]
+    fn in_seq_ramp_track_get_channel_002753a0_matches() {
+        check(
+            ee::s07::f_002753a0__generated,
+            in_seq_ramp_track_get_channel_002753a0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2753a0, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `InSeq_RampTrackIsStarted` (0x0027_53a8) against the generated body.
+    #[test]
+    fn in_seq_ramp_track_is_started_002753a8_matches() {
+        check(
+            ee::s07::f_002753a8__generated,
+            in_seq_ramp_track_is_started_002753a8,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2753a8, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

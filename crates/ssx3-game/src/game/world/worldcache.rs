@@ -3979,7 +3979,7 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S0][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x3ec));
                     let t = c.g[V0][0] == 0u64;
                     c.g[S1][0] = 0u64;
@@ -4001,8 +4001,8 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3f0));
                     c.mult(0, 2, 17, 2);
                     c.g[S2][0] = c.g[V1][0];
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = 0x490000;
@@ -4017,8 +4017,8 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4e70));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4038,10 +4038,10 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x4;
                     c.mult(0, 4, 17, 2);
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x003a83bc);
-                    c.sw((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
                     Callee {
                         addr: 0x003a8528,
                         f: ee::s13::cWorldCache_FreeHullPage,
@@ -4062,10 +4062,10 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x4;
                     c.mult(0, 4, 17, 2);
                     c.g[A1][0] = c.g[S1][0];
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.g[A0][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x003a83e4);
-                    c.sw((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
                     Callee {
                         addr: 0x003a8528,
                         f: ee::s13::cWorldCache_FreeHullPage,
@@ -4084,9 +4084,9 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.cycles += 17;
                     c.mult(0, 3, 17, 3);
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.sw((c.g[V0][0] as u32), 0u64);
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V0][0] as u32, 0u64);
                     c.g[A1][0] = c.g[A0][0];
                     c.sw((c.g[A0][0] as u32).wrapping_add(0x3f8), 0u64);
                     c.g[V0][0] = c.g[A0][0];
@@ -4114,7 +4114,7 @@ fn c_world_cache_release_all_hulls_resume(c: &mut Cpu) {
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -4600,7 +4600,7 @@ fn section_allocator_free_all_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
                     let t = c.g[V0][0] == 0u64;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -4614,7 +4614,7 @@ fn section_allocator_free_all_resume(c: &mut Cpu) {
                 0x003a7838 => {
                     c.cycles += 10;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     c.g[RA][0] = sx(0x003a784c);
                     c.g[A1][0] = c.g[V0][0];
@@ -4647,7 +4647,7 @@ fn section_allocator_free_all_resume(c: &mut Cpu) {
                 0x003a7864 => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

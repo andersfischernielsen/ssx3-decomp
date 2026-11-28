@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -115,6 +116,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_5420,
         be_score_int_update_records,
         "BEScoreInt_UpdateRecords",
+    ),
+    (
+        0x0015_49e0,
+        be_score_int_commit_001549e0,
+        "BEScoreInt_Commit",
+    ),
+    (
+        0x0015_5380,
+        be_score_int_save_state_00155380,
+        "BEScoreInt_SaveState",
+    ),
+    (
+        0x0015_5388,
+        be_score_int_load_state_00155388,
+        "BEScoreInt_LoadState",
     ),
 ];
 
@@ -2332,7 +2348,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x49));
                     let t = c.g[V0][0] != 0u64;
                     c.g[S5][0] = c.g[A3][0];
@@ -2384,10 +2400,10 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[S6][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x4a));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
                     c.g[FP][0] = c.lb((c.g[S0][0] as u32).wrapping_add(0x48));
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[S0][0] = c.lw((c.g[A1][0] as u32));
-                    c.g[S1][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[S0][0] = c.lw(c.g[A1][0] as u32);
+                    c.g[S1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A3][0] = 0u64;
                     c.g[V0][0] = c.g[S0][0] ^ 0x16;
                     c.g[S7][0] = sx((c.g[S1][0] as u32).wrapping_add(0xde4));
@@ -2442,7 +2458,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V1][0] = (c.g[S3][0] < 0xau64) as u64;
                     let t = c.g[V1][0] == 0u64;
-                    c.g[A1][0] = sx((c.g[S7][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[S7][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     if t {
                         pc = 0x00155780;
                         continue;
@@ -2455,8 +2471,8 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5790));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2465,7 +2481,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 0x00155530 => {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x2c));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -2480,7 +2496,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x0015555c);
                     c.g[A1][0] = 0x3;
@@ -2501,7 +2517,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 0x00155564 => {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -2514,7 +2530,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 }
                 0x00155578 => {
                     c.cycles += 3;
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     let t = true;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     if t {
@@ -2527,7 +2543,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 0x00155584 => {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x1c));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -2542,7 +2558,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x001555b0);
                     c.g[A1][0] = 0x5;
@@ -2563,7 +2579,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 0x001555b8 => {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x20));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -2578,7 +2594,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x001555e4);
                     c.g[A1][0] = 0x4;
@@ -2599,7 +2615,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 0x001555ec => {
                     c.cycles += 5;
                     c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x88));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -2614,7 +2630,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00155618);
                     c.g[A1][0] = 0x7;
@@ -2637,7 +2653,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f000000;
                     c.mtc1(1, 1);
                     c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x5c));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.add_s(0, 0, 1);
                     c.cvt_w_s(1, 0);
                     c.mfc1(3, 1);
@@ -2655,7 +2671,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00155660);
                     c.g[A1][0] = 0x1;
@@ -2678,7 +2694,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f000000;
                     c.mtc1(1, 1);
                     c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x58));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.add_s(0, 0, 1);
                     c.cvt_w_s(1, 0);
                     c.mfc1(3, 1);
@@ -2696,7 +2712,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x001556a8);
                     c.g[A1][0] = 0u64;
@@ -2719,7 +2735,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f000000;
                     c.mtc1(1, 1);
                     c.lwc1(0, (c.g[S2][0] as u32).wrapping_add(0x50));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.add_s(0, 0, 1);
                     c.cvt_w_s(1, 0);
                     c.mfc1(3, 1);
@@ -2737,7 +2753,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.g[A2][0] = c.g[V1][0];
-                    c.sw((c.g[A1][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x001556f0);
                     c.g[A1][0] = 0x2;
@@ -2779,7 +2795,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 }
                 0x00155708 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S5][0] as i64)) as u64;
                     if t {
@@ -2804,7 +2820,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     let t = true;
-                    c.sw((c.g[A1][0] as u32), c.g[S5][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[S5][0]);
                     if t {
                         pc = 0x00155780;
                         continue;
@@ -2828,7 +2844,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[V0][0] = (c.g[V0][0] < 0x3u64) as u64;
 
                     if c.g[V0][0] != 0u64 {
-                        c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                         pc = 0x0015574c;
                         continue;
                     }
@@ -2849,7 +2865,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                 }
                 0x00155748 => {
                     c.cycles += 1;
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     pc = 0x0015574c;
                     continue;
                 }
@@ -2870,7 +2886,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x64;
                     c.sw((c.g[A1][0] as u32).wrapping_add(0x4), c.g[S0][0]);
                     c.div(0, 20, 2);
-                    c.sw((c.g[A1][0] as u32), c.g[S4][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[S4][0]);
 
                     if c.g[V0][0] == 0u64 {
                         pc = 0x00155770;
@@ -2955,7 +2971,7 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
                     c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.pc = t;
@@ -2968,6 +2984,24 @@ fn be_score_int_update_records_resume(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// `BEScoreInt_Commit` (0x0015_49e0): straight-line leaf. Mechanical port of the generated body.
+pub fn be_score_int_commit_001549e0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEScoreInt_SaveState` (0x0015_5380): straight-line leaf. Mechanical port of the generated body.
+pub fn be_score_int_save_state_00155380(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEScoreInt_LoadState` (0x0015_5388): straight-line leaf. Mechanical port of the generated body.
+pub fn be_score_int_load_state_00155388(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -3377,6 +3411,48 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x00155420;
+            },
+        );
+    }
+
+    /// `BEScoreInt_Commit` (0x0015_49e0) against the generated body.
+    #[test]
+    fn be_score_int_commit_001549e0_matches() {
+        check(
+            ee::s01::f_001549e0__generated,
+            be_score_int_commit_001549e0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1549e0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEScoreInt_SaveState` (0x0015_5380) against the generated body.
+    #[test]
+    fn be_score_int_save_state_00155380_matches() {
+        check(
+            ee::s01::f_00155380__generated,
+            be_score_int_save_state_00155380,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x155380, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEScoreInt_LoadState` (0x0015_5388) against the generated body.
+    #[test]
+    fn be_score_int_load_state_00155388_matches() {
+        check(
+            ee::s01::f_00155388__generated,
+            be_score_int_load_state_00155388,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x155388, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

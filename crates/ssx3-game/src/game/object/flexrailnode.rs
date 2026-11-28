@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -138,6 +139,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SpringRail_InitPosFromInstance",
     ),
     (0x0034_a0b0, spring_rail_v48, "SpringRail_v48"),
+    (
+        0x0034_a838,
+        c_spring_rail_node_update_intersect_info,
+        "cSpringRailNode_updateIntersectInfo",
+    ),
+    (0x0034_af18, flag_render_0034af18, "Flag_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2824,7 +2831,7 @@ fn flex_rail_unregister_space_node_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[S0][0];
                     call_ptr(c, 0x003284b8, 0x00348cd0)?;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[V0][0] = 0u64;
                     if t {
@@ -2937,7 +2944,7 @@ fn flex_rail_unregister_space_node_resume(c: &mut Cpu) {
                 }
                 0x00348d40 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     if t {
@@ -4117,6 +4124,72 @@ pub(crate) const SR_MATS: u32 = 0x50;
 
 #[cfg(test)]
 pub(crate) const SR_SEG_XFORM: u32 = 0x004f_ffc0;
+
+/// `Flag_Render` (0x0034_af18): straight-line leaf. Mechanical port of the generated body.
+pub fn flag_render_0034af18(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cSpringRailNode_updateIntersectInfo(self, node)` (0x34a838): unless
+/// `node->Seg` is negative, adds for each rail node `i <= Seg` the cross
+/// product of the node's offset `Ipos - Nodes[i].P` with `Nodes[i].W` onto
+/// the node's velocity `Ivel` (+0x20). VU0 arithmetic as the generated code.
+pub fn c_spring_rail_node_update_intersect_info(c: &mut Cpu) {
+    'b_34a8bc: {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x64));
+        let t = (c.g[V0][0] as i64) < 0;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        if t {
+            break 'b_34a8bc;
+        }
+        c.cycles += 3;
+        c.g[A3][0] = 0u64;
+        c.g[A2][0] = 0u64;
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x70));
+        'l_34a850: loop {
+            c.cycles += 27;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.lqc2(3, c.g[A1][0] as u32);
+            c.lqc2(4, c.g[V0][0] as u32);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp(c).wrapping_add(0x20));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x70));
+            c.lq(3, sp(c).wrapping_add(0x20));
+            c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.sq(3, sp(c).wrapping_add(0x10));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x60));
+            c.lqc2(4, sp(c).wrapping_add(0x10));
+            c.lqc2(5, (c.g[V0][0] as u32).wrapping_add(0x30));
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, sp(c).wrapping_add(0x20));
+            c.lq(2, sp(c).wrapping_add(0x20));
+            c.sq(2, sp(c));
+            c.lqc2(3, (c.g[A1][0] as u32).wrapping_add(0x20));
+            c.lqc2(4, sp(c));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, (c.g[A1][0] as u32).wrapping_add(0x20));
+            c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x64));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x70));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_a850);
+                }
+                continue 'l_34a850;
+            } else {
+                break 'b_34a8bc;
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+    ret(c);
+}
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -5738,6 +5811,42 @@ pub(crate) mod tests {
                 for i in 0..16 {
                     c.bus.write32(0x004f_fac0 + 4 * i, r.f32(2.0));
                 }
+            },
+        );
+    }
+
+    /// `Flag_Render` (0x0034_af18) against the generated body.
+    #[test]
+    fn flag_render_0034af18_matches() {
+        check(
+            ee::s11::f_0034af18__generated,
+            flag_render_0034af18,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x34af18, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn c_spring_rail_node_update_intersect_info_matches() {
+        check(
+            ee::s11::f_0034a838__generated,
+            c_spring_rail_node_update_intersect_info,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_a838, 0);
+                let this = DATA + 0x1000;
+                let nodes = DATA + 0x2000;
+                let node = DATA + 0x3000;
+                c.bus.write32(this + 0x70, nodes);
+                fill(c, &mut r, nodes, 0x80);
+                fill(c, &mut r, node, 0x20);
+                let seg = (seed % 6) as i32 - 1;
+                c.bus.write32(node + 0x64, seg as u32);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = node as u64;
             },
         );
     }

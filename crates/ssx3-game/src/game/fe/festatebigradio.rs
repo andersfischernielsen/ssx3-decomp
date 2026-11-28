@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -123,6 +124,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0019_41b0,
         bragging_rights_v31,
         "cFEStateBraggingRights_v31",
+    ),
+    (
+        0x0019_3310,
+        c_fe_state_bragging_rights_transition_in_00193310,
+        "cFEStateBraggingRights_TransitionIn",
     ),
 ];
 
@@ -1437,8 +1443,8 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2e0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1588,9 +1594,9 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     .call(c, 0x00192f08)?;
                     c.g[V0][0] = 0x4a0000;
                     c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14f8));
-                    c.g[V1][0] = c.lb((c.g[A2][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x1));
-                    c.sb((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V1][0]);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x1), c.g[A0][0]);
                     let t = c.g[S5][0] == 0u64;
                     c.g[A0][0] = 0x4a0000;
@@ -1611,7 +1617,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.cycles += 9;
                     c.g[A0][0] = c.g[SP][0];
                     c.g[RA][0] = sx(0x00192f3c);
-                    c.sb((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00192f3c)?;
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x40));
                     c.g[RA][0] = sx(0x00192f48);
@@ -1630,14 +1636,14 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                 0x00192f54 => {
                     c.cycles += 13;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x738));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-                    c.g[V1][0] = c.lb((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[V0][0] as u32);
                     c.g[V0][0] = 0x440000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1108));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[RA][0] = sx(0x00192f78);
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     call_ptr(c, 0x00317670, 0x00192f78)?;
                     c.g[A0][0] = c.g[S0][0];
                     c.g[RA][0] = sx(0x00192f84);
@@ -1662,11 +1668,11 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x738));
                     c.mult(0, 4, 19, 2);
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x10), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-                    c.g[A1][0] = c.lb((c.g[V1][0] as u32));
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                    c.g[A1][0] = c.lb(c.g[V1][0] as u32);
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[V1][0] = ((c.g[A1][0] as i64) < 7i64) as u64;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S6][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S6][0] as u32));
                     let t = c.g[V1][0] == 0u64;
                     c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6d8));
                     if t {
@@ -1802,9 +1808,9 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.cycles += 14;
                     c.g[A0][0] = c.g[S1][0];
                     c.g[A1][0] = c.g[S3][0];
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.g[RA][0] = sx(0x001930b0);
-                    c.g[A2][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[A2][0] = c.lb(c.g[V1][0] as u32);
                     Callee {
                         addr: 0x00193f38,
                         f: ee::s02::cFEStateBraggingRights_GetRowDefault,
@@ -1864,9 +1870,9 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x738));
                     c.g[A0][0] = c.g[S1][0];
                     c.g[A1][0] = c.g[S3][0];
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S2][0] as u32));
                     c.g[RA][0] = sx(0x00193150);
-                    c.g[A2][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[A2][0] = c.lb(c.g[V1][0] as u32);
                     Callee {
                         addr: 0x00193f38,
                         f: ee::s02::cFEStateBraggingRights_GetRowDefault,
@@ -1960,7 +1966,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001931d0);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001931d0)?;
                     c.g[A0][0] = 0x460000;
                     c.g[RA][0] = sx(0x001931dc);
@@ -1987,7 +1993,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00193208);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00193208)?;
                     pc = 0x00193208;
                     continue;
@@ -2019,7 +2025,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00193240);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00193240)?;
                     let t = true;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1680));
@@ -2037,7 +2043,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0019325c);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0019325c)?;
                     pc = 0x0019325c;
                     continue;
@@ -2087,7 +2093,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001932a4);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001932a4)?;
                     pc = 0x001932a4;
                     continue;
@@ -2119,7 +2125,7 @@ fn cfe_state_bragging_rights_init_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001932dc);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001932dc)?;
                     pc = 0x001932dc;
                     continue;
@@ -3182,7 +3188,7 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
                     c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x00193bdc;
                         continue;
@@ -3195,8 +3201,8 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x240));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -3350,13 +3356,13 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 10;
                     c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
                     c.g[A2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x18));
-                    c.g[A3][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x20));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00193a00);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00193a00)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[V0][0];
@@ -3450,13 +3456,13 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 10;
                     c.g[A1][0] = c.g[S3][0];
                     c.g[A2][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x18));
-                    c.g[A3][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00193ad8);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00193ad8)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[V0][0];
@@ -3500,7 +3506,7 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x00193b20);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     Callee {
                         addr: 0x001927b0,
                         f: ee::s02::cFEStateBraggingRights_UpdateRowColors,
@@ -3592,7 +3598,7 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.mult(0, 4, 16, 4);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x00193ba8);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     Callee {
                         addr: 0x00192918,
                         f: ee::s02::cFEStateBraggingRights_FindRowIndex,
@@ -3600,8 +3606,8 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     .call(c, 0x00193ba8)?;
                     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x738));
                     c.g[A0][0] = 0xffffffffffffffff;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[S1][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S1][0] = c.lb(c.g[V1][0] as u32);
 
                     if c.g[S1][0] == c.g[A0][0] {
                         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
@@ -3642,7 +3648,7 @@ fn c_fe_state_bragging_rights_on_widget_action_resume(c: &mut Cpu) {
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
                     c.pc = t;
@@ -3952,7 +3958,7 @@ fn c_fe_state_bragging_rights_on_widget_notify_resume(c: &mut Cpu) {
                     c.g[A3][0] = c.g[A0][0];
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x6d0));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x6d0));
                     let t = c.g[V0][0] != c.g[A1][0];
                     c.g[T0][0] = 0u64;
@@ -4003,8 +4009,8 @@ fn c_fe_state_bragging_rights_on_widget_notify_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x150));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4129,7 +4135,7 @@ fn c_fe_state_bragging_rights_on_widget_notify_resume(c: &mut Cpu) {
                 0x00193dcc => {
                     c.cycles += 4;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.pc = t;
@@ -4365,8 +4371,8 @@ fn c_fe_state_bragging_rights_dispatch_row_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x130));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4379,7 +4385,7 @@ fn c_fe_state_bragging_rights_dispatch_row_action_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 3);
                     c.g[V0][0] = 0x530000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     let t = c.g[RA][0] as u32;
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A3][0]);
                     c.pc = t;
@@ -4400,12 +4406,12 @@ fn c_fe_state_bragging_rights_dispatch_row_action_resume(c: &mut Cpu) {
                 }
                 0x00193e48 => {
                     c.cycles += 6;
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[A1][0] as u32));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A1][0] as u32);
                     c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
                     c.g[V0][0] = c.g[V0][0] | c.g[A0][0];
                     let t = c.g[RA][0] as u32;
-                    c.sw((c.g[A1][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A1][0] as u32, c.g[V0][0]);
                     c.pc = t;
                     return Ok(());
                 }
@@ -4418,12 +4424,12 @@ fn c_fe_state_bragging_rights_dispatch_row_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8b8));
                     c.g[A1][0] = 0xfffffffffffffffe;
                     c.g[A2][0] = c.g[A3][0] & 0x1;
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
                     c.g[V0][0] = c.g[V0][0] | c.g[A2][0];
                     let t = c.g[RA][0] as u32;
-                    c.sw((c.g[A0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[A0][0] as u32, c.g[V0][0]);
                     c.pc = t;
                     return Ok(());
                 }
@@ -4514,7 +4520,7 @@ fn c_fe_state_bragging_rights_dispatch_row_action_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 3);
                     c.g[V0][0] = 0x530000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A3][0]);
                     pc = 0x00193f30;
                     continue;
@@ -4712,8 +4718,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x110));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -4726,7 +4732,7 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 2);
                     c.g[V1][0] = 0x530000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
                     c.pc = t;
@@ -4739,8 +4745,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.mult(0, 3, 3, 4);
                     c.g[V0][0] = 0x530000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) >> 3);
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
@@ -4754,8 +4760,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.mult(0, 3, 3, 4);
                     c.g[V0][0] = 0x530000;
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
                     c.pc = t;
@@ -4767,8 +4773,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x530000;
                     c.mult(0, 3, 5, 3);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) >> 4);
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
@@ -4781,8 +4787,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x530000;
                     c.mult(0, 3, 5, 3);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) >> 5);
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
@@ -4795,8 +4801,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x530000;
                     c.mult(0, 3, 5, 3);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) >> 1);
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
@@ -4809,8 +4815,8 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x530000;
                     c.mult(0, 3, 5, 3);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) >> 2);
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.g[V0][0] & 0x1;
@@ -4824,7 +4830,7 @@ fn c_fe_state_bragging_rights_get_row_default_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 2);
                     c.g[V1][0] = 0x530000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8b8));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     let t = c.g[RA][0] as u32;
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
                     c.pc = t;
@@ -5236,8 +5242,8 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xc0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5249,7 +5255,7 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x34;
                     c.g[A1][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(0xc));
                     c.mult(0, 4, 2, 3);
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[RA][0] = sx(0x00194218);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6d0));
                     call_ptr(c, 0x0039b960, 0x00194218)?;
@@ -5271,14 +5277,14 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.mult(0, 4, 3, 16);
                     c.g[A1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x6d8));
                     c.g[RA][0] = sx(0x00194250);
                     c.g[A0][0] = c.g[S3][0];
                     call_ptr(c, 0x0039a768, 0x00194250)?;
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A1][0] = c.lbu((c.g[SP][0] as u32));
+                    c.g[A1][0] = c.lbu(c.g[SP][0] as u32);
                     if t {
                         pc = 0x00194418;
                         continue;
@@ -5296,7 +5302,7 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 16);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x00194278);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     Callee {
                         addr: 0x00192918,
                         f: ee::s02::cFEStateBraggingRights_FindRowIndex,
@@ -5304,8 +5310,8 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     .call(c, 0x00194278)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x738));
                     c.g[A0][0] = 0xffffffffffffffff;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[S4][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S4][0] = c.lb(c.g[V1][0] as u32);
                     let t = c.g[S4][0] == c.g[A0][0];
                     c.g[V0][0] = 0u64;
                     if t {
@@ -5348,7 +5354,7 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 2);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x001942d4);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     Callee {
                         addr: 0x00192740,
                         f: ee::s02::cFEStateBraggingRights_SetRowsVisible,
@@ -5458,7 +5464,7 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 16);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x00194380);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     Callee {
                         addr: 0x00192740,
                         f: ee::s02::cFEStateBraggingRights_SetRowsVisible,
@@ -5469,7 +5475,7 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.mult(0, 4, 4, 16);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6d0));
                     c.g[RA][0] = sx(0x00194398);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     Callee {
                         addr: 0x00192970,
                         f: ee::s02::cFEStateBraggingRights_HideUnusedRows,
@@ -5478,7 +5484,7 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0u64;
                     c.mult(0, 3, 2, 16);
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S1][0] as u32));
                     c.g[RA][0] = sx(0x001943b0);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x6d0));
                     call_ptr(c, 0x0039b960, 0x001943b0)?;
@@ -5590,6 +5596,13 @@ fn bragging_rights_v31_resume(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// `cFEStateBraggingRights_TransitionIn` (0x0019_3310): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_bragging_rights_transition_in_00193310(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -7049,6 +7062,20 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(msg);
                 c.g[A2][0] = sx(OC851_OBJ2);
                 c.pc = 0x0019_41b0;
+            },
+        );
+    }
+
+    /// `cFEStateBraggingRights_TransitionIn` (0x0019_3310) against the generated body.
+    #[test]
+    fn c_fe_state_bragging_rights_transition_in_00193310_matches() {
+        check(
+            ee::s02::f_00193310__generated,
+            c_fe_state_bragging_rights_transition_in_00193310,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x193310, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

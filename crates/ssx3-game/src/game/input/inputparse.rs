@@ -242,6 +242,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         pad_device_set_actuator,
         "PadDevice_SetActuator",
     ),
+    (
+        0x0032_7738,
+        ps2_pad_get_num_actuators_00327738,
+        "PS2Pad_GetNumActuators",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9967,6 +9972,13 @@ pub fn pad_device_set_actuator(c: &mut Cpu) {
     c.pc = t;
 }
 
+/// `PS2Pad_GetNumActuators` (0x0032_7738): straight-line leaf. Mechanical port of the generated body.
+pub fn ps2_pad_get_num_actuators_00327738(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12475,6 +12487,20 @@ pub(crate) mod tests {
             SEEDS,
             &[2],
             &setup,
+        );
+    }
+
+    /// `PS2Pad_GetNumActuators` (0x0032_7738) against the generated body.
+    #[test]
+    fn ps2_pad_get_num_actuators_00327738_matches() {
+        check(
+            ee::s10::f_00327738__generated,
+            ps2_pad_get_num_actuators_00327738,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x327738, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
         );
     }
 }

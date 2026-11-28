@@ -17,6 +17,7 @@ pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::fepopupmisc::transition_in;
+pub(crate) use crate::game::fe::festatelodge::fe_state_ctor_2_body;
 pub(crate) use crate::game::fe::festatetrophyroom::handle_key_6_8_9;
 pub(crate) use crate::game::fe::festatetrophyroom::handle_list_key;
 pub(crate) use crate::game::fe::ovstateenterlodge::oc989_at;
@@ -184,6 +185,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x001f_5508,
         oc1023_career_stats_init,
         "cFEStateCareerStats_Init",
+    ),
+    (
+        0x0022_0df8,
+        cfe_state_buy_attrib_ctor_2,
+        "cFEStateBuyAttrib_ctor_2",
+    ),
+    (
+        0x0022_0e58,
+        cfe_state_career_stats_ctor_2,
+        "cFEStateCareerStats_ctor_2",
     ),
 ];
 
@@ -4783,6 +4794,18 @@ pub fn oc1023_career_stats_init(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateBuyAttrib_ctor_2(self)` (0x220df8): `UIState_ctor(self, 0)`, then
+/// the vtable `0x473908` at `+8`.
+pub fn cfe_state_buy_attrib_ctor_2(c: &mut Cpu) {
+    guest(c, |c| fe_state_ctor_2_body(c, 0x0022_0e10, 0x0047_3908));
+}
+
+/// `cFEStateCareerStats_ctor_2(self)` (0x220e58): `UIState_ctor(self, 0)`,
+/// then the vtable `0x473838` at `+8`.
+pub fn cfe_state_career_stats_ctor_2(c: &mut Cpu) {
+    guest(c, |c| fe_state_ctor_2_body(c, 0x0022_0e70, 0x0047_3838));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6207,6 +6230,26 @@ pub(crate) mod tests {
                 oc1023_force(c, 1, if seed % 3 == 0 { 0 } else { OC1023_OBJ });
                 c.g[A0][0] = sx(this);
             },
+        );
+    }
+
+    pub(crate) use crate::game::fe::festatelodge::tests::ui_state_ctor_2_case;
+
+    #[test]
+    fn cfe_state_buy_attrib_ctor_2_matches() {
+        ui_state_ctor_2_case(
+            ee::s05::f_00220df8__generated,
+            cfe_state_buy_attrib_ctor_2,
+            0x0022_0df8,
+        );
+    }
+
+    #[test]
+    fn cfe_state_career_stats_ctor_2_matches() {
+        ui_state_ctor_2_case(
+            ee::s05::f_00220e58__generated,
+            cfe_state_career_stats_ctor_2,
+            0x0022_0e58,
         );
     }
 }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -137,6 +138,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0024_7e20, ssxapp_global_ctors, "SSXApp_GlobalCtors"),
     (0x0024_7e40, ssxapp_global_dtors, "SSXApp_GlobalDtors"),
+    (
+        0x0024_5b50,
+        c_fe_load_hint_state_on_widget_created_00245b50,
+        "cFELoadHintState_OnWidgetCreated",
+    ),
+    (
+        0x0024_5db8,
+        c_fe_load_state_in_lodge_on_widget_created_00245db8,
+        "cFELoadStateInLodge_OnWidgetCreated",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3655,6 +3666,18 @@ pub fn ssxapp_global_dtors(c: &mut Cpu) {
     })
 }
 
+/// `cFELoadHintState_OnWidgetCreated` (0x0024_5b50): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_load_hint_state_on_widget_created_00245b50(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFELoadStateInLodge_OnWidgetCreated` (0x0024_5db8): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_load_state_in_lodge_on_widget_created_00245db8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5282,6 +5305,34 @@ pub(crate) mod tests {
             100,
             &|c, seed| {
                 let _ = oc1017_setup(c, seed, 0x0024_7e40);
+            },
+        );
+    }
+
+    /// `cFELoadHintState_OnWidgetCreated` (0x0024_5b50) against the generated body.
+    #[test]
+    fn c_fe_load_hint_state_on_widget_created_00245b50_matches() {
+        check(
+            ee::s06::f_00245b50__generated,
+            c_fe_load_hint_state_on_widget_created_00245b50,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x245b50, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFELoadStateInLodge_OnWidgetCreated` (0x0024_5db8) against the generated body.
+    #[test]
+    fn c_fe_load_state_in_lodge_on_widget_created_00245db8_matches() {
+        check(
+            ee::s06::f_00245db8__generated,
+            c_fe_load_state_in_lodge_on_widget_created_00245db8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x245db8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

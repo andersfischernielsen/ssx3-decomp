@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -656,6 +657,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001c_b500, keyboard_move_left, "cKeyboardPopup_MoveLeft"),
     (0x001c_b650, keyboard_move_right, "cKeyboardPopup_MoveRight"),
     (0x001c_b7f0, keyboard_popup_move_up, "cKeyboardPopup_MoveUp"),
+    (
+        0x001c_5dd0,
+        c_fe_popup_confirm_transition_out_001c5dd0,
+        "cFEPopupConfirm_TransitionOut",
+    ),
+    (
+        0x001d_e2d8,
+        c_keyboard_popup_transition_out_001de2d8,
+        "cKeyboardPopup_TransitionOut",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -19434,6 +19445,20 @@ pub fn keyboard_popup_move_up(c: &mut Cpu) {
     });
 }
 
+/// `cFEPopupConfirm_TransitionOut` (0x001c_5dd0): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_popup_confirm_transition_out_001c5dd0(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `cKeyboardPopup_TransitionOut` (0x001d_e2d8): straight-line leaf. Mechanical port of the generated body.
+pub fn c_keyboard_popup_transition_out_001de2d8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -24430,6 +24455,34 @@ pub(crate) mod tests {
                 c.pc = 0x001c_b7f0;
                 c.g[A0][0] = sx(s);
                 c.g[A1][0] = (r.next_u32() & 1) as u64;
+            },
+        );
+    }
+
+    /// `cFEPopupConfirm_TransitionOut` (0x001c_5dd0) against the generated body.
+    #[test]
+    fn c_fe_popup_confirm_transition_out_001c5dd0_matches() {
+        check(
+            ee::s03::f_001c5dd0__generated,
+            c_fe_popup_confirm_transition_out_001c5dd0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1c5dd0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cKeyboardPopup_TransitionOut` (0x001d_e2d8) against the generated body.
+    #[test]
+    fn c_keyboard_popup_transition_out_001de2d8_matches() {
+        check(
+            ee::s04::f_001de2d8__generated,
+            c_keyboard_popup_transition_out_001de2d8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de2d8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

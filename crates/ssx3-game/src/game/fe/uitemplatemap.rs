@@ -205,6 +205,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_11c8, ov_screen_map_ctor, "OVScreenMap_ctor"),
     (0x0022_1228, ov_screen_map_ctor_2, "OVScreenMap_ctor_2"),
     (0x0022_1298, ov_screen_map_dtor, "OVScreenMap_dtor"),
+    (0x0022_12c0, ov_screen_map_v13_002212c0, "OVScreenMap_v13"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14551,6 +14552,12 @@ pub fn ov_screen_map_ctor_2(c: &mut Cpu) {
     });
 }
 
+/// `OVScreenMap_v13` (0x0022_12c0): straight-line leaf. Mechanical port of the generated body.
+pub fn ov_screen_map_v13_002212c0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17227,6 +17234,20 @@ pub(crate) mod tests {
                 let mut r = oc1004_setup(c, seed, 0x0022_1228, 2);
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// `OVScreenMap_v13` (0x0022_12c0) against the generated body.
+    #[test]
+    fn ov_screen_map_v13_002212c0_matches() {
+        check(
+            ee::s05::f_002212c0__generated,
+            ov_screen_map_v13_002212c0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2212c0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

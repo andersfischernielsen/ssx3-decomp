@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -152,6 +153,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0023_3bf0,
         game_state_idle_load_state,
         "GameStateIdle_LoadState",
+    ),
+    (
+        0x0023_3b88,
+        game_state_quit_exit_00233b88,
+        "GameStateQuit_Exit",
     ),
 ];
 
@@ -2233,7 +2239,7 @@ fn game_state_pre_race_load_update_resume(c: &mut Cpu) {
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
                     c.g[V0][0] = ((c.g[V0][0] as i64) < 3i64) as u64;
                     let t = c.g[V0][0] == 0u64;
@@ -2336,8 +2342,8 @@ fn game_state_pre_race_load_update_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x3fe0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2925,7 +2931,7 @@ fn game_state_pre_race_load_update_resume(c: &mut Cpu) {
                 0x00234740 => {
                     c.cycles += 4;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;
@@ -3611,6 +3617,12 @@ pub fn game_state_idle_load_state(c: &mut Cpu) {
         }),
         0x0023_3c00,
     )
+}
+
+/// `GameStateQuit_Exit` (0x0023_3b88): straight-line leaf. Mechanical port of the generated body.
+pub fn game_state_quit_exit_00233b88(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -4620,6 +4632,20 @@ pub(crate) mod tests {
             game_state_idle_load_state,
             200,
             &|c, seed| load_state_setup(c, seed, 0x233bf0),
+        );
+    }
+
+    /// `GameStateQuit_Exit` (0x0023_3b88) against the generated body.
+    #[test]
+    fn game_state_quit_exit_00233b88_matches() {
+        check(
+            ee::s06::f_00233b88__generated,
+            game_state_quit_exit_00233b88,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x233b88, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
         );
     }
 }

@@ -2,11 +2,14 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::tail_wrapper;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
 use crate::events::back_edge_unwinds;
@@ -22,6 +25,7 @@ use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -84,6 +88,92 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_screen_replay_menu_ctor,
         "OVScreenReplayMenu_ctor",
     ),
+    (0x0015_0ea8, state_thunk_00150ea8, "lbl_00150EA8"),
+    (0x0015_0ed0, state_thunk_00150ed0, "lbl_00150ED0"),
+    (0x0015_0ef8, state_thunk_00150ef8, "lbl_00150EF8"),
+    (0x0015_0f20, state_thunk_00150f20, "lbl_00150F20"),
+    (0x0015_0f48, tail_stub_t1_150f48, "lbl_00150F48"),
+    (0x0015_0f70, tail_stub_t1_150f70, "lbl_00150F70"),
+    (0x0015_0f98, beecon_raise_attribute_level, "lbl_00150F98"),
+    (0x0015_1220, tail_stub_v1_151220, "lbl_00151220"),
+    (0x0015_1248, tail_stub_v1_151248, "lbl_00151248"),
+    (0x0015_1270, tail_stub_v1_151270, "lbl_00151270"),
+    (0x0015_1298, tail_stub_v1_151298, "lbl_00151298"),
+    (0x0015_12c0, tail_stub_v1_1512c0, "lbl_001512C0"),
+    (0x0015_12e8, tail_stub_v1_1512e8, "lbl_001512E8"),
+    (0x0015_1310, beecon_attribute_cost_word, "lbl_00151310"),
+    (0x0017_fe2c, lbl_0017fe2c, "lbl_0017FE2C"),
+    (0x0017_fe4c, lbl_0017fe4c, "lbl_0017FE4C"),
+    (0x0017_fe54, lbl_0017fe54, "lbl_0017FE54"),
+    (0x0017_fe5c, lbl_0017fe5c, "lbl_0017FE5C"),
+    (0x0017_fe64, fe_tail_call_320c48, "lbl_0017FE64"),
+    (0x001f_f780, lbl_001ff780_show_page_tail, "lbl_001FF780"),
+    (0x001f_f790, lbl_001ff790_tail, "lbl_001FF790"),
+    (0x001f_f798, lbl_001ff798_tail, "lbl_001FF798"),
+    (0x001f_f7a8, tail_return_0x101, "lbl_001FF7A8"),
+    (0x0020_df10, lbl_0020df10_count_check, "lbl_0020DF10"),
+    (0x0021_c640, ov_state_overlay_ctor, "cOVStateOverlay_ctor"),
+    (
+        0x0021_c700,
+        c_ov_state_overlay_v25_0021c700,
+        "cOVStateOverlay_v25",
+    ),
+    (
+        0x0022_2428,
+        cov_state_overlay_global_ctors,
+        "cOVStateOverlay_GlobalCtors",
+    ),
+    (0x0037_2144, dma_label_tail_0372144, "lbl_00372144"),
+    (0x0037_2154, dma_label_tail_0372154, "lbl_00372154"),
+    (0x0037_2178, dma_label_tail_0372178, "lbl_00372178"),
+    (0x0037_2188, dma_label_tail_0372188, "lbl_00372188"),
+    (0x0039_2edc, dispatch_tail_0392edc, "lbl_00392EDC"),
+    (0x0039_2ee4, dispatch_tail_0392ee4, "lbl_00392EE4"),
+    (0x0039_2eec, lbl_00392eec_div3_tail, "lbl_00392EEC"),
+    (0x0039_2f08, tail_0392f08, "lbl_00392F08"),
+    (0x0039_2f20, lbl_00392f20_div8_tail, "lbl_00392F20"),
+    (0x0039_2f38, lbl_00392f38_div4_tail, "lbl_00392F38"),
+    (0x0039_2f50, lbl_00392f50_div2_tail, "lbl_00392F50"),
+    (0x0039_2f5c, lbl_00392f5c_record_update, "lbl_00392F5C"),
+    (0x003a_019c, lbl_3a019c_store_f1_a3_44, "lbl_003A019C"),
+    (0x003a_01a4, lbl_3a01a4_store_f1_a3_48, "lbl_003A01A4"),
+    (0x003a_01ac, lbl_003a01ac, "lbl_003A01AC"),
+    (0x003a_01bc, lbl_003a01bc, "lbl_003A01BC"),
+    (0x003a_01cc, lbl_003a01cc, "lbl_003A01CC"),
+    (0x003a_01dc, lbl_003a01dc, "lbl_003A01DC"),
+    (0x003a_01ec, lbl_003a01ec, "lbl_003A01EC"),
+    (0x003a_01fc, lbl_003a01fc, "lbl_003A01FC"),
+    (0x003a_0228, lbl_003a0228, "lbl_003A0228"),
+    (0x003a_0238, scale_float_store_0238, "lbl_003A0238"),
+    (0x003a_0248, scale_float_store_0248, "lbl_003A0248"),
+    (0x003a_0258, lbl_3a0258_scale_store, "lbl_003A0258"),
+    (0x003a_0268, lbl_3a0268_store_f1_a3_60, "lbl_003A0268"),
+    (0x003a_0270, lbl_003a0270, "lbl_003A0270"),
+    (0x003a_3898, lbl_003a3898, "lbl_003A3898"),
+    (0x003a_38a8, lbl_003a38a8, "lbl_003A38A8"),
+    (0x003a_38b8, lbl_003a38b8_scale12_tail, "lbl_003A38B8"),
+    (0x003a_38c8, lbl_003a38c8, "lbl_003A38C8"),
+    (0x003a_38dc, lbl_003a38dc, "lbl_003A38DC"),
+    (0x003a_38f0, lbl_003a38f0, "lbl_003A38F0"),
+    (0x003a_3904, lbl_003a3904, "lbl_003A3904"),
+    (0x003a_3938, lbl_003a3938, "lbl_003A3938"),
+    (0x003a_3940, lbl_003a3940, "lbl_003A3940"),
+    (0x003a_3948, lbl_003a3948, "lbl_003A3948"),
+    (0x003a_3958, lbl_003a3958, "lbl_003A3958"),
+    (0x003a_3968, lbl_3a3968_pack_field, "lbl_003A3968"),
+    (0x003a_3994, lbl_003a3994_fscale_store_tail, "lbl_003A3994"),
+    (0x003a_39a4, lbl_003a39a4_fscale_store_tail, "lbl_003A39A4"),
+    (0x003a_39b4, fpu_scale_store_24, "lbl_003A39B4"),
+    (0x003a_39c4, fpu_scale_store_28, "lbl_003A39C4"),
+    (0x003a_39d4, lbl_003a39d4, "lbl_003A39D4"),
+    (0x003a_39e0, lbl_003a39e0, "lbl_003A39E0"),
+    (0x003c_555c, snd_store_const_555c, "lbl_003C555C"),
+    (0x003c_556c, snd_store_const_556c, "lbl_003C556C"),
+    (0x003c_557c, snd_store_const_557c, "lbl_003C557C"),
+    (0x003c_558c, snd_store_const_558c, "lbl_003C558C"),
+    (0x003c_55dc, lbl_003c55dc_set_output_ptr, "lbl_003C55DC"),
+    (0x0042_1ed4, printf_g_tail, "lbl_00421ED4"),
+    (0x0042_1ef4, printf_e_tail, "lbl_00421EF4"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1454,7 +1544,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.g[A0][0];
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S1][0] = c.g[A1][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[S2][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2968));
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x84));
                     c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
@@ -1488,7 +1578,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 0x0020df88 => {
                     c.cycles += 7;
                     c.g[V0][0] = sx((c.g[A1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A1][0] = 0xca;
                     c.g[RA][0] = sx(0x0020df9c);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xb0));
@@ -1529,13 +1619,13 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 }
                 0x0020dfc0 => {
                     c.cycles += 8;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A1][0] = 0x2;
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020dfd8);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020dfd8)?;
                     let t = true;
                     c.g[V1][0] = 0xfffffffffffffffc;
@@ -1563,7 +1653,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0xcb;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x0020e004);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xb0));
                     call_ptr(c, 0x00320c48, 0x0020e004)?;
@@ -1603,13 +1693,13 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 }
                 0x0020e028 => {
                     c.cycles += 7;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A1][0] = 0x2;
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020e040);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e040)?;
                     c.g[V1][0] = 0x4;
                     pc = 0x0020e044;
@@ -1633,7 +1723,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0020e060);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e060)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x9c));
@@ -1657,13 +1747,13 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 }
                 0x0020e070 => {
                     c.cycles += 33;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A1][0] = 0x6;
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020e088);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e088)?;
                     c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
                     c.g[A1][0] = 0x440000;
@@ -1674,8 +1764,8 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[A0][0] as u32) << 2);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x6a0), c.g[A2][0]);
                     c.g[A1][0] = 0x2;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.sw((c.g[V0][0] as u32), c.g[A1][0]);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw(c.g[V0][0] as u32, c.g[A1][0]);
                     c.g[V1][0] = 0x1;
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[A0][0]);
                     c.g[A0][0] = 0x470000;
@@ -1724,7 +1814,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0020e110);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e110)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = 0x6;
@@ -1737,12 +1827,12 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 }
                 0x0020e118 => {
                     c.cycles += 16;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020e12c);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e12c)?;
                     c.g[A0][0] = 0x470000;
                     c.g[RA][0] = sx(0x0020e138);
@@ -1840,11 +1930,11 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28f0));
                     c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[V0][0]);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     let t = true;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     if t {
                         pc = 0x0020e2bc;
                         continue;
@@ -1946,11 +2036,11 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28f0));
                     c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[V0][0]);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
                     let t = true;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     if t {
                         pc = 0x0020e2bc;
                         continue;
@@ -1968,22 +2058,22 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[A0][0] = 0x440000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x28f0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[A1][0]);
                     pc = 0x0020e2b0;
                     continue;
                 }
                 0x0020e2b0 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     pc = 0x0020e2bc;
                     continue;
                 }
                 0x0020e2bc => {
                     c.cycles += 3;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     let t = true;
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x6a0), c.g[V1][0]);
                     if t {
@@ -2012,7 +2102,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x34));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0020e2e8);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e2e8)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = 0x3;
@@ -2025,12 +2115,12 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 }
                 0x0020e2f0 => {
                     c.cycles += 32;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020e304);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e304)?;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x69c));
                     c.g[A0][0] = 0x530000;
@@ -2040,13 +2130,13 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x28f0));
                     c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[V0][0]);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1be0));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x6a0), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0020e34c);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x9c), 0u64);
@@ -2091,7 +2181,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0xcc;
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[RA][0] = sx(0x0020e398);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xb0));
                     call_ptr(c, 0x00320c48, 0x0020e398)?;
@@ -2106,12 +2196,12 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                 }
                 0x0020e3a0 => {
                     c.cycles += 9;
-                    c.g[V0][0] = c.lw((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0020e3b4);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e3b4)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
                     c.g[V0][0] = c.g[V0][0] ^ 0x1;
@@ -2188,7 +2278,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0020e448);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e448)?;
 
                     if c.g[V0][0] == 0u64 {
@@ -2260,7 +2350,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x94));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0020e4a4);
-                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0020e4a4)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A0][0] = 0x470000;
@@ -2369,7 +2459,7 @@ fn ov_screen_replay_menu_handle_input_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -2722,8 +2812,8 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1ca0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2749,7 +2839,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.ld((c.g[V0][0] as u32).wrapping_add(0x1c50));
                     c.g[A1][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0xc));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[SP][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[A0][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     let t = true;
                     c.sh((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
@@ -2766,7 +2856,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1c60));
                     c.g[A0][0] = c.ld((c.g[V0][0] as u32).wrapping_add(0x1c60));
                     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[SP][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[A0][0]);
                     let t = true;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     if t {
@@ -2801,7 +2891,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[A1][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0xa));
                     c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[SP][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[A0][0]);
                     c.sh((c.g[SP][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     let t = true;
                     c.sb((c.g[SP][0] as u32).wrapping_add(0xa), c.g[A1][0]);
@@ -2817,7 +2907,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x4a0000;
                     c.g[V1][0] = c.ld((c.g[V0][0] as u32).wrapping_add(0x2738));
                     let t = true;
-                    c.sd((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x0020e7f8;
                         continue;
@@ -2831,7 +2921,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1c90));
                     c.g[A0][0] = c.ld((c.g[V0][0] as u32).wrapping_add(0x1c90));
                     c.g[A1][0] = c.lbu((c.g[V1][0] as u32).wrapping_add(0x8));
-                    c.sd((c.g[SP][0] as u32), c.g[A0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[A0][0]);
                     let t = true;
                     c.sb((c.g[SP][0] as u32).wrapping_add(0x8), c.g[A1][0]);
                     if t {
@@ -2846,7 +2936,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x4a0000;
                     c.g[V1][0] = c.ld((c.g[V0][0] as u32).wrapping_add(0x2740));
                     let t = true;
-                    c.sd((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x0020e7f8;
                         continue;
@@ -2859,7 +2949,7 @@ fn ov_screen_replay_menu_update_camera_text_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x4a0000;
                     c.g[V1][0] = c.ld((c.g[V0][0] as u32).wrapping_add(0x2748));
                     let t = true;
-                    c.sd((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[V1][0]);
                     if t {
                         pc = 0x0020e7f8;
                         continue;
@@ -14679,13 +14769,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0u64;
                     c.g[T0][0] = sx((c.g[T9][0] as u32).wrapping_add(0x6c08));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[T0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[T0][0] as u32));
+                    c.sdr(2, c.g[T0][0] as u32);
                     c.sdl(3, (c.g[T0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[T0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[T0][0] as u32).wrapping_add(0x17));
@@ -14695,7 +14785,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00416210, 0x00213074)?;
                     c.lwc1(23, (c.g[GP][0] as u32).wrapping_sub(0x5394));
                     c.g[T1][0] = 0x3;
-                    c.sw((c.g[SP][0] as u32), c.g[S7][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00213090);
@@ -14715,7 +14805,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x6c08));
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14736,7 +14826,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.mtc1(1, 26);
                     c.g[T7][0] = 0x2;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[T7][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[T7][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00213124);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
@@ -14750,7 +14840,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14767,7 +14857,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S5][0] = 0x5;
                     c.g[T9][0] = 0x1;
                     c.g[V0][0] = 0x5;
-                    c.sw((c.g[SP][0] as u32), c.g[S3][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[S3][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T9][0]);
                     c.g[S6][0] = 0x4c0000;
@@ -14784,7 +14874,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14801,7 +14891,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = 0x4;
                     c.g[T3][0] = 0x1;
                     c.g[T4][0] = 0x5;
-                    c.sw((c.g[SP][0] as u32), c.g[T2][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[T2][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00213214);
@@ -14816,7 +14906,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14833,7 +14923,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S4][0] = 0x1;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[A0][0] = c.g[S1][0];
-                    c.sw((c.g[SP][0] as u32), c.g[S5][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[S5][0]);
                     c.g[S4][0] = 0x8;
                     c.g[RA][0] = sx(0x00213284);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
@@ -14848,7 +14938,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14866,7 +14956,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x6;
                     c.g[A1][0] = 0x2;
                     c.g[A2][0] = 0x7;
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[A1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A2][0]);
@@ -14882,7 +14972,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14898,7 +14988,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00416210, 0x00213358)?;
                     c.g[T3][0] = 0x7;
                     c.g[T4][0] = 0x2;
-                    c.sw((c.g[SP][0] as u32), c.g[T3][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[T3][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T4][0]);
                     c.g[RA][0] = sx(0x00213374);
@@ -14913,7 +15003,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14933,7 +15023,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[S3][0] = 0x4;
                     c.g[RA][0] = sx(0x002133e4);
-                    c.sw((c.g[SP][0] as u32), c.g[S4][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[S4][0]);
                     call_ptr(c, 0x00317670, 0x002133e4)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4fb8));
@@ -14944,7 +15034,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14962,7 +15052,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x4;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S5][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x00213454);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     call_ptr(c, 0x00317670, 0x00213454)?;
@@ -14975,7 +15065,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -14993,7 +15083,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T4][0] = 0x4;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S5][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[T3][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[T3][0]);
                     c.g[RA][0] = sx(0x002134c4);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     call_ptr(c, 0x00317670, 0x002134c4)?;
@@ -15006,7 +15096,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15022,7 +15112,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00416210, 0x00213518)?;
                     c.g[V1][0] = 0xb;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S5][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213530);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
@@ -15037,7 +15127,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15055,7 +15145,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T9][0] = 0xc;
                     c.g[V1][0] = 0x8;
                     c.g[V0][0] = 0x3;
-                    c.sw((c.g[SP][0] as u32), c.g[T9][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[T9][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x002135ac);
@@ -15070,7 +15160,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15091,7 +15181,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213620);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     call_ptr(c, 0x00317670, 0x00213620)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5030));
@@ -15102,7 +15192,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15121,7 +15211,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x0021368c);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     call_ptr(c, 0x00317670, 0x0021368c)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5048));
@@ -15132,7 +15222,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15150,7 +15240,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x6;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x002136fc);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002136fc)?;
@@ -15163,7 +15253,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15181,7 +15271,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x10;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021376c);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     call_ptr(c, 0x00317670, 0x0021376c)?;
@@ -15195,7 +15285,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15215,7 +15305,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x002137e0);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     call_ptr(c, 0x00317670, 0x002137e0)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5090));
@@ -15226,7 +15316,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15245,7 +15335,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x12;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[S3][0] = 0x4c0000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T8][0]);
                     c.g[RA][0] = sx(0x0021385c);
@@ -15261,7 +15351,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T9][0] = sx((c.g[T9][0] as u32).wrapping_add(0x6c08));
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15280,7 +15370,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x13;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x002138d4);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T1][0]);
                     call_ptr(c, 0x00317670, 0x002138d4)?;
@@ -15294,7 +15384,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x6c08));
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15315,7 +15405,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x0021394c);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     call_ptr(c, 0x00317670, 0x0021394c)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4f28));
@@ -15326,7 +15416,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15345,7 +15435,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T9][0] = 0x5;
                     c.g[V1][0] = 0x15;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T8][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T9][0]);
                     c.g[RA][0] = sx(0x002139c8);
@@ -15360,7 +15450,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15378,7 +15468,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = 0x5;
                     c.g[V1][0] = 0x16;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T1][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213a3c);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
@@ -15392,7 +15482,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15409,7 +15499,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S3][0] = 0x5;
                     c.g[T7][0] = 0x4;
                     c.g[V1][0] = 0x17;
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00213ab0);
@@ -15424,7 +15514,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15442,7 +15532,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x7;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[T9][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[T9][0]);
                     c.g[RA][0] = sx(0x00213b20);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00213b20)?;
@@ -15455,7 +15545,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15473,7 +15563,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V1][0] = 0x19;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x00213b90);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     call_ptr(c, 0x00317670, 0x00213b90)?;
@@ -15486,7 +15576,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15506,7 +15596,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00213c00);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     call_ptr(c, 0x00317670, 0x00213c00)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4fb8));
@@ -15517,7 +15607,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15536,7 +15626,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T9][0] = 0x4;
                     c.g[V1][0] = 0x1b;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T8][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213c78);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T9][0]);
@@ -15550,7 +15640,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15568,7 +15658,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = 0x4;
                     c.g[V1][0] = 0x1c;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T1][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213cec);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
@@ -15582,7 +15672,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[SP][0];
                     c.g[A1][0] = 0u64;
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
@@ -15598,7 +15688,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00416210, 0x00213d40)?;
                     c.g[V1][0] = 0x1d;
                     c.g[T7][0] = 0x5;
-                    c.sw((c.g[SP][0] as u32), c.g[V1][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00213d5c);
@@ -15613,13 +15703,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15636,7 +15726,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T9][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213dd8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00213dd8)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5018));
@@ -15646,13 +15736,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15669,7 +15759,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213e50);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00213e50)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5030));
@@ -15679,13 +15769,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15701,7 +15791,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00213ec4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00213ec4)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5048));
@@ -15711,13 +15801,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15731,7 +15821,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00213f38);
                     c.g[S7][0] = 0xa;
                     call_ptr(c, 0x00317670, 0x00213f38)?;
@@ -15743,13 +15833,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15764,7 +15854,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00213fa8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00213fa8)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x00213fb4);
@@ -15773,13 +15863,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15793,7 +15883,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00214018);
                     c.g[S2][0] = 0x7;
                     call_ptr(c, 0x00317670, 0x00214018)?;
@@ -15805,13 +15895,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15829,7 +15919,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00214094);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214094)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x002140a0);
@@ -15838,13 +15928,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15861,7 +15951,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.g[S4][0] = 0x7;
                     c.g[RA][0] = sx(0x00214108);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214108)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -15871,13 +15961,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15893,7 +15983,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x50f0));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.g[RA][0] = sx(0x0021417c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021417c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -15903,13 +15993,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15925,7 +16015,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5120));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.g[RA][0] = sx(0x002141f0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002141f0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -15935,13 +16025,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15957,7 +16047,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5140));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.g[RA][0] = sx(0x00214264);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214264)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -15967,13 +16057,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -15989,7 +16079,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5170));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[RA][0] = sx(0x002142d8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002142d8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -15999,13 +16089,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16022,7 +16112,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T9][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x51a0));
                     c.g[RA][0] = sx(0x00214350);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214350)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16032,13 +16122,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16055,7 +16145,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T1][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x51d0));
                     c.g[RA][0] = sx(0x002143c8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002143c8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16065,13 +16155,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16088,7 +16178,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x51f0));
                     c.g[RA][0] = sx(0x00214440);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214440)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16098,13 +16188,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16121,7 +16211,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5210));
                     c.g[RA][0] = sx(0x002144b8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002144b8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16131,13 +16221,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16153,7 +16243,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T9][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5230));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00214534);
                     c.g[S5][0] = 0x8;
                     call_ptr(c, 0x00317670, 0x00214534)?;
@@ -16166,13 +16256,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16191,7 +16281,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x002145b8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002145b8)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x002145c4);
@@ -16200,13 +16290,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16223,7 +16313,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5278));
                     c.g[RA][0] = sx(0x0021462c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021462c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16233,13 +16323,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16255,7 +16345,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5298));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x002146a0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002146a0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16265,13 +16355,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16288,7 +16378,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[S7][0] = 0x8;
                     c.g[RA][0] = sx(0x00214718);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214718)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16298,13 +16388,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16320,7 +16410,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x52e8));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x0021478c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021478c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16330,13 +16420,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16352,7 +16442,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5318));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00214800);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214800)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16362,13 +16452,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16384,7 +16474,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5348));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00214874);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214874)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16394,13 +16484,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16416,7 +16506,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T8][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5368));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002148f0);
                     c.g[S3][0] = 0xa;
                     call_ptr(c, 0x00317670, 0x002148f0)?;
@@ -16428,13 +16518,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16451,7 +16541,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5388));
                     c.g[RA][0] = sx(0x00214968);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214968)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16461,13 +16551,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16484,7 +16574,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T5][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x53a8));
                     c.g[RA][0] = sx(0x002149e0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002149e0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16494,13 +16584,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16516,7 +16606,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x53d8));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00214a54);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214a54)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16526,13 +16616,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16548,7 +16638,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T8][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x53f8));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00214ad0);
                     c.g[S4][0] = 0xa;
                     call_ptr(c, 0x00317670, 0x00214ad0)?;
@@ -16560,13 +16650,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16583,7 +16673,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5418));
                     c.g[RA][0] = sx(0x00214b48);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214b48)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16593,13 +16683,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16615,7 +16705,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T5][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5438));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00214bc4);
                     c.g[S3][0] = 0x8;
                     call_ptr(c, 0x00317670, 0x00214bc4)?;
@@ -16627,13 +16717,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16649,7 +16739,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5468));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00214c38);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214c38)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16659,13 +16749,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16681,7 +16771,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5498));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00214cac);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214cac)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16691,13 +16781,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16712,7 +16802,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x54c8));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00214d24);
                     c.g[S3][0] = 0x9;
                     call_ptr(c, 0x00317670, 0x00214d24)?;
@@ -16724,13 +16814,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[SP][0] as u32));
+                    c.ldr(8, c.g[SP][0] as u32);
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[S0][0] as u32));
+                    c.sdr(8, c.g[S0][0] as u32);
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(9, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16749,7 +16839,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T5][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00214da4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214da4)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x00214db0);
@@ -16758,13 +16848,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16780,7 +16870,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5500));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00214e14);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214e14)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16790,13 +16880,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16813,7 +16903,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T8][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5520));
                     c.g[RA][0] = sx(0x00214e8c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214e8c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16823,13 +16913,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16846,7 +16936,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5550));
                     c.g[RA][0] = sx(0x00214f04);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214f04)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16856,13 +16946,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16879,7 +16969,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5570));
                     c.g[RA][0] = sx(0x00214f7c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214f7c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16889,13 +16979,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16912,7 +17002,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x55a0));
                     c.g[RA][0] = sx(0x00214ff4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00214ff4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -16922,13 +17012,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16944,7 +17034,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T8][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x55c0));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00215070);
                     c.g[S6][0] = 0xa;
                     call_ptr(c, 0x00317670, 0x00215070)?;
@@ -16956,13 +17046,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -16980,7 +17070,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[RA][0] = sx(0x002150ec);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002150ec)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x002150f8);
@@ -16989,13 +17079,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17011,7 +17101,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5600));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x0021515c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021515c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17021,13 +17111,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17043,7 +17133,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5620));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x002151d0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002151d0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17053,13 +17143,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[SP][0] as u32));
+                    c.ldr(18, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S0][0] as u32));
+                    c.sdr(18, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17076,7 +17166,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[S5][0] = 0xb;
                     c.g[RA][0] = sx(0x00215248);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215248)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17086,13 +17176,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17108,7 +17198,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5670));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x002152bc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002152bc)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17118,13 +17208,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17140,7 +17230,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5690));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00215330);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215330)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17150,13 +17240,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17175,7 +17265,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T7][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x002153b0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002153b0)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x002153bc);
@@ -17184,13 +17274,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17206,7 +17296,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x56d0));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S5][0]);
                     c.g[RA][0] = sx(0x00215420);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215420)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17216,13 +17306,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17234,7 +17324,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x4f;
                     c.g[A0][0] = 0x470000;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x56f0));
                     c.g[V0][0] = 0xa;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S5][0]);
@@ -17249,13 +17339,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17272,7 +17362,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5710));
                     c.g[RA][0] = sx(0x00215510);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215510)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17282,13 +17372,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17305,7 +17395,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5730));
                     c.g[RA][0] = sx(0x00215588);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215588)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17315,13 +17405,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17337,7 +17427,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5750));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00215604);
                     c.g[S2][0] = 0x1;
                     call_ptr(c, 0x00317670, 0x00215604)?;
@@ -17349,13 +17439,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17367,7 +17457,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x53;
                     c.g[A0][0] = 0x470000;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5770));
                     c.g[V0][0] = 0xb;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
@@ -17383,13 +17473,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17406,7 +17496,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5790));
                     c.g[RA][0] = sx(0x002156f8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002156f8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17416,13 +17506,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17440,7 +17530,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.g[RA][0] = sx(0x00215774);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215774)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17450,13 +17540,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17470,7 +17560,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.g[A0][0] = c.g[S1][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002157e8);
                     c.g[S3][0] = 0x1;
                     call_ptr(c, 0x00317670, 0x002157e8)?;
@@ -17482,13 +17572,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17503,7 +17593,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00215858);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215858)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17513,13 +17603,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17535,7 +17625,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S2][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002158d4);
                     c.g[S2][0] = 0xd;
                     call_ptr(c, 0x00317670, 0x002158d4)?;
@@ -17547,13 +17637,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17569,7 +17659,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00215948);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215948)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17579,13 +17669,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17601,7 +17691,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[S5][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002159c4);
                     c.g[S4][0] = 0x2;
                     call_ptr(c, 0x00317670, 0x002159c4)?;
@@ -17613,13 +17703,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17637,7 +17727,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x00215a40);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215a40)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17647,13 +17737,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17672,7 +17762,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[S3][0] = 0xe;
                     c.g[RA][0] = sx(0x00215ac0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215ac0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17682,13 +17772,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17704,7 +17794,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[S3][0] = 0xf;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00215b3c);
                     c.g[S4][0] = 0x3;
                     call_ptr(c, 0x00317670, 0x00215b3c)?;
@@ -17716,13 +17806,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17740,7 +17830,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x00215bb8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215bb8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17750,13 +17840,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17774,7 +17864,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[RA][0] = sx(0x00215c34);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215c34)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17784,13 +17874,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17805,7 +17895,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00215cac);
                     c.g[S4][0] = 0x10;
                     call_ptr(c, 0x00317670, 0x00215cac)?;
@@ -17817,13 +17907,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17835,7 +17925,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x61;
                     c.g[T9][0] = 0x10;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = 0x4;
                     c.g[V0][0] = 0x1;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T9][0]);
@@ -17854,13 +17944,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17879,7 +17969,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T4][0]);
                     c.g[RA][0] = sx(0x00215db4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215db4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17889,13 +17979,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17911,7 +18001,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[S3][0] = 0x11;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00215e30);
                     c.g[S4][0] = 0x5;
                     call_ptr(c, 0x00317670, 0x00215e30)?;
@@ -17923,13 +18013,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17947,7 +18037,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x00215eac);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215eac)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17957,13 +18047,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -17981,7 +18071,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[RA][0] = sx(0x00215f28);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00215f28)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -17991,13 +18081,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18012,7 +18102,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00215fa0);
                     c.g[S4][0] = 0x12;
                     call_ptr(c, 0x00317670, 0x00215fa0)?;
@@ -18024,13 +18114,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18042,7 +18132,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x67;
                     c.g[T9][0] = 0x12;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = 0x6;
                     c.g[V0][0] = 0x1;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T9][0]);
@@ -18061,13 +18151,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18086,7 +18176,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T4][0]);
                     c.g[RA][0] = sx(0x002160a8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002160a8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18096,13 +18186,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18118,7 +18208,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[S3][0] = 0x13;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216124);
                     c.g[S4][0] = 0x7;
                     call_ptr(c, 0x00317670, 0x00216124)?;
@@ -18130,13 +18220,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18154,7 +18244,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x002161a0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002161a0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18164,13 +18254,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18188,7 +18278,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[RA][0] = sx(0x0021621c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021621c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18198,13 +18288,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18219,7 +18309,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S6][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216294);
                     c.g[S4][0] = 0x14;
                     call_ptr(c, 0x00317670, 0x00216294)?;
@@ -18231,13 +18321,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18249,7 +18339,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x6d;
                     c.g[T9][0] = 0x14;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = 0x8;
                     c.g[V0][0] = 0x1;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T9][0]);
@@ -18268,13 +18358,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18293,7 +18383,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T4][0]);
                     c.g[RA][0] = sx(0x0021639c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021639c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18303,13 +18393,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18325,7 +18415,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[S3][0] = 0x15;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216418);
                     c.g[S4][0] = 0x9;
                     call_ptr(c, 0x00317670, 0x00216418)?;
@@ -18337,13 +18427,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18361,7 +18451,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x00216494);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216494)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18371,13 +18461,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18395,7 +18485,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[RA][0] = sx(0x00216510);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216510)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18405,13 +18495,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18426,7 +18516,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S6][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216588);
                     c.g[S4][0] = 0x16;
                     call_ptr(c, 0x00317670, 0x00216588)?;
@@ -18438,13 +18528,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18456,7 +18546,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x73;
                     c.g[S1][0] = 0x470000;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = 0x3;
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x59d0));
                     c.g[T9][0] = 0x16;
@@ -18477,13 +18567,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18502,7 +18592,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T4][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T3][0]);
                     c.g[RA][0] = sx(0x00216698);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216698)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a00));
@@ -18512,13 +18602,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18534,7 +18624,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[S3][0] = 0x17;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216714);
                     c.g[S2][0] = 0x7;
                     call_ptr(c, 0x00317670, 0x00216714)?;
@@ -18546,13 +18636,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18568,7 +18658,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[RA][0] = sx(0x00216788);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216788)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a28));
@@ -18578,13 +18668,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18602,7 +18692,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T2][0]);
                     c.g[RA][0] = sx(0x00216804);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216804)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a40));
@@ -18612,13 +18702,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18635,7 +18725,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[S2][0] = 0x1;
                     c.g[RA][0] = sx(0x0021687c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021687c)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a58));
@@ -18645,13 +18735,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18669,7 +18759,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[RA][0] = sx(0x002168f8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002168f8)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a70));
@@ -18679,13 +18769,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18704,7 +18794,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T1][0]);
                     c.g[S3][0] = 0x8;
                     c.g[RA][0] = sx(0x00216978);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216978)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a88));
@@ -18714,13 +18804,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18737,7 +18827,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.g[RA][0] = sx(0x002169f0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002169f0)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a98));
@@ -18747,13 +18837,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18771,7 +18861,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S7][0] = 0x19;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.g[RA][0] = sx(0x00216a6c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216a6c)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5ab0));
@@ -18781,13 +18871,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18805,7 +18895,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T1][0]);
                     c.g[RA][0] = sx(0x00216ae8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216ae8)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5ac0));
@@ -18815,13 +18905,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18839,7 +18929,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00216b64);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216b64)?;
                     c.g[S2][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -18850,13 +18940,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18875,7 +18965,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T9][0]);
                     c.g[S3][0] = 0x5;
                     c.g[RA][0] = sx(0x00216be8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216be8)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x59e8));
@@ -18885,13 +18975,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18909,7 +18999,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T2][0]);
                     c.g[RA][0] = sx(0x00216c64);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216c64)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a00));
@@ -18919,13 +19009,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18942,7 +19032,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00216cdc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216cdc)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a10));
@@ -18952,13 +19042,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -18976,7 +19066,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[S5][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216d60);
                     c.g[S4][0] = 0x1a;
                     call_ptr(c, 0x00317670, 0x00216d60)?;
@@ -18989,13 +19079,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19014,7 +19104,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T2][0]);
                     c.g[RA][0] = sx(0x00216de4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216de4)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a40));
@@ -19024,13 +19114,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19045,7 +19135,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00216e5c);
                     c.g[S3][0] = 0x8;
                     call_ptr(c, 0x00317670, 0x00216e5c)?;
@@ -19057,13 +19147,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19075,7 +19165,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x85;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[V0][0] = 0x4;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
@@ -19090,13 +19180,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19113,7 +19203,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.g[RA][0] = sx(0x00216f4c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216f4c)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a88));
@@ -19123,13 +19213,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19146,7 +19236,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00216fc4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00216fc4)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5a98));
@@ -19156,13 +19246,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19180,7 +19270,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[S4][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00217048);
                     c.g[S3][0] = 0x1b;
                     call_ptr(c, 0x00317670, 0x00217048)?;
@@ -19193,13 +19283,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19218,7 +19308,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T2][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T3][0]);
                     c.g[RA][0] = sx(0x002170cc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002170cc)?;
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5ac0));
@@ -19228,13 +19318,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19249,7 +19339,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S4][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00217144);
                     c.g[S5][0] = 0x1;
                     call_ptr(c, 0x00317670, 0x00217144)?;
@@ -19260,13 +19350,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19278,7 +19368,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0x8b;
                     c.g[S1][0] = 0x470000;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[V1][0] = 0x4;
                     c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1a10));
                     c.g[V0][0] = 0x1c;
@@ -19298,13 +19388,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19321,7 +19411,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T4][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S4][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021724c);
                     c.g[S4][0] = 0x1c;
                     call_ptr(c, 0x00317670, 0x0021724c)?;
@@ -19333,13 +19423,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19355,7 +19445,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x002172c0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002172c0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19365,13 +19455,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19387,7 +19477,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[S7][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021733c);
                     c.g[S6][0] = 0x1c;
                     call_ptr(c, 0x00317670, 0x0021733c)?;
@@ -19399,13 +19489,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19422,7 +19512,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[RA][0] = sx(0x002173b4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002173b4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19432,13 +19522,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19455,7 +19545,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.g[RA][0] = sx(0x0021742c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021742c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19465,13 +19555,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19488,7 +19578,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T8][0]);
                     c.g[RA][0] = sx(0x002174a4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002174a4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19498,13 +19588,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19521,7 +19611,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T0][0]);
                     c.g[RA][0] = sx(0x0021751c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021751c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19531,13 +19621,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19552,7 +19642,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x0021758c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021758c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19562,13 +19652,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19582,7 +19672,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00217600);
                     c.g[S7][0] = 0x1c;
                     call_ptr(c, 0x00317670, 0x00217600)?;
@@ -19594,13 +19684,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19619,7 +19709,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.g[S6][0] = 0x6;
                     c.g[RA][0] = sx(0x00217680);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217680)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19629,13 +19719,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19652,7 +19742,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T0][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.g[RA][0] = sx(0x002176f8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002176f8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19662,13 +19752,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19686,7 +19776,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S7][0]);
                     c.g[RA][0] = sx(0x00217774);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217774)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19696,13 +19786,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19718,7 +19808,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[S3][0] = 0x1d;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002177f0);
                     c.g[S4][0] = 0x2;
                     call_ptr(c, 0x00317670, 0x002177f0)?;
@@ -19730,13 +19820,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19754,7 +19844,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x0021786c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021786c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19764,13 +19854,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19788,7 +19878,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.g[RA][0] = sx(0x002178e8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002178e8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19798,13 +19888,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19821,7 +19911,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[S1][0] = 0x1;
                     c.g[RA][0] = sx(0x00217960);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217960)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19831,13 +19921,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19855,7 +19945,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S7][0] = 0x1d;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[RA][0] = sx(0x002179dc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002179dc)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19865,13 +19955,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19889,7 +19979,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.g[RA][0] = sx(0x00217a58);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217a58)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19899,13 +19989,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19922,7 +20012,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S1][0]);
                     c.g[RA][0] = sx(0x00217ad0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217ad0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19932,13 +20022,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19954,7 +20044,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S1][0]);
                     c.g[S5][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00217b4c);
                     c.g[S6][0] = 0x7;
                     call_ptr(c, 0x00317670, 0x00217b4c)?;
@@ -19966,13 +20056,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -19988,7 +20078,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S1][0]);
                     c.g[RA][0] = sx(0x00217bc0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217bc0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -19998,13 +20088,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20019,7 +20109,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00217c30);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217c30)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20029,13 +20119,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20050,7 +20140,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S1][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00217ca0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217ca0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20060,13 +20150,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20082,7 +20172,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[S4][0] = 0x1d;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00217d1c);
                     c.g[S3][0] = 0x8;
                     call_ptr(c, 0x00317670, 0x00217d1c)?;
@@ -20094,13 +20184,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20117,7 +20207,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00217d94);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217d94)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20127,13 +20217,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20151,7 +20241,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.g[RA][0] = sx(0x00217e10);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217e10)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20161,13 +20251,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20183,7 +20273,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[S1][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00217e8c);
                     c.g[S3][0] = 0x4;
                     call_ptr(c, 0x00317670, 0x00217e8c)?;
@@ -20195,13 +20285,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20213,7 +20303,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0xa7;
                     c.g[T9][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[V0][0] = 0x9;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
@@ -20229,13 +20319,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20253,7 +20343,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[RA][0] = sx(0x00217f84);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217f84)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20263,13 +20353,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20285,7 +20375,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[RA][0] = sx(0x00217ff8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00217ff8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20295,13 +20385,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20320,7 +20410,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T8][0]);
                     c.g[S7][0] = 0x1;
                     c.g[RA][0] = sx(0x00218078);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218078)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20330,13 +20420,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20354,7 +20444,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T0][0]);
                     c.g[RA][0] = sx(0x002180f4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002180f4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20364,13 +20454,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20388,7 +20478,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00218170);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218170)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20398,13 +20488,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20422,7 +20512,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S4][0] = 0x5;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.g[RA][0] = sx(0x002181ec);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002181ec)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20432,13 +20522,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20455,7 +20545,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.g[RA][0] = sx(0x00218264);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218264)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20465,13 +20555,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20488,7 +20578,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x002182dc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002182dc)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20498,13 +20588,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20520,7 +20610,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00218350);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218350)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20530,13 +20620,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20555,7 +20645,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[FP][0]);
                     c.g[S6][0] = 0x1e;
                     c.g[RA][0] = sx(0x002183d0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002183d0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20565,13 +20655,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20588,7 +20678,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[FP][0]);
                     c.g[RA][0] = sx(0x00218448);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218448)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20598,13 +20688,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20622,7 +20712,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x002184c4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002184c4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20632,13 +20722,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20654,7 +20744,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00218538);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218538)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20664,13 +20754,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20685,7 +20775,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x002185a8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002185a8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20695,13 +20785,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20716,7 +20806,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.g[RA][0] = sx(0x00218618);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218618)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20726,13 +20816,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20749,7 +20839,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00218690);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218690)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20759,13 +20849,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20781,7 +20871,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[A0][0] = c.g[S2][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021870c);
                     c.g[S3][0] = 0x1f;
                     call_ptr(c, 0x00317670, 0x0021870c)?;
@@ -20794,13 +20884,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20818,7 +20908,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[RA][0] = sx(0x0021878c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021878c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20828,13 +20918,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20852,7 +20942,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[RA][0] = sx(0x00218808);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218808)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20862,13 +20952,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20884,7 +20974,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[RA][0] = sx(0x0021887c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021887c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20894,13 +20984,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20916,7 +21006,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[S5][0] = 0x5;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002188f8);
                     c.g[S4][0] = 0x1f;
                     call_ptr(c, 0x00317670, 0x002188f8)?;
@@ -20928,13 +21018,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20951,7 +21041,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T0][0]);
                     c.g[RA][0] = sx(0x00218970);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218970)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20961,13 +21051,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -20984,7 +21074,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T5][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[RA][0] = sx(0x002189e8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002189e8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -20994,13 +21084,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21017,7 +21107,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
                     c.g[S3][0] = 0x3;
                     c.g[RA][0] = sx(0x00218a60);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218a60)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21027,13 +21117,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21049,7 +21139,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
                     c.g[RA][0] = sx(0x00218ad4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218ad4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21059,13 +21149,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21081,7 +21171,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[RA][0] = sx(0x00218b48);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218b48)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21091,13 +21181,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21113,7 +21203,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[RA][0] = sx(0x00218bbc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218bbc)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21123,13 +21213,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21145,7 +21235,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S4][0]);
                     c.g[RA][0] = sx(0x00218c30);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218c30)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21155,13 +21245,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21180,7 +21270,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[S5][0] = 0x8;
                     c.g[RA][0] = sx(0x00218cb0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218cb0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21190,13 +21280,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21212,7 +21302,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[RA][0] = sx(0x00218d24);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218d24)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21222,13 +21312,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[S0][0] as u32));
+                    c.sdr(9, c.g[S0][0] as u32);
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21244,7 +21334,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[RA][0] = sx(0x00218d98);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218d98)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21254,13 +21344,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(14, (c.g[SP][0] as u32));
+                    c.ldr(14, c.g[SP][0] as u32);
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(14, (c.g[S0][0] as u32));
+                    c.sdr(14, c.g[S0][0] as u32);
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21276,7 +21366,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
                     c.g[RA][0] = sx(0x00218e0c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218e0c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21286,13 +21376,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[S0][0] as u32));
+                    c.sdr(22, c.g[S0][0] as u32);
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21308,7 +21398,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S5][0]);
                     c.g[S6][0] = 0x2;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00218e88);
                     c.g[S5][0] = 0x20;
                     call_ptr(c, 0x00317670, 0x00218e88)?;
@@ -21320,13 +21410,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21343,7 +21433,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T1][0]);
                     c.g[RA][0] = sx(0x00218f00);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218f00)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21353,13 +21443,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21376,7 +21466,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T6][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[RA][0] = sx(0x00218f78);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218f78)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21386,13 +21476,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21408,7 +21498,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00218fec);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00218fec)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21418,13 +21508,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21439,7 +21529,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00219064);
                     c.g[S6][0] = 0x20;
                     call_ptr(c, 0x00317670, 0x00219064)?;
@@ -21451,13 +21541,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21474,7 +21564,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.g[RA][0] = sx(0x002190dc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002190dc)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21484,13 +21574,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21507,7 +21597,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00219154);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219154)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21517,13 +21607,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21539,7 +21629,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x002191c8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002191c8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21549,13 +21639,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21572,7 +21662,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00219240);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219240)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21582,13 +21672,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21606,7 +21696,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T2][0]);
                     c.g[RA][0] = sx(0x002192bc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002192bc)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21616,13 +21706,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21640,7 +21730,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00219338);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219338)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21650,13 +21740,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21671,7 +21761,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002193b0);
                     c.g[S1][0] = 0x7;
                     call_ptr(c, 0x00317670, 0x002193b0)?;
@@ -21683,13 +21773,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21706,7 +21796,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T9][0]);
                     c.g[S6][0] = 0x20;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00219430);
                     c.g[S7][0] = 0x9;
                     call_ptr(c, 0x00317670, 0x00219430)?;
@@ -21718,13 +21808,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21743,7 +21833,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T1][0]);
                     c.g[RA][0] = sx(0x002194b0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002194b0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21753,13 +21843,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21777,7 +21867,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T7][0]);
                     c.g[RA][0] = sx(0x0021952c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021952c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21787,13 +21877,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[SP][0] as u32));
+                    c.ldr(18, c.g[SP][0] as u32);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S0][0] as u32));
+                    c.sdr(18, c.g[S0][0] as u32);
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21810,7 +21900,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.g[S2][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002195ac);
                     c.g[S3][0] = 0x4;
                     call_ptr(c, 0x00317670, 0x002195ac)?;
@@ -21822,13 +21912,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21845,7 +21935,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.g[RA][0] = sx(0x00219624);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219624)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21855,13 +21945,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21880,7 +21970,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x002196a4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002196a4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21890,13 +21980,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21913,7 +22003,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[RA][0] = sx(0x0021971c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021971c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21923,13 +22013,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21948,7 +22038,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T9][0]);
                     c.g[S6][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x002197a4);
                     c.g[S7][0] = 0x5;
                     call_ptr(c, 0x00317670, 0x002197a4)?;
@@ -21961,13 +22051,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(30, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(30, (c.g[SP][0] as u32));
+                    c.ldr(30, c.g[SP][0] as u32);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(30, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(30, (c.g[S0][0] as u32));
+                    c.sdr(30, c.g[S0][0] as u32);
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -21986,7 +22076,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T1][0]);
                     c.g[RA][0] = sx(0x00219828);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219828)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -21996,13 +22086,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22021,7 +22111,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T6][0]);
                     c.g[RA][0] = sx(0x002198a8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002198a8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22031,13 +22121,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22055,7 +22145,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S6][0]);
                     c.g[S4][0] = 0x3;
                     c.g[RA][0] = sx(0x00219924);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219924)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22065,13 +22155,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(30, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(30, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(30, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22089,7 +22179,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[FP][0] = 0x1;
                     c.g[RA][0] = sx(0x002199a0);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x002199a0)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22099,13 +22189,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[SP][0] as u32));
+                    c.ldr(3, c.g[SP][0] as u32);
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(7, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22122,7 +22212,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00219a18);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219a18)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22132,13 +22222,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22156,7 +22246,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S6][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T6][0]);
                     c.g[RA][0] = sx(0x00219a94);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219a94)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22166,13 +22256,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22189,7 +22279,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S6][0]);
                     c.g[RA][0] = sx(0x00219b0c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219b0c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22199,13 +22289,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22222,7 +22312,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[FP][0]);
                     c.g[S6][0] = 0x21;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00219b8c);
                     c.g[S5][0] = 0x7;
                     call_ptr(c, 0x00317670, 0x00219b8c)?;
@@ -22234,13 +22324,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(7, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[S0][0] as u32));
+                    c.sdr(2, c.g[S0][0] as u32);
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22257,7 +22347,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T1][0]);
                     c.g[RA][0] = sx(0x00219c04);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219c04)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22267,13 +22357,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[SP][0] as u32));
+                    c.ldr(10, c.g[SP][0] as u32);
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[S0][0] as u32));
+                    c.sdr(10, c.g[S0][0] as u32);
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22292,7 +22382,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T7][0]);
                     c.g[RA][0] = sx(0x00219c84);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219c84)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22302,13 +22392,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[SP][0] as u32));
+                    c.ldr(17, c.g[SP][0] as u32);
                     c.ldl(18, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S0][0] as u32));
+                    c.sdr(17, c.g[S0][0] as u32);
                     c.sdl(18, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22325,7 +22415,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S6][0]);
                     c.g[S2][0] = 0x1;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00219d04);
                     c.g[S3][0] = 0x4;
                     call_ptr(c, 0x00317670, 0x00219d04)?;
@@ -22337,13 +22427,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22355,7 +22445,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0xe7;
                     c.g[V1][0] = 0x9;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = 0x470000;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.g[V0][0] = 0x1;
@@ -22372,13 +22462,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22397,7 +22487,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[T4][0]);
                     c.g[RA][0] = sx(0x00219e04);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219e04)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22407,13 +22497,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22430,7 +22520,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1a10));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
                     c.g[RA][0] = sx(0x00219e7c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219e7c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22440,13 +22530,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[SP][0] as u32));
+                    c.ldr(20, c.g[SP][0] as u32);
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S0][0] as u32));
+                    c.sdr(20, c.g[S0][0] as u32);
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22464,7 +22554,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S2][0]);
                     c.g[S4][0] = 0xb;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S3][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x00219f00);
                     c.g[S3][0] = 0x23;
                     call_ptr(c, 0x00317670, 0x00219f00)?;
@@ -22476,13 +22566,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(30, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(30, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(30, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(30, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22501,7 +22591,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[A1][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00219f80);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219f80)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22511,13 +22601,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22534,7 +22624,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x00219ff8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x00219ff8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22544,13 +22634,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22564,7 +22654,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = c.g[S1][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a06c);
                     c.g[S2][0] = 0x25;
                     call_ptr(c, 0x00317670, 0x0021a06c)?;
@@ -22576,13 +22666,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22596,7 +22686,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = c.g[S1][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a0e0);
                     c.g[S7][0] = 0xb;
                     call_ptr(c, 0x00317670, 0x0021a0e0)?;
@@ -22608,13 +22698,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(30, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(30, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(30, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(30, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22630,7 +22720,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x0021a154);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a154)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22640,13 +22730,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22662,7 +22752,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.g[RA][0] = sx(0x0021a1c8);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a1c8)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22672,13 +22762,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22693,7 +22783,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S2][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x0021a238);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a238)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22703,13 +22793,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22723,7 +22813,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S2][0]);
                     c.g[A0][0] = c.g[S1][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a2ac);
                     c.g[S2][0] = 0x27;
                     call_ptr(c, 0x00317670, 0x0021a2ac)?;
@@ -22735,13 +22825,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[SP][0] as u32));
+                    c.ldr(24, c.g[SP][0] as u32);
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(30, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(30, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[S0][0] as u32));
+                    c.sdr(24, c.g[S0][0] as u32);
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(30, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22757,7 +22847,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021a320);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a320)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22767,13 +22857,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22789,7 +22879,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S1][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[T3][0]);
                     c.g[RA][0] = sx(0x0021a394);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a394)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22799,13 +22889,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[SP][0] as u32));
+                    c.ldr(12, c.g[SP][0] as u32);
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[S0][0] as u32));
+                    c.sdr(12, c.g[S0][0] as u32);
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22820,7 +22910,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S2][0]);
                     c.g[A0][0] = c.g[S1][0];
                     c.g[RA][0] = sx(0x0021a404);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a404)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22830,13 +22920,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(21, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S0][0] as u32));
+                    c.sdr(19, c.g[S0][0] as u32);
                     c.sdl(20, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22850,7 +22940,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S7][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[S2][0]);
                     c.g[A0][0] = c.g[S1][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a478);
                     c.g[S3][0] = 0x1;
                     call_ptr(c, 0x00317670, 0x0021a478)?;
@@ -22868,13 +22958,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.cycles += 1892;
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22886,7 +22976,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
                     c.g[V0][0] = 0xf7;
                     c.g[V1][0] = 0x34;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[S2][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6530));
@@ -22906,13 +22996,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22931,7 +23021,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[T4][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021a588);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a588)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a594);
@@ -22940,13 +23030,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S0][0] as u32));
+                    c.sdr(13, c.g[S0][0] as u32);
                     c.sdl(14, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22963,7 +23053,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021a5fc);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a5fc)?;
                     c.g[S1][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -22974,13 +23064,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(21, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[SP][0] as u32));
+                    c.ldr(21, c.g[SP][0] as u32);
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(23, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(21, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S0][0] as u32));
+                    c.sdr(21, c.g[S0][0] as u32);
                     c.sdl(22, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -22999,7 +23089,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.g[S6][0] = 0xb;
                     c.g[RA][0] = sx(0x0021a680);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a680)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a68c);
@@ -23008,13 +23098,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[SP][0] as u32));
+                    c.ldr(25, c.g[SP][0] as u32);
                     c.ldl(30, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(30, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(2, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[S0][0] as u32));
+                    c.sdr(25, c.g[S0][0] as u32);
                     c.sdl(30, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(30, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -23031,7 +23121,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021a6f4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a6f4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -23041,13 +23131,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(7, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[SP][0] as u32));
+                    c.ldr(7, c.g[SP][0] as u32);
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(7, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[S0][0] as u32));
+                    c.sdr(7, c.g[S0][0] as u32);
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -23064,7 +23154,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021a76c);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a76c)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -23074,13 +23164,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(11, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[SP][0] as u32));
+                    c.ldr(11, c.g[SP][0] as u32);
                     c.ldl(12, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(13, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(11, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S0][0] as u32));
+                    c.sdr(11, c.g[S0][0] as u32);
                     c.sdl(12, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -23097,7 +23187,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S4][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     c.g[RA][0] = sx(0x0021a7e4);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a7e4)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -23107,13 +23197,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[SP][0] as u32));
+                    c.ldr(15, c.g[SP][0] as u32);
                     c.ldl(17, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(19, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(15, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S0][0] as u32));
+                    c.sdr(15, c.g[S0][0] as u32);
                     c.sdl(17, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -23131,7 +23221,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S4][0] = 0x4d0000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
                     c.g[RA][0] = sx(0x0021a860);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     call_ptr(c, 0x00317670, 0x0021a860)?;
                     c.g[A0][0] = 0x470000;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
@@ -23141,13 +23231,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x14), c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(25, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(25, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[S0][0] as u32));
+                    c.sdr(23, c.g[S0][0] as u32);
                     c.sdl(24, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -23163,7 +23253,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A0][0] = c.g[S2][0];
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S5][0]);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), c.g[S6][0]);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[RA][0] = sx(0x0021a8dc);
                     c.g[S6][0] = 0x4d0000;
                     call_ptr(c, 0x00317670, 0x0021a8dc)?;
@@ -23237,13 +23327,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x1de8), 0u64);
                     c.g[T3][0] = c.g[T3][0] | 0x800;
                     c.ldl(8, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(8, (c.g[SP][0] as u32));
+                    c.ldr(8, c.g[SP][0] as u32);
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(9, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0x17));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sdl(8, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(8, (c.g[S0][0] as u32));
+                    c.sdr(8, c.g[S0][0] as u32);
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(9, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.sdl(10, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -23268,14 +23358,14 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.g[S5][0] & 0xff;
                     c.g[A2][0] = c.lbu((c.g[GP][0] as u32).wrapping_add(0x1e58));
                     c.g[A0][0] = c.g[A0][0] & 0xff;
-                    c.sw((c.g[SP][0] as u32), 0u64);
+                    c.sw(c.g[SP][0] as u32, 0u64);
                     c.g[V0][0] = c.g[V0][0] | 0x900;
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x1e50), c.g[A1][0]);
                     c.g[V1][0] = c.g[V1][0] | 0xa00;
                     c.g[A0][0] = c.g[A0][0] | 0xb00;
                     c.g[A2][0] = c.g[A2][0] | 0xd00;
                     c.g[A1][0] = 0x4d0000;
-                    c.lwc1(20, (c.g[SP][0] as u32));
+                    c.lwc1(20, c.g[SP][0] as u32);
                     c.swc1(0, (c.g[A1][0] as u32).wrapping_sub(0x7bf8));
                     c.g[T3][0] = sx((c.g[T8][0] as u32).wrapping_sub(0x7b28));
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x1e38), c.g[V0][0]);
@@ -23306,11 +23396,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T9][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6a18));
                     c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x7bd8));
                     c.ldl(20, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[T9][0] as u32));
+                    c.ldr(20, c.g[T9][0] as u32);
                     c.ldl(21, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S6][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S6][0] as u32));
+                    c.sdr(20, c.g[S6][0] as u32);
                     c.sdl(21, (c.g[S6][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S6][0] as u32).wrapping_add(0x8));
                     c.g[T6][0] = 0x4d0000;
@@ -23319,11 +23409,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x6a28));
                     c.g[S5][0] = sx((c.g[T6][0] as u32).wrapping_sub(0x7bb8));
                     c.ldl(19, (c.g[S6][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[S6][0] as u32));
+                    c.ldr(19, c.g[S6][0] as u32);
                     c.ldl(20, (c.g[S6][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[S6][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S5][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S5][0] as u32));
+                    c.sdr(19, c.g[S5][0] as u32);
                     c.sdl(20, (c.g[S5][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S5][0] as u32).wrapping_add(0x8));
                     c.g[A0][0] = sx((c.g[T4][0] as u32).wrapping_sub(0x7aa8));
@@ -23374,22 +23464,22 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_add(0x6a38));
                     c.g[T9][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x7b98));
                     c.ldl(23, (c.g[T2][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[T2][0] as u32));
+                    c.ldr(23, c.g[T2][0] as u32);
                     c.ldl(24, (c.g[T2][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[T2][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[T9][0] as u32));
+                    c.sdr(23, c.g[T9][0] as u32);
                     c.sdl(24, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.g[T7][0] = 0x4c0000;
                     c.g[S5][0] = sx((c.g[T7][0] as u32).wrapping_add(0x6a48));
                     c.g[S4][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x7b78));
                     c.ldl(18, (c.g[S5][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[S5][0] as u32));
+                    c.ldr(18, c.g[S5][0] as u32);
                     c.ldl(19, (c.g[S5][0] as u32).wrapping_add(0xf));
                     c.ldr(19, (c.g[S5][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S4][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S4][0] as u32));
+                    c.sdr(18, c.g[S4][0] as u32);
                     c.sdl(19, (c.g[S4][0] as u32).wrapping_add(0xf));
                     c.sdr(19, (c.g[S4][0] as u32).wrapping_add(0x8));
                     c.g[S6][0] = 0x4d0000;
@@ -23398,22 +23488,22 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T3][0] = sx((c.g[S7][0] as u32).wrapping_add(0x6a08));
                     c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_sub(0x7b58));
                     c.ldl(24, (c.g[T3][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[T3][0] as u32));
+                    c.ldr(24, c.g[T3][0] as u32);
                     c.ldl(25, (c.g[T3][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[T3][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[T2][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[T2][0] as u32));
+                    c.sdr(24, c.g[T2][0] as u32);
                     c.sdl(25, (c.g[T2][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[T2][0] as u32).wrapping_add(0x8));
                     c.g[S2][0] = 0x4c0000;
                     c.g[S6][0] = sx((c.g[S2][0] as u32).wrapping_add(0x69e8));
                     c.g[S5][0] = sx((c.g[T7][0] as u32).wrapping_sub(0x7b38));
                     c.ldl(19, (c.g[S6][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[S6][0] as u32));
+                    c.ldr(19, c.g[S6][0] as u32);
                     c.ldl(20, (c.g[S6][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[S6][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S5][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S5][0] as u32));
+                    c.sdr(19, c.g[S5][0] as u32);
                     c.sdl(20, (c.g[S5][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S5][0] as u32).wrapping_add(0x8));
                     c.g[S7][0] = 0x4d0000;
@@ -23422,11 +23512,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T7][0] = sx((c.g[T8][0] as u32).wrapping_add(0x69f8));
                     c.g[T3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0x7b18));
                     c.ldl(25, (c.g[T7][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[T7][0] as u32));
+                    c.ldr(25, c.g[T7][0] as u32);
                     c.ldl(10, (c.g[T7][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[T7][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[T3][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[T3][0] as u32));
+                    c.sdr(25, c.g[T3][0] as u32);
                     c.sdl(10, (c.g[T3][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[T3][0] as u32).wrapping_add(0x8));
                     c.g[S2][0] = 0x4d0000;
@@ -23435,11 +23525,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S7][0] = sx((c.g[S3][0] as u32).wrapping_add(0x69d8));
                     c.g[S6][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x7af8));
                     c.ldl(20, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.ldr(20, (c.g[S7][0] as u32));
+                    c.ldr(20, c.g[S7][0] as u32);
                     c.ldl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.sdl(20, (c.g[S6][0] as u32).wrapping_add(0x7));
-                    c.sdr(20, (c.g[S6][0] as u32));
+                    c.sdr(20, c.g[S6][0] as u32);
                     c.sdl(21, (c.g[S6][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S6][0] as u32).wrapping_add(0x8));
                     c.g[T8][0] = 0x4d0000;
@@ -23481,22 +23571,22 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[S4][0] as u32).wrapping_add(0x6b78));
                     c.g[S7][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x7ad8));
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[T8][0] as u32));
+                    c.ldr(21, c.g[T8][0] as u32);
                     c.ldl(22, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S7][0] as u32));
+                    c.sdr(21, c.g[S7][0] as u32);
                     c.sdl(22, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = 0x4d0000;
                     c.g[A1][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6b88));
                     c.g[A0][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7ab8));
                     c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[A1][0] as u32));
+                    c.ldr(2, c.g[A1][0] as u32);
                     c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[A0][0] as u32));
+                    c.sdr(2, c.g[A0][0] as u32);
                     c.sdl(3, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[S5][0] = 0x4d0000;
@@ -23505,33 +23595,33 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S4][0] = sx((c.g[T2][0] as u32).wrapping_add(0x6b98));
                     c.g[S3][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x7a98));
                     c.ldl(11, (c.g[S4][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[S4][0] as u32));
+                    c.ldr(11, c.g[S4][0] as u32);
                     c.ldl(15, (c.g[S4][0] as u32).wrapping_add(0xf));
                     c.ldr(15, (c.g[S4][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[S3][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[S3][0] as u32));
+                    c.sdr(11, c.g[S3][0] as u32);
                     c.sdl(15, (c.g[S3][0] as u32).wrapping_add(0xf));
                     c.sdr(15, (c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[S6][0] = 0x4c0000;
                     c.g[A2][0] = sx((c.g[T4][0] as u32).wrapping_add(0x6bb8));
                     c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7a58));
                     c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[A2][0] as u32));
+                    c.ldr(3, c.g[A2][0] as u32);
                     c.ldl(4, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.ldr(4, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[A1][0] as u32));
+                    c.sdr(3, c.g[A1][0] as u32);
                     c.sdl(4, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(4, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[S3][0] = 0x4d0000;
                     c.g[FP][0] = sx((c.g[S6][0] as u32).wrapping_add(0x6ba8));
                     c.g[T9][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x7a78));
                     c.ldl(23, (c.g[FP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[FP][0] as u32));
+                    c.ldr(23, c.g[FP][0] as u32);
                     c.ldl(24, (c.g[FP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[FP][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[T9][0] as u32));
+                    c.sdr(23, c.g[T9][0] as u32);
                     c.sdl(24, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.g[T3][0] = 0x4d0000;
@@ -23582,22 +23672,22 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T0][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6bc8));
                     c.g[A0][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7a38));
                     c.ldl(2, (c.g[T0][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[T0][0] as u32));
+                    c.ldr(2, c.g[T0][0] as u32);
                     c.ldl(3, (c.g[T0][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[T0][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[A0][0] as u32));
+                    c.sdr(2, c.g[A0][0] as u32);
                     c.sdl(3, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.g[T1][0] = 0x4d0000;
                     c.g[T8][0] = sx((c.g[S0][0] as u32).wrapping_add(0x6bd8));
                     c.g[S7][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x7a18));
                     c.ldl(17, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(17, (c.g[T8][0] as u32));
+                    c.ldr(17, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(17, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(17, (c.g[S7][0] as u32));
+                    c.sdr(17, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[FP][0] = 0x4d0000;
@@ -23607,11 +23697,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6be8));
                     c.g[S0][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x79f8));
                     c.ldl(3, (c.g[S1][0] as u32).wrapping_add(0x7));
-                    c.ldr(3, (c.g[S1][0] as u32));
+                    c.ldr(3, c.g[S1][0] as u32);
                     c.ldl(4, (c.g[S1][0] as u32).wrapping_add(0xf));
                     c.ldr(4, (c.g[S1][0] as u32).wrapping_add(0x8));
                     c.sdl(3, (c.g[S0][0] as u32).wrapping_add(0x7));
-                    c.sdr(3, (c.g[S0][0] as u32));
+                    c.sdr(3, c.g[S0][0] as u32);
                     c.sdl(4, (c.g[S0][0] as u32).wrapping_add(0xf));
                     c.sdr(4, (c.g[S0][0] as u32).wrapping_add(0x8));
                     c.g[S5][0] = 0x4d0000;
@@ -23619,11 +23709,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S7][0] as u32).wrapping_add(0x6b58));
                     c.g[FP][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x79d8));
                     c.ldl(24, (c.g[V0][0] as u32).wrapping_add(0x7));
-                    c.ldr(24, (c.g[V0][0] as u32));
+                    c.ldr(24, c.g[V0][0] as u32);
                     c.ldl(25, (c.g[V0][0] as u32).wrapping_add(0xf));
                     c.ldr(25, (c.g[V0][0] as u32).wrapping_add(0x8));
                     c.sdl(24, (c.g[FP][0] as u32).wrapping_add(0x7));
-                    c.sdr(24, (c.g[FP][0] as u32));
+                    c.sdr(24, c.g[FP][0] as u32);
                     c.sdl(25, (c.g[FP][0] as u32).wrapping_add(0xf));
                     c.sdr(25, (c.g[FP][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = 0x4d0000;
@@ -23632,22 +23722,22 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S7][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6a58));
                     c.g[S5][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x79b8));
                     c.ldl(16, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.ldr(16, (c.g[S7][0] as u32));
+                    c.ldr(16, c.g[S7][0] as u32);
                     c.ldl(17, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.ldr(17, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.sdl(16, (c.g[S5][0] as u32).wrapping_add(0x7));
-                    c.sdr(16, (c.g[S5][0] as u32));
+                    c.sdr(16, c.g[S5][0] as u32);
                     c.sdl(17, (c.g[S5][0] as u32).wrapping_add(0xf));
                     c.sdr(17, (c.g[S5][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = 0x4c0000;
                     c.g[A0][0] = sx((c.g[T9][0] as u32).wrapping_add(0x6bf8));
                     c.g[V1][0] = sx((c.g[T8][0] as u32).wrapping_sub(0x7998));
                     c.ldl(30, (c.g[A0][0] as u32).wrapping_add(0x7));
-                    c.ldr(30, (c.g[A0][0] as u32));
+                    c.ldr(30, c.g[A0][0] as u32);
                     c.ldl(2, (c.g[A0][0] as u32).wrapping_add(0xf));
                     c.ldr(2, (c.g[A0][0] as u32).wrapping_add(0x8));
                     c.sdl(30, (c.g[V1][0] as u32).wrapping_add(0x7));
-                    c.sdr(30, (c.g[V1][0] as u32));
+                    c.sdr(30, c.g[V1][0] as u32);
                     c.sdl(2, (c.g[V1][0] as u32).wrapping_add(0xf));
                     c.sdr(2, (c.g[V1][0] as u32).wrapping_add(0x8));
                     c.g[S0][0] = 0x4d0000;
@@ -23709,11 +23799,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6b68));
                     c.g[S7][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7978));
                     c.ldl(18, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[T8][0] as u32));
+                    c.ldr(18, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S7][0] as u32));
+                    c.sdr(18, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x65d8));
@@ -23722,11 +23812,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6988));
                     c.g[S7][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7958));
                     c.ldl(18, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[T8][0] as u32));
+                    c.ldr(18, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S7][0] as u32));
+                    c.sdr(18, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = 0x4d0000;
@@ -23734,11 +23824,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6998));
                     c.g[S7][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7938));
                     c.ldl(18, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[T8][0] as u32));
+                    c.ldr(18, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S7][0] as u32));
+                    c.sdr(18, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = 0x4d0000;
@@ -23746,11 +23836,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6978));
                     c.g[S7][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7918));
                     c.ldl(18, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[T8][0] as u32));
+                    c.ldr(18, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S7][0] as u32));
+                    c.sdr(18, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = 0x4d0000;
@@ -23758,11 +23848,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6b18));
                     c.g[S7][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x78f8));
                     c.ldl(18, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[T8][0] as u32));
+                    c.ldr(18, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S7][0] as u32));
+                    c.sdr(18, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = 0x4d0000;
@@ -23770,11 +23860,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T8][0] = sx((c.g[FP][0] as u32).wrapping_add(0x69b8));
                     c.g[S7][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x78d8));
                     c.ldl(18, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(18, (c.g[T8][0] as u32));
+                    c.ldr(18, c.g[T8][0] as u32);
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(21, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(18, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(18, (c.g[S7][0] as u32));
+                    c.sdr(18, c.g[S7][0] as u32);
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(21, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0xc));
@@ -23812,21 +23902,21 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T5][0] = sx((c.g[FP][0] as u32).wrapping_add(0x69a8));
                     c.g[T4][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x78b8));
                     c.ldl(10, (c.g[T5][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[T5][0] as u32));
+                    c.ldr(10, c.g[T5][0] as u32);
                     c.ldl(11, (c.g[T5][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[T5][0] as u32).wrapping_add(0x8));
                     c.sdl(10, (c.g[T4][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[T4][0] as u32));
+                    c.sdr(10, c.g[T4][0] as u32);
                     c.sdl(11, (c.g[T4][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[T4][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = sx((c.g[S2][0] as u32).wrapping_add(0x69c8));
                     c.g[T8][0] = sx((c.g[T6][0] as u32).wrapping_sub(0x7898));
                     c.ldl(21, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[T9][0] as u32));
+                    c.ldr(21, c.g[T9][0] as u32);
                     c.ldl(23, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[T8][0] as u32));
+                    c.sdr(21, c.g[T8][0] as u32);
                     c.sdl(23, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.g[FP][0] = 0x4d0000;
@@ -23835,22 +23925,22 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T6][0] = sx((c.g[T2][0] as u32).wrapping_add(0x6a98));
                     c.g[T5][0] = sx((c.g[FP][0] as u32).wrapping_sub(0x7878));
                     c.ldl(11, (c.g[T6][0] as u32).wrapping_add(0x7));
-                    c.ldr(11, (c.g[T6][0] as u32));
+                    c.ldr(11, c.g[T6][0] as u32);
                     c.ldl(12, (c.g[T6][0] as u32).wrapping_add(0xf));
                     c.ldr(12, (c.g[T6][0] as u32).wrapping_add(0x8));
                     c.sdl(11, (c.g[T5][0] as u32).wrapping_add(0x7));
-                    c.sdr(11, (c.g[T5][0] as u32));
+                    c.sdr(11, c.g[T5][0] as u32);
                     c.sdl(12, (c.g[T5][0] as u32).wrapping_add(0xf));
                     c.sdr(12, (c.g[T5][0] as u32).wrapping_add(0x8));
                     c.g[S5][0] = 0x4c0000;
                     c.g[FP][0] = sx((c.g[S5][0] as u32).wrapping_add(0x6a88));
                     c.g[T9][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x7858));
                     c.ldl(23, (c.g[FP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[FP][0] as u32));
+                    c.ldr(23, c.g[FP][0] as u32);
                     c.ldl(24, (c.g[FP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[FP][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[T9][0] as u32));
+                    c.sdr(23, c.g[T9][0] as u32);
                     c.sdl(24, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.g[T2][0] = 0x4d0000;
@@ -23859,11 +23949,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S2][0] = sx((c.g[T3][0] as u32).wrapping_add(0x6ad8));
                     c.g[T6][0] = sx((c.g[T2][0] as u32).wrapping_sub(0x7838));
                     c.ldl(12, (c.g[S2][0] as u32).wrapping_add(0x7));
-                    c.ldr(12, (c.g[S2][0] as u32));
+                    c.ldr(12, c.g[S2][0] as u32);
                     c.ldl(13, (c.g[S2][0] as u32).wrapping_add(0xf));
                     c.ldr(13, (c.g[S2][0] as u32).wrapping_add(0x8));
                     c.sdl(12, (c.g[T6][0] as u32).wrapping_add(0x7));
-                    c.sdr(12, (c.g[T6][0] as u32));
+                    c.sdr(12, c.g[T6][0] as u32);
                     c.sdl(13, (c.g[T6][0] as u32).wrapping_add(0xf));
                     c.sdr(13, (c.g[T6][0] as u32).wrapping_add(0x8));
                     c.g[T8][0] = 0x4c0000;
@@ -23900,21 +23990,21 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[T8][0] as u32).wrapping_add(0x6a78));
                     c.g[A1][0] = sx((c.g[S7][0] as u32).wrapping_sub(0x7818));
                     c.ldl(25, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(25, (c.g[A2][0] as u32));
+                    c.ldr(25, c.g[A2][0] as u32);
                     c.ldl(30, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.ldr(30, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(25, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(25, (c.g[A1][0] as u32));
+                    c.sdr(25, c.g[A1][0] as u32);
                     c.sdl(30, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(30, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = sx((c.g[T0][0] as u32).wrapping_add(0x6a68));
                     c.g[T3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x77f8));
                     c.ldl(9, (c.g[T4][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[T4][0] as u32));
+                    c.ldr(9, c.g[T4][0] as u32);
                     c.ldl(10, (c.g[T4][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[T4][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[T3][0] as u32).wrapping_add(0x7));
-                    c.sdr(9, (c.g[T3][0] as u32));
+                    c.sdr(9, c.g[T3][0] as u32);
                     c.sdl(10, (c.g[T3][0] as u32).wrapping_add(0xf));
                     c.sdr(10, (c.g[T3][0] as u32).wrapping_add(0x8));
                     c.g[A1][0] = 0x4d0000;
@@ -23922,11 +24012,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[S4][0] = sx((c.g[T6][0] as u32).wrapping_add(0x6aa8));
                     c.g[S3][0] = sx((c.g[T5][0] as u32).wrapping_sub(0x77d8));
                     c.ldl(15, (c.g[S4][0] as u32).wrapping_add(0x7));
-                    c.ldr(15, (c.g[S4][0] as u32));
+                    c.ldr(15, c.g[S4][0] as u32);
                     c.ldl(18, (c.g[S4][0] as u32).wrapping_add(0xf));
                     c.ldr(18, (c.g[S4][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S3][0] as u32).wrapping_add(0x7));
-                    c.sdr(15, (c.g[S3][0] as u32));
+                    c.sdr(15, c.g[S3][0] as u32);
                     c.sdl(18, (c.g[S3][0] as u32).wrapping_add(0xf));
                     c.sdr(18, (c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[T4][0] = 0x4c0000;
@@ -23934,33 +24024,33 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x6ab8));
                     c.g[T1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7798));
                     c.ldl(7, (c.g[T2][0] as u32).wrapping_add(0x7));
-                    c.ldr(7, (c.g[T2][0] as u32));
+                    c.ldr(7, c.g[T2][0] as u32);
                     c.ldl(8, (c.g[T2][0] as u32).wrapping_add(0xf));
                     c.ldr(8, (c.g[T2][0] as u32).wrapping_add(0x8));
                     c.sdl(7, (c.g[T1][0] as u32).wrapping_add(0x7));
-                    c.sdr(7, (c.g[T1][0] as u32));
+                    c.sdr(7, c.g[T1][0] as u32);
                     c.sdl(8, (c.g[T1][0] as u32).wrapping_add(0xf));
                     c.sdr(8, (c.g[T1][0] as u32).wrapping_add(0x8));
                     c.g[S3][0] = 0x4d0000;
                     c.g[FP][0] = sx((c.g[S6][0] as u32).wrapping_add(0x6ac8));
                     c.g[T9][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x77b8));
                     c.ldl(23, (c.g[FP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[FP][0] as u32));
+                    c.ldr(23, c.g[FP][0] as u32);
                     c.ldl(24, (c.g[FP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[FP][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.sdr(23, (c.g[T9][0] as u32));
+                    c.sdr(23, c.g[T9][0] as u32);
                     c.sdl(24, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.sdr(24, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.g[S4][0] = 0x4c0000;
                     c.g[S2][0] = sx((c.g[T4][0] as u32).wrapping_add(0x6af8));
                     c.g[T7][0] = sx((c.g[T3][0] as u32).wrapping_sub(0x7778));
                     c.ldl(13, (c.g[S2][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[S2][0] as u32));
+                    c.ldr(13, c.g[S2][0] as u32);
                     c.ldl(14, (c.g[S2][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[S2][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[T7][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[T7][0] as u32));
+                    c.sdr(13, c.g[T7][0] as u32);
                     c.sdl(14, (c.g[T7][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[T7][0] as u32).wrapping_add(0x8));
                     c.g[T9][0] = 0x4d0000;
@@ -23971,7 +24061,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.swc1(21, (c.g[S1][0] as u32).wrapping_sub(0x7748));
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x7728));
                     c.swc1(20, (c.g[V1][0] as u32).wrapping_add(0xc));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(21, (c.g[V0][0] as u32).wrapping_add(0x4));
@@ -23981,21 +24071,21 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[FP][0] as u32).wrapping_add(0x6ae8));
                     c.g[A1][0] = sx((c.g[T9][0] as u32).wrapping_sub(0x7738));
                     c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[A2][0] as u32));
+                    c.ldr(2, c.g[A2][0] as u32);
                     c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                    c.sdr(2, (c.g[A1][0] as u32));
+                    c.sdr(2, c.g[A1][0] as u32);
                     c.sdl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
                     c.sdr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
                     c.g[T8][0] = sx((c.g[S4][0] as u32).wrapping_add(0x6b08));
                     c.g[S7][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x7758));
                     c.ldl(21, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.ldr(21, (c.g[T8][0] as u32));
+                    c.ldr(21, c.g[T8][0] as u32);
                     c.ldl(22, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.ldr(22, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.sdl(21, (c.g[S7][0] as u32).wrapping_add(0x7));
-                    c.sdr(21, (c.g[S7][0] as u32));
+                    c.sdr(21, c.g[S7][0] as u32);
                     c.sdl(22, (c.g[S7][0] as u32).wrapping_add(0xf));
                     c.sdr(22, (c.g[S7][0] as u32).wrapping_add(0x8));
                     c.g[RA][0] = sx(0x0021b5dc);
@@ -24241,12 +24331,12 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00317670, 0x0021b8e8)?;
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x24), c.g[V0][0]);
                     c.g[T4][0] = 0x4d0000;
-                    c.swc1(24, (c.g[SP][0] as u32));
+                    c.swc1(24, c.g[SP][0] as u32);
                     c.g[A0][0] = c.g[S0][0];
                     c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0u64;
                     c.ldl(22, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[SP][0] as u32));
+                    c.ldr(22, c.g[SP][0] as u32);
                     c.sdl(22, (c.g[SP][0] as u32).wrapping_add(0x33));
                     c.sdr(22, (c.g[SP][0] as u32).wrapping_add(0x2c));
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x50));
@@ -24269,7 +24359,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.ldl(15, (c.g[SP][0] as u32).wrapping_add(0x37));
                     c.ldr(15, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sdl(13, (c.g[S3][0] as u32).wrapping_add(0x7));
-                    c.sdr(13, (c.g[S3][0] as u32));
+                    c.sdr(13, c.g[S3][0] as u32);
                     c.sdl(14, (c.g[S3][0] as u32).wrapping_add(0xf));
                     c.sdr(14, (c.g[S3][0] as u32).wrapping_add(0x8));
                     c.sdl(15, (c.g[S3][0] as u32).wrapping_add(0x17));
@@ -24819,27 +24909,27 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.swc1(21, (c.g[T2][0] as u32).wrapping_add(0x8));
                     c.swc1(0, (c.g[T3][0] as u32).wrapping_add(0x4));
                     c.swc1(21, (c.g[T3][0] as u32).wrapping_add(0x8));
-                    c.swc1(21, (c.g[SP][0] as u32));
+                    c.swc1(21, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.g[T9][0] = sx((c.g[S5][0] as u32).wrapping_add(0x6b28));
                     c.g[T8][0] = sx((c.g[S4][0] as u32).wrapping_sub(0x7488));
                     c.ldl(22, (c.g[T9][0] as u32).wrapping_add(0x7));
-                    c.ldr(22, (c.g[T9][0] as u32));
+                    c.ldr(22, c.g[T9][0] as u32);
                     c.ldl(23, (c.g[T9][0] as u32).wrapping_add(0xf));
                     c.ldr(23, (c.g[T9][0] as u32).wrapping_add(0x8));
                     c.sdl(22, (c.g[T8][0] as u32).wrapping_add(0x7));
-                    c.sdr(22, (c.g[T8][0] as u32));
+                    c.sdr(22, c.g[T8][0] as u32);
                     c.sdl(23, (c.g[T8][0] as u32).wrapping_add(0xf));
                     c.sdr(23, (c.g[T8][0] as u32).wrapping_add(0x8));
                     c.g[T0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6b38));
                     c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7468));
                     c.ldl(5, (c.g[T0][0] as u32).wrapping_add(0x7));
-                    c.ldr(5, (c.g[T0][0] as u32));
+                    c.ldr(5, c.g[T0][0] as u32);
                     c.ldl(6, (c.g[T0][0] as u32).wrapping_add(0xf));
                     c.ldr(6, (c.g[T0][0] as u32).wrapping_add(0x8));
                     c.sdl(5, (c.g[A3][0] as u32).wrapping_add(0x7));
-                    c.sdr(5, (c.g[A3][0] as u32));
+                    c.sdr(5, c.g[A3][0] as u32);
                     c.sdl(6, (c.g[A3][0] as u32).wrapping_add(0xf));
                     c.sdr(6, (c.g[A3][0] as u32).wrapping_add(0x8));
                     c.swc1(1, (c.g[T4][0] as u32).wrapping_add(0x8));
@@ -24847,11 +24937,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[T5][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6b48));
                     c.g[T4][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x7448));
                     c.ldl(10, (c.g[T5][0] as u32).wrapping_add(0x7));
-                    c.ldr(10, (c.g[T5][0] as u32));
+                    c.ldr(10, c.g[T5][0] as u32);
                     c.ldl(11, (c.g[T5][0] as u32).wrapping_add(0xf));
                     c.ldr(11, (c.g[T5][0] as u32).wrapping_add(0x8));
                     c.sdl(10, (c.g[T4][0] as u32).wrapping_add(0x7));
-                    c.sdr(10, (c.g[T4][0] as u32));
+                    c.sdr(10, c.g[T4][0] as u32);
                     c.sdl(11, (c.g[T4][0] as u32).wrapping_add(0xf));
                     c.sdr(11, (c.g[T4][0] as u32).wrapping_add(0x8));
                     pc = 0x0021c220;
@@ -24901,7 +24991,7 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     call_ptr(c, 0x00317670, 0x0021c274)?;
                     c.g[AT][0] = 0x41c00000;
                     c.mtc1(1, 22);
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0u64;
@@ -24912,11 +25002,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.mtc1(1, 21);
                     c.g[S6][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x73a8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S6][0] as u32).wrapping_add(0x7));
-                    c.sdr(19, (c.g[S6][0] as u32));
+                    c.sdr(19, c.g[S6][0] as u32);
                     c.sdl(20, (c.g[S6][0] as u32).wrapping_add(0xf));
                     c.sdr(20, (c.g[S6][0] as u32).wrapping_add(0x8));
                     c.g[RA][0] = sx(0x0021c2cc);
@@ -24938,9 +25028,9 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0u64;
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x17));
@@ -24962,9 +25052,9 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0u64;
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x27));
@@ -24981,12 +25071,12 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x41700000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.g[SP][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A1][0] = 0u64;
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x37));
@@ -25006,11 +25096,11 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x41400000;
                     c.mtc1(1, 0);
                     c.g[A1][0] = 0u64;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.swc1(1, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x47));
@@ -25024,13 +25114,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0021c440);
                     c.g[A0][0] = c.g[S1][0];
                     call_ptr(c, 0x00317670, 0x0021c440)?;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0u64;
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0x57));
@@ -25044,13 +25134,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0021c488);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2858));
                     call_ptr(c, 0x00317670, 0x0021c488)?;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0u64;
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(23, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(23, (c.g[SP][0] as u32));
+                    c.ldr(23, c.g[SP][0] as u32);
                     c.ldl(24, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(24, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(23, (c.g[S0][0] as u32).wrapping_add(0x67));
@@ -25063,13 +25153,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0021c4cc);
                     c.g[A0][0] = c.g[S1][0];
                     call_ptr(c, 0x00317670, 0x0021c4cc)?;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0u64;
                     c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(2, (c.g[SP][0] as u32));
+                    c.ldr(2, c.g[SP][0] as u32);
                     c.ldl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(2, (c.g[S0][0] as u32).wrapping_add(0x77));
@@ -25086,12 +25176,12 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x41880000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.g[SP][0];
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A1][0] = 0u64;
                     c.swc1(0, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(9, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(9, (c.g[SP][0] as u32));
+                    c.ldr(9, c.g[SP][0] as u32);
                     c.ldl(10, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(10, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(9, (c.g[S0][0] as u32).wrapping_add(0x87));
@@ -25105,13 +25195,13 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0021c564);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6890));
                     call_ptr(c, 0x00317670, 0x0021c564)?;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.g[A0][0] = c.g[SP][0];
                     c.swc1(24, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[A1][0] = 0u64;
                     c.swc1(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.ldl(13, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(13, (c.g[SP][0] as u32));
+                    c.ldr(13, c.g[SP][0] as u32);
                     c.ldl(14, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(14, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(13, (c.g[S0][0] as u32).wrapping_add(0x97));
@@ -25125,14 +25215,14 @@ fn c_ov_state_overlay_static_init_destroy_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0021c5ac);
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x68a0));
                     call_ptr(c, 0x00317670, 0x0021c5ac)?;
-                    c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[SP][0] as u32, c.g[V0][0]);
                     c.swc1(24, (c.g[SP][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x72f8));
                     c.swc1(23, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.ldl(19, (c.g[SP][0] as u32).wrapping_add(0x7));
-                    c.ldr(19, (c.g[SP][0] as u32));
+                    c.ldr(19, c.g[SP][0] as u32);
                     c.ldl(20, (c.g[SP][0] as u32).wrapping_add(0xf));
                     c.ldr(20, (c.g[SP][0] as u32).wrapping_add(0x8));
                     c.sdl(19, (c.g[S0][0] as u32).wrapping_add(0xa7));
@@ -25244,6 +25334,1325 @@ pub fn ov_screen_replay_menu_dtor(c: &mut Cpu) {
 /// constructor with the replay vtable (`0x474aa8`).
 pub fn ov_screen_replay_menu_ctor(c: &mut Cpu) {
     guest(c, |c| oc998_ov_state_ctor_body(c, 0x0021_c8b4, 0x4aa8));
+}
+
+/// `lbl_003A38C8`: jump-table case of the `UIVector` copy loop. Stores `f1`
+/// at `*(t0 + 0x7c) + (a3 << 4)` and continues at the loop tail 0x3a39e0.
+/// (The generated fall-through to 0x3a38dc is guarded by a constant `true`.)
+pub fn lbl_003a38c8(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x003a_38c8 => {
+                c.cycles += 2;
+                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x7c));
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 4);
+                pc = 0x003a_38d0;
+                continue;
+            }
+            0x003a_38d0 => {
+                c.cycles += 3;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.swc1(1, c.g[V0][0] as u32);
+                c.pc = 0x003a_39e0;
+                ee::s13::f_003a39e0(c);
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_38c8, 0x003a_38dc);
+                return;
+            }
+        }
+    }
+}
+
+/// `lbl_003A38DC`: same as 0x3a38c8 with the store at offset 4.
+pub fn lbl_003a38dc(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x003a_38dc => {
+                c.cycles += 2;
+                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x7c));
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 4);
+                pc = 0x003a_38e4;
+                continue;
+            }
+            0x003a_38e4 => {
+                c.cycles += 3;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.pc = 0x003a_39e0;
+                ee::s13::f_003a39e0(c);
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_38dc, 0x003a_38f0);
+                return;
+            }
+        }
+    }
+}
+
+/// `lbl_003A3904`: same with the store at offset 0xc. The code after the
+/// unconditional tail jump (0x3a3918, 0x3a3920: a table jump through
+/// 0x494170 + a0 * 4) is only reachable as a resume entry.
+pub fn lbl_003a3904(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x003a_3904 => {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x7c));
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 4);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.pc = 0x003a_39e0;
+                ee::s13::f_003a39e0(c);
+                return;
+            }
+            0x003a_3918 => {
+                c.cycles += 2;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = 0x0049_0000;
+                if t {
+                    c.pc = 0x003a_39e0;
+                    ee::s13::f_003a39e0(c);
+                    return;
+                }
+                pc = 0x003a_3920;
+                continue;
+            }
+            0x003a_3920 => {
+                c.cycles += 6;
+                c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4170));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                pc = c.g[A0][0] as u32;
+                continue;
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_3904, 0x003a_3938);
+                return;
+            }
+        }
+    }
+}
+
+/// `lbl_003A39E0`: loop tail of the `UIVector` copy: `t2 += 1; a2 += 4`;
+/// while `t2 < a1` continue at the loop head 0x3a3820, else return.
+pub fn lbl_003a39e0(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x003a_39e0 => {
+                c.cycles += 4;
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x1));
+                c.g[V0][0] = (c.g[T2][0] < c.g[A1][0]) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x4));
+                if t {
+                    c.pc = 0x003a_3820;
+                    call_indirect(c, 0x003a_3820);
+                    return;
+                }
+                pc = 0x003a_39f0;
+                continue;
+            }
+            0x003a_39f0 => {
+                c.cycles += 2;
+                c.pc = c.g[RA][0] as u32;
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_39e0, 0x003a_39f8);
+                return;
+            }
+        }
+    }
+}
+
+/// `lbl_003A38F0`: jump-table case of the `UIVector` copy loop. Stores `f1`
+/// at `*(t0 + 0x7c) + (a3 << 4) + 8` and continues at the loop tail 0x3a39e0.
+/// (The generated fall-through to 0x3a3904 is guarded by a constant `true`.)
+pub fn lbl_003a38f0(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x003a_38f0 => {
+                c.cycles += 2;
+                c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x7c));
+                c.g[V0][0] = sx((c.g[A3][0] as u32) << 4);
+                pc = 0x003a_38f8;
+                continue;
+            }
+            0x003a_38f8 => {
+                c.cycles += 3;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.pc = 0x003a_39e0;
+                call_indirect(c, 0x003a_39e0);
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x003a_38f0, 0x003a_3904);
+                return;
+            }
+        }
+    }
+}
+
+/// `lbl_003A01FC` (0x003a01fc): a label of a larger function, entered on its
+/// own. Sets bits 13-18 of the word at +0x14 of `a3` to the low six bits of
+/// `(int) f1`, then tail-calls `0x3a0274` (which returns to the caller). The
+/// generated branch on `true` always takes the tail call; its other arm
+/// (0x3a0228) is dead code and is not reproduced.
+pub fn lbl_003a01fc(c: &mut Cpu) {
+    c.cycles += 11;
+    c.cvt_w_s(0, 1);
+    c.mfc1(2, 0);
+    c.g[A0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x14));
+    c.g[V1][0] = 0xffff_ffff_fff8_0000;
+    c.g[V1][0] = c.g[V1][0] | 0x1fff;
+    c.g[V0][0] = c.g[V0][0] & 0x3f;
+    c.g[A0][0] = c.g[A0][0] & c.g[V1][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 13);
+    c.g[A0][0] = c.g[A0][0] | c.g[V0][0];
+    c.sw((c.g[A3][0] as u32).wrapping_add(0x14), c.g[A0][0]);
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// Shared body of the six GP-scaled store fragments (0x3a01ac, 0x3a01bc,
+/// 0x3a01cc, 0x3a01dc, 0x3a01ec, 0x3a0228): `f0 = f1 * gp[-gp_off]` (single
+/// precision, `mul.s f0, f1, f0`), stored at `a3 + store_off`, then the
+/// unconditional tail jump to 0x3a0274 (the loop tail that returns to `ra`).
+/// The generated fall-through arm of each is guarded by a constant `true`.
+pub(crate) fn oc1487_gp_scale_store_tail(c: &mut Cpu, gp_off: u32, store_off: u32) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(gp_off));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[A3][0] as u32).wrapping_add(store_off));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// `lbl_003A01AC`: `gp[-0x251c] * f1` stored at `a3 + 0x50`, then tail 0x3a0274.
+pub fn lbl_003a01ac(c: &mut Cpu) {
+    oc1487_gp_scale_store_tail(c, 0x251c, 0x50);
+}
+
+/// `lbl_003A01BC`: `gp[-0x2518] * f1` stored at `a3 + 0x54`, then tail 0x3a0274.
+pub fn lbl_003a01bc(c: &mut Cpu) {
+    oc1487_gp_scale_store_tail(c, 0x2518, 0x54);
+}
+
+/// `lbl_003A01CC`: `gp[-0x2514] * f1` stored at `a3 + 0x2c`, then tail 0x3a0274.
+pub fn lbl_003a01cc(c: &mut Cpu) {
+    oc1487_gp_scale_store_tail(c, 0x2514, 0x2c);
+}
+
+/// `lbl_003A01DC`: `gp[-0x2510] * f1` stored at `a3 + 0x30`, then tail 0x3a0274.
+pub fn lbl_003a01dc(c: &mut Cpu) {
+    oc1487_gp_scale_store_tail(c, 0x2510, 0x30);
+}
+
+/// `lbl_003A01EC`: `gp[-0x250c] * f1` stored at `a3 + 0x34`, then tail 0x3a0274.
+pub fn lbl_003a01ec(c: &mut Cpu) {
+    oc1487_gp_scale_store_tail(c, 0x250c, 0x34);
+}
+
+/// `lbl_003A0228`: `gp[-0x2508] * f1` stored at `a3 + 0x1c`, then tail 0x3a0274.
+pub fn lbl_003a0228(c: &mut Cpu) {
+    oc1487_gp_scale_store_tail(c, 0x2508, 0x1c);
+}
+
+/// Shared body of the two entries of the `UIVector` copy's table fragments
+/// (0x3a3898, 0x3a38a8): `v0 = 12`, `v1 = *(t0 + 0x80)`, `v0 = a3 * 12`
+/// (`mult`, low word), then the unconditional tail `call_indirect` to
+/// `target` (inside 0x3a38c8 / 0x3a38e4). The generated fall-through arm
+/// (a tail to the next fragment) is dead: its guard is a constant `true`.
+pub(crate) fn oc1487_mult_tail_call(c: &mut Cpu, target: u32) {
+    c.cycles += 4;
+    c.g[V0][0] = 0xc;
+    c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x80));
+    c.mult(0, 2, 7, 2);
+    c.pc = target;
+    call_indirect(c, target);
+}
+
+/// `lbl_003A3898`: `v0 = a3 * 12`, `v1 = *(t0 + 0x80)`, tail call 0x3a38d0.
+pub fn lbl_003a3898(c: &mut Cpu) {
+    oc1487_mult_tail_call(c, 0x003a_38d0);
+}
+
+/// `lbl_003A38A8`: the same prologue as 0x3a3898, tail call 0x3a38e4.
+pub fn lbl_003a38a8(c: &mut Cpu) {
+    oc1487_mult_tail_call(c, 0x003a_38e4);
+}
+
+/// Tail of an unnamed EE leaf at 0x3a0238 (16 bytes):
+/// `f0 = *(gp - 0x2504) * f1; *(a3 + 0x20) = f0;` then a tail jump to
+/// 0x3a0274 (the generated `if t` is always true, so the else arm at 0x3a0248
+/// is never taken). Nothing is saved or restored: the callee returns straight
+/// to this function's caller.
+pub fn scale_float_store_0238(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x2504));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x20));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// Tail of an unnamed EE leaf at 0x3a0248 (16 bytes): the same shape as
+/// [`scale_float_store_0238`] with `gp - 0x2500` and the store at `a3 + 0x24`,
+/// tail-jumping to 0x3a0274 (its else arm, 0x3a0258, is never taken).
+pub fn scale_float_store_0248(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x2500));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x24));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// Tail of a front-end handler (0x17fe64; entries 0x17fe64 and 0x17fe68):
+/// call `0x320c48(a0 = *(a2 + 0x18), a1 = 0x79)` and return through the
+/// frame's saved `ra` (`sp += 0x10`). Resume entries other than 0x17fe64 and
+/// 0x17fe68 are not reachable (the generated twin jumps out); both are kept
+/// natively.
+pub fn fe_tail_call_320c48(c: &mut Cpu) {
+    let entry = c.pc;
+    guest(c, |c| {
+        match entry {
+            0x0017_fe64 => {
+                c.cycles += 1;
+                c.g[A1][0] = 0x79;
+            }
+            0x0017_fe68 => {}
+            _ => {
+                ee::s02::f_0017fe64__entries(c);
+                return Err(crate::call::Unwound);
+            }
+        }
+        c.cycles += 5;
+        let a2 = c.g[A2][0] as u32;
+        let a0 = c.lw(a2.wrapping_add(0x18));
+        c.g[A0][0] = a0;
+        call_ptr(c, 0x0032_0c48, 0x0017_fe70)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        Ok(())
+    });
+}
+
+/// `lbl_003A0258` (0x3a0258): `f0 = f1 * *(float*)(gp - 0x24fc)`, stored at
+/// `a3 + 0x28`, then the shared loop at 0x3a0274 (its tail call).
+pub fn lbl_3a0258_scale_store(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24fc));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x28));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// `lbl_003A019C` (0x3a019c): stores f1 at `a3 + 0x44`, then tail-calls the
+/// loop at 0x3a0274.
+pub fn lbl_3a019c_store_f1_a3_44(c: &mut Cpu) {
+    c.cycles += 2;
+    c.swc1(1, (c.g[A3][0] as u32).wrapping_add(0x44));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// `lbl_003A01A4` (0x3a01a4): stores f1 at `a3 + 0x48`, then tail-calls the
+/// loop at 0x3a0274.
+pub fn lbl_3a01a4_store_f1_a3_48(c: &mut Cpu) {
+    c.cycles += 2;
+    c.swc1(1, (c.g[A3][0] as u32).wrapping_add(0x48));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// `lbl_003A0268` (0x3a0268): stores f1 at `a3 + 0x60`, then tail-calls the
+/// loop at 0x3a0274.
+pub fn lbl_3a0268_store_f1_a3_60(c: &mut Cpu) {
+    c.cycles += 2;
+    c.swc1(1, (c.g[A3][0] as u32).wrapping_add(0x60));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// `lbl_003A3968` (0x3a3968): converts f1 to an integer, keeps its low 6 bits
+/// at bits 13..18 of the word at `t0 + 0x14` (the other bits kept), then
+/// tail-calls 0x3a39e0.
+pub fn lbl_3a3968_pack_field(c: &mut Cpu) {
+    c.cycles += 11;
+    c.cvt_w_s(0, 1);
+    c.mfc1(2, 0);
+    let field = (c.g[T0][0] as u32).wrapping_add(0x14);
+    c.g[A0][0] = c.lw(field);
+    // All bits except 13..18 (0xfffffffffff80000 | 0x1fff).
+    c.g[V1][0] = !0x0007_ffff;
+    c.g[V1][0] = c.g[V1][0] | 0x1fff;
+    c.g[V0][0] = c.g[V0][0] & 0x3f;
+    c.g[A0][0] = c.g[A0][0] & c.g[V1][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 13);
+    c.g[A0][0] = c.g[A0][0] | c.g[V0][0];
+    c.sw(field, c.g[A0][0]);
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+// ---------------------------------------------------------------------------
+// Tail fragments: stores that fall into or jump to another function.
+
+/// `lbl_003A0270` (0x3a0270): stores f1 at `a3 + 0x64`, then falls into the
+/// function at 0x3a0274.
+pub fn lbl_003a0270(c: &mut Cpu) {
+    c.cycles += 1;
+    c.swc1(1, (c.g[A3][0] as u32).wrapping_add(0x64));
+    c.pc = 0x003a_0274;
+    ee::s13::f_003a0274(c);
+}
+
+/// `lbl_003A3948` (0x3a3948): `f0 = f1 * gp[-0x24f0]`, stored at `t0 + 0x50`,
+/// then a tail call to 0x3a39e0. (The generated else arm is dead: its flag is
+/// the constant true.)
+pub fn lbl_003a3948(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24f0));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x50));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// `lbl_003A3958` (0x3a3958): as `lbl_003A3948` with `gp[-0x24ec]` and the
+/// store at `t0 + 0x54`.
+pub fn lbl_003a3958(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24ec));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x54));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// Shared body of the three one-store labels of the caller's dispatcher: `swc1
+/// f1, off(t0)`, then a jump to the loop tail at 0x3a39e0 (its own
+/// `f_003a39e0` entry, which checks the loop count and returns to `ra`).
+pub(crate) fn oc1494_store_f1_then_tail(c: &mut Cpu, off: u32) {
+    c.cycles += 2;
+    c.swc1(1, (c.g[T0][0] as u32).wrapping_add(off));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// `lbl_003A3938` (0x3a3938): stores f1 at `t0 + 0x44`, then jumps to 0x3a39e0.
+pub fn lbl_003a3938(c: &mut Cpu) {
+    oc1494_store_f1_then_tail(c, 0x44);
+}
+
+/// `lbl_003A3940` (0x3a3940): stores f1 at `t0 + 0x48`, then jumps to 0x3a39e0.
+pub fn lbl_003a3940(c: &mut Cpu) {
+    oc1494_store_f1_then_tail(c, 0x48);
+}
+
+/// `lbl_003A39D4` (0x3a39d4): stores f1 at `t0 + 0x60`, then jumps to 0x3a39e0.
+pub fn lbl_003a39d4(c: &mut Cpu) {
+    oc1494_store_f1_then_tail(c, 0x60);
+}
+
+/// `lbl_0017FE2C` (0x0017fe2c): sets `a1 = 0x72` and tail-jumps into the
+/// middle of `0x0017fe64` (its dispatch arm at 0x0017fe68), which calls the
+/// callee at 0x00320c48 and returns to the original caller. The generated
+/// body's other arm (a jump to 0x0017fe34) is dead: its condition is always
+/// true.
+pub fn lbl_0017fe2c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[A1][0] = 0x72;
+    c.pc = 0x0017_fe68;
+    ssx3_ee_rt::funcs::call_indirect(c, 0x0017_fe68);
+}
+
+/// `cOVStateOverlay_v25` (0x0021_c700): straight-line leaf: 1 load(s). Mechanical port of the generated body.
+pub fn c_ov_state_overlay_v25_0021c700(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4c));
+    ret(c);
+}
+
+/// `lbl_00150f98` (0x00150f98): raises one per-rider level byte
+/// (`0x4a6ca8 + 0xf88*t4 + 0x9b50*t3 + 0xbe5`); at 5 (the maximum) it returns 0 untouched,
+/// otherwise it adds the table word at `0x440550 + 8*((level-1)/5) + 4` to the word at
+/// `cell + 0xac4`, increments the level and leaves v0 = 1.
+/// Resumable: any `pc` of the generated `__entries` twin continues natively.
+#[allow(unused_assignments, unused_variables, unused_labels, unreachable_code)]
+pub fn beecon_raise_attribute_level(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00150f98 => {
+                    c.cycles += 9;
+                    c.g[V1][0] = 0xf88;
+                    c.g[A0][0] = 0x9b50;
+                    c.mult(0, 3, 12, 3);
+                    c.mult(0, 4, 11, 4);
+                    c.g[V0][0] = 0x4a0000;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[T1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe5));
+                    pc = 0x00150fbc;
+                    continue;
+                }
+                0x00150fbc => {
+                    c.cycles += 4;
+                    c.g[T0][0] = c.lb(c.g[T1][0] as u32);
+                    c.g[V0][0] = 0x5;
+                    let t = c.g[T0][0] == c.g[V0][0];
+                    c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_sub(0x1));
+                    if t {
+                        pc = 0x00151034;
+                        continue;
+                    }
+                    pc = 0x00150fcc;
+                    continue;
+                }
+                0x00150fcc => {
+                    c.cycles += 10;
+                    c.g[A1][0] = 0xf88;
+                    c.div(0, 8, 2);
+                    c.g[A3][0] = 0x9b50;
+                    c.g[A2][0] = 0x440000;
+                    c.g[V1][0] = 0x4a0000;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
+                    c.g[A0][0] = 0x5;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x550));
+
+                    if c.g[A0][0] == 0u64 {
+                        pc = 0x00150ff4;
+                        continue;
+                    }
+                    pc = 0x00150ff4;
+                    continue;
+                }
+                0x00150ff4 => {
+                    c.cycles += 16;
+                    c.g[V0][0] = 0x1;
+                    c.g[T0][0] = c.lo[0];
+                    c.mult(0, 5, 12, 5);
+                    c.g[T0][0] = sx((c.g[T0][0] as u32) << 3);
+                    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                    c.mult(0, 7, 11, 7);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x4));
+                    c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xac4));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.sw((c.g[A1][0] as u32).wrapping_add(0xac4), c.g[A0][0]);
+                    c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                    let t = c.g[RA][0] as u32;
+                    c.sb(c.g[T1][0] as u32, c.g[V1][0]);
+                    c.pc = t;
+                    return Ok(());
+                }
+                0x00151034 => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+                    c.g[V0][0] = 0u64;
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00150f98, 0x0015103c);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `lbl_00151310` (0x00151310): reads the per-rider level byte
+/// (`0x4a6ca8 + 0xf88*a2 + 0x9b50*a1 + 0xbe5`) and returns the table word at
+/// `0x440550 + 8*((level+1)/5) + 4`.
+/// Resumable: any `pc` of the generated `__entries` twin continues natively.
+#[allow(unused_assignments, unused_variables, unused_labels, unreachable_code)]
+pub fn beecon_attribute_cost_word(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x00151310 => {
+                    c.cycles += 9;
+                    c.g[V1][0] = 0xf88;
+                    c.g[A0][0] = 0x9b50;
+                    c.mult(0, 3, 6, 3);
+                    c.mult(0, 4, 5, 4);
+                    c.g[V0][0] = 0x4a0000;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe5));
+                    pc = 0x00151334;
+                    continue;
+                }
+                0x00151334 => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lb(c.g[V1][0] as u32);
+                    c.g[A0][0] = 0x5;
+                    c.g[V1][0] = 0x440000;
+
+                    if c.g[A0][0] == 0u64 {
+                        pc = 0x00151348;
+                        continue;
+                    }
+                    pc = 0x00151348;
+                    continue;
+                }
+                0x00151348 => {
+                    c.cycles += 8;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x550));
+                    c.div(0, 2, 4);
+                    c.g[V0][0] = c.lo[0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    let t = c.g[RA][0] as u32;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x00151310, 0x00151368);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
+/// `0x001ff7a8` (no name; the shared tail of the code before
+/// `OVScreenRewardList_GetEntryText`): returns 0x101 after reloading `ra` from
+/// the caller's 0x10-byte frame. Entries: 0x001ff7a8 (the start) and 0x001ff7ac
+/// (the return); any other `pc` is a jump out.
+pub fn tail_return_0x101(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x001ff7a8 => {
+                c.cycles += 1;
+                c.g[V0][0] = 0x101;
+                pc = 0x001ff7ac;
+                continue;
+            }
+            0x001ff7ac => {
+                c.cycles += 3;
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.pc = t;
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x001ff7a8, 0x001ff7b8);
+                return;
+            }
+        }
+    }
+}
+
+// `Bolts_LoadDB` (0x14c6a0) is already ported in `game::be::belibrary`
+// (`bolts_load_db`); it is registered in this module's table with its test.
+
+/// Shared body of the four 40-byte thunks at 0x150ea8..0x150f20: compute the
+/// address of this (T3, T4) pair's state byte, `0x4a6ca8 + 0x9b50*T3 +
+/// 0xf88*T4 + off`, and tail-call the state dispatcher at 0x150fbc, which
+/// bumps that byte (its `ra` is the thunk's caller).
+pub(crate) fn state_thunk_tail(c: &mut Cpu, off: u32) {
+    c.cycles += 10;
+    c.g[V1][0] = 0xf88;
+    c.g[A0][0] = 0x9b50;
+    c.mult(0, 3, 12, 3);
+    c.mult(0, 4, 11, 4);
+    c.g[V0][0] = sx(0x004a_6ca8);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    c.g[T1][0] = sx((c.g[A0][0] as u32).wrapping_add(off));
+    c.pc = 0x0015_0fbc;
+    call_indirect(c, 0x0015_0fbc);
+}
+
+/// `lbl_00150EA8` (0x150ea8): [`state_thunk_tail`] with offset 0xbdf.
+pub fn state_thunk_00150ea8(c: &mut Cpu) {
+    state_thunk_tail(c, 0xbdf);
+}
+
+/// `lbl_00150ED0` (0x150ed0): [`state_thunk_tail`] with offset 0xbe0.
+pub fn state_thunk_00150ed0(c: &mut Cpu) {
+    state_thunk_tail(c, 0xbe0);
+}
+
+/// `lbl_00150EF8` (0x150ef8): [`state_thunk_tail`] with offset 0xbe1.
+pub fn state_thunk_00150ef8(c: &mut Cpu) {
+    state_thunk_tail(c, 0xbe1);
+}
+
+/// `lbl_00150F20` (0x150f20): [`state_thunk_tail`] with offset 0xbe2.
+pub fn state_thunk_00150f20(c: &mut Cpu) {
+    state_thunk_tail(c, 0xbe2);
+}
+
+/// The ten instructions the eight 40-byte tail stubs share: `v1 = rs1 * 0xf88`,
+/// `a0 = rs2 * 0x9b50`, then `v1 += 0x4a6ca8` and `a0 += v1`. Each stub adds its
+/// own offset to `a0` and jumps into the dispatcher label that reads the byte at
+/// that pointer.
+pub(crate) fn oc1537_stub_base(c: &mut Cpu, rs1: usize, rs2: usize) {
+    c.cycles += 10;
+    c.g[V1][0] = 0xf88;
+    c.g[A0][0] = 0x9b50;
+    c.mult(0, V1, rs1, V1);
+    c.mult(0, A0, rs2, A0);
+    c.g[V0][0] = 0x4a0000;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x6ca8));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+}
+
+/// `0x00150f48` (40 B): computes the byte pointer `t1 = t4 * 0xf88 + t3 * 0x9b50 +
+/// 0x4a6ca8 + 0xbe3` and tail-jumps into the dispatcher's `0x150fbc` label, which
+/// reads the byte at `t1`.
+pub fn tail_stub_t1_150f48(c: &mut Cpu) {
+    oc1537_stub_base(c, T4, T3);
+    c.g[T1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe3));
+    c.pc = 0x0015_0fbc;
+    call_indirect(c, 0x0015_0fbc);
+}
+
+/// `0x00150f70` (40 B): as `tail_stub_t1_150f48` with offset `0xbe4`, into the
+/// same `0x150fbc` label.
+pub fn tail_stub_t1_150f70(c: &mut Cpu) {
+    oc1537_stub_base(c, T4, T3);
+    c.g[T1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe4));
+    c.pc = 0x0015_0fbc;
+    call_indirect(c, 0x0015_0fbc);
+}
+
+/// `0x00151220` (40 B): the `v1` variant of the stubs (pointer from `a2`, `a1`):
+/// `v1 = a2 * 0xf88 + a1 * 0x9b50 + 0x4a6ca8 + 0xbdf`, then tail-jump into the
+/// dispatcher's `0x151334` label, which reads the byte at `v1`.
+pub fn tail_stub_v1_151220(c: &mut Cpu) {
+    oc1537_stub_base(c, A2, A1);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbdf));
+    c.pc = 0x0015_1334;
+    call_indirect(c, 0x0015_1334);
+}
+
+/// `0x00151248` (40 B): as `tail_stub_v1_151220` with offset `0xbe0`.
+pub fn tail_stub_v1_151248(c: &mut Cpu) {
+    oc1537_stub_base(c, A2, A1);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe0));
+    c.pc = 0x0015_1334;
+    call_indirect(c, 0x0015_1334);
+}
+
+/// `0x00151270` (40 B): as `tail_stub_v1_151220` with offset `0xbe1`.
+pub fn tail_stub_v1_151270(c: &mut Cpu) {
+    oc1537_stub_base(c, A2, A1);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe1));
+    c.pc = 0x0015_1334;
+    call_indirect(c, 0x0015_1334);
+}
+
+/// `0x00151298` (40 B): as `tail_stub_v1_151220` with offset `0xbe2`.
+pub fn tail_stub_v1_151298(c: &mut Cpu) {
+    oc1537_stub_base(c, A2, A1);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe2));
+    c.pc = 0x0015_1334;
+    call_indirect(c, 0x0015_1334);
+}
+
+/// `0x001512c0` (40 B): as `tail_stub_v1_151220` with offset `0xbe3`.
+pub fn tail_stub_v1_1512c0(c: &mut Cpu) {
+    oc1537_stub_base(c, A2, A1);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe3));
+    c.pc = 0x0015_1334;
+    call_indirect(c, 0x0015_1334);
+}
+
+/// `0x001512e8` (40 B): as `tail_stub_v1_151220` with offset `0xbe4`.
+pub fn tail_stub_v1_1512e8(c: &mut Cpu) {
+    oc1537_stub_base(c, A2, A1);
+    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(0xbe4));
+    c.pc = 0x0015_1334;
+    call_indirect(c, 0x0015_1334);
+}
+
+/// The three label stubs at 0x17fe4c, 0x17fe54 and 0x17fe5c: `a1 = id` and a
+/// tail jump to 0x17fe68 (the resume arm of `0x17fe64`) through the function
+/// table. No frame and no return check: the arm returns to our caller.
+pub(crate) fn tail_to_fe68(c: &mut Cpu, id: u64) {
+    guest(c, |c| {
+        c.cycles += 2;
+        c.g[A1][0] = id;
+        c.pc = 0x0017_fe68;
+        call_indirect(c, 0x0017_fe68);
+        Ok(())
+    })
+}
+
+/// `lbl_0017FE4C`: tail jump with `a1 = 0x76`.
+pub fn lbl_0017fe4c(c: &mut Cpu) {
+    tail_to_fe68(c, 0x76)
+}
+
+/// `lbl_0017FE54`: tail jump with `a1 = 0x77`.
+pub fn lbl_0017fe54(c: &mut Cpu) {
+    tail_to_fe68(c, 0x77)
+}
+
+/// `lbl_0017FE5C`: tail jump with `a1 = 0x78`.
+pub fn lbl_0017fe5c(c: &mut Cpu) {
+    tail_to_fe68(c, 0x78)
+}
+
+/// `0x001ff780` (no name): calls `OVScreenRewardList_ShowPage(A2)` (0x001ffd08),
+/// then tail-calls the epilogue at 0x001ff7ac with `V0 = 1`.
+pub fn lbl_001ff780_show_page_tail(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[A2][0];
+        Callee {
+            addr: 0x001f_fd08,
+            f: ee::s05::f_001ffd08,
+        }
+        .call(c, 0x001f_f788)?;
+        c.g[V0][0] = 0x1;
+        c.pc = 0x001f_f7ac;
+        call_indirect(c, 0x001f_f7ac);
+        Ok(())
+    });
+}
+
+/// `0x001ff790` (no name): returns 0 through the shared 0x001ff7ac epilogue
+/// (`V0 = 0`, tail jump).
+pub fn lbl_001ff790_tail(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    c.pc = 0x001f_f7ac;
+    call_indirect(c, 0x001f_f7ac);
+}
+
+/// `0x001ff798` (no name): `V0 = 0`, and a tail jump to the 0x001ff7ac epilogue
+/// when the word at `A2 + 0x9c` (signed) is below 10, else to 0x001ff7a8.
+pub fn lbl_001ff798_tail(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x9c));
+    c.g[V1][0] = ((c.g[V1][0] as i64) < 10i64) as u64;
+    let t = c.g[V1][0] != 0u64;
+    c.g[V0][0] = 0u64;
+    if t {
+        c.pc = 0x001f_f7ac;
+        call_indirect(c, 0x001f_f7ac);
+    } else {
+        c.pc = 0x001f_f7a8;
+        ee::s05::f_001ff7a8(c);
+    }
+}
+
+/// `0x0020df10` (no name, a leaf): `V0` is 0 when the word at `A0 + 0x9c` is
+/// zero, else 0x101 unless `3 < A2 - 2` (unsigned), which gives 0.
+pub fn lbl_0020df10_count_check(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x9c));
+    let t = c.g[V1][0] == 0u64;
+    c.g[V0][0] = 0u64;
+    if !t {
+        c.cycles += 5;
+        c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(0x2));
+        c.g[V1][0] = 0x3;
+        c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        c.g[V0][0] = 0x101;
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = 0u64;
+        }
+    }
+    c.cycles += 2;
+    let t = c.g[RA][0] as u32;
+    c.pc = t;
+}
+
+/// The shared body of the two `cOVState` overlay constructors: calls
+/// `UIState_ctor(this, 0)` (0x0039e2a0) returning to `ret`, then stores the
+/// vtable `0x470000 + vtable_lo` at `this + 8` and returns `this` in `V0`.
+pub(crate) fn ov_state_base_ctor(c: &mut Cpu, ret: u32, vtable_lo: u32) -> Flow {
+    c.cycles += 14;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x20));
+    c.g[A1][0] = 0u64;
+    let s = sp(c);
+    c.sq(16, s.wrapping_add(0x10));
+    let ra = c.g[RA][0];
+    c.sd(s, ra);
+    c.g[S0][0] = c.g[A0][0];
+    call_ptr(c, 0x0039_e2a0, ret)?;
+    c.g[V1][0] = 0x470000;
+    c.g[V0][0] = c.g[S0][0];
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(vtable_lo));
+    let s = sp(c);
+    c.g[RA][0] = c.ld(s);
+    let this = c.g[S0][0] as u32;
+    let vt = c.g[V1][0];
+    c.sw(this.wrapping_add(0x8), vt);
+    let s = sp(c);
+    c.lq(16, s.wrapping_add(0x10));
+    let t = c.g[RA][0] as u32;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+    c.pc = t;
+    Ok(())
+}
+
+/// `cOVStateOverlay_ctor(this)` (0x0021c640): base constructor through
+/// `UIState_ctor`, vtable 0x474e08. Returns `this`.
+pub fn ov_state_overlay_ctor(c: &mut Cpu) {
+    guest(c, |c| ov_state_base_ctor(c, 0x0021_c658, 0x4e08));
+}
+
+/// `cOVStateOverlay_GlobalCtors` (0x222428): the static-init hook
+/// `cOVStateOverlay_StaticInitDestroy(1, 0xffff)`.
+pub fn cov_state_overlay_global_ctors(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x1;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0xffff;
+        Callee {
+            addr: 0x0021_27e8,
+            f: ee::s05::f_002127e8,
+        }
+        .call(c, 0x0022_243c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `0x00392eec` (no name): `V1 = A3 / 3` (LO of the divide), then a tail jump
+/// to the shared body at 0x00392f5c with `A3 = V1`. Kept as the resumable
+/// match: a resume at 0x392ef0 / 0x392efc continues natively.
+pub fn lbl_00392eec_div3_tail(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x0039_2eec => {
+                c.cycles += 1;
+                c.g[V0][0] = 0x3;
+                pc = 0x0039_2ef0;
+            }
+            0x0039_2ef0 => {
+                c.cycles += 3;
+                c.div(0, 7, 2);
+                pc = 0x0039_2efc;
+            }
+            0x0039_2efc => {
+                c.cycles += 3;
+                c.g[V1][0] = c.lo[0];
+                c.g[A3][0] = c.g[V1][0];
+                c.pc = 0x0039_2f5c;
+                ee::s13::f_00392f5c(c);
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x0039_2eec, 0x0039_2f08);
+                return;
+            }
+        }
+    }
+}
+
+/// `0x003c55dc` (no name): stores the constant 0x00495920 (a callback
+/// address) through `A1` and returns 0.
+pub fn lbl_003c55dc_set_output_ptr(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x003c_55dc => {
+                c.cycles += 4;
+                c.g[V0][0] = 0x490000;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5920));
+                c.sw(c.g[A1][0] as u32, c.g[V0][0]);
+                pc = 0x003c_55f4;
+            }
+            0x003c_55ec => {
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[V0][0] = 0xffff_ffff_ffff_fffb;
+                c.pc = t;
+                return;
+            }
+            0x003c_55f4 => {
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[V0][0] = 0u64;
+                c.pc = t;
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x003c_55dc, 0x003c_55fc);
+                return;
+            }
+        }
+    }
+}
+
+/// Shared entry step of the labels 0x372144 and 0x372178: `cycles += 4`,
+/// `v0 = a2 << 4` (sign-extended), `a1 = a1 + 0x10 + v0`.
+pub(crate) fn dma_label_entry(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = sx((c.g[A2][0] as u32) << 4);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+}
+
+/// Label 0x372144 in the DMA chain code: the entry step, then a jump to the
+/// common tail at 0x372188 (the generated test on `t` is always true, so the
+/// branch to 0x372154 is dead).
+pub fn dma_label_tail_0372144(c: &mut Cpu) {
+    dma_label_entry(c);
+    c.pc = 0x0037_2188;
+    ee::s12::f_00372188(c);
+}
+
+/// Label 0x372154: packs `t0`'s low word under `(t2 + a3) << 32` and stores
+/// the doubleword at `a1`, then `a1 += 0x10` and a jump to 0x372188.
+pub fn dma_label_tail_0372154(c: &mut Cpu) {
+    c.cycles += 9;
+    c.g[V1][0] = sx((c.g[T2][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.g[V0][0] = (!0xffff_u64) >> 32;
+    c.g[V0][0] = c.g[T0][0] & c.g[V0][0];
+    c.g[V1][0] = c.g[V1][0] << 32;
+    c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+    let store = c.g[A1][0] as u32;
+    let packed = c.g[V1][0];
+    c.sd(store, packed);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+    c.pc = 0x0037_2188;
+    ee::s12::f_00372188(c);
+}
+
+/// Label 0x372178: the entry step with `t1 = 1` (the flag the common tail
+/// reads), then a jump to 0x372188.
+pub fn dma_label_tail_0372178(c: &mut Cpu) {
+    dma_label_entry(c);
+    c.g[T1][0] = 0x1;
+    c.pc = 0x0037_2188;
+    ee::s12::f_00372188(c);
+}
+
+/// Common tail of the DMA labels (0x372188). With `t1 == 0` it loads the
+/// doubleword at `a1` into `v0` and jumps to 0x372100 (through the function
+/// table, a jump that keeps `ra`); otherwise `v0 = a1` and it returns.
+pub fn dma_label_tail_0372188(c: &mut Cpu) {
+    c.cycles += 2;
+    if c.g[T1][0] == 0 {
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).ld(c);
+        c.pc = 0x0037_2100;
+        call_indirect(c, 0x0037_2100);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A1][0];
+    ret(c);
+}
+
+/// Label 0x392edc: `v0 = 0xc`, then a jump to the resume point 0x392ef0 of
+/// the dispatcher at 0x392eec (a tail call, `ra` unchanged).
+pub fn dispatch_tail_0392edc(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0xc;
+    c.pc = 0x0039_2ef0;
+    call_indirect(c, 0x0039_2ef0);
+}
+
+/// Label 0x392ee4: `v0 = 0x6`, then the same resume jump to 0x392ef0.
+pub fn dispatch_tail_0392ee4(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x6;
+    c.pc = 0x0039_2ef0;
+    call_indirect(c, 0x0039_2ef0);
+}
+
+/// Label 0x392f08: rounds `a3` up to a multiple of 16 (`(a3 + 0xf) >> 4`,
+/// with the signed compare of the generated code choosing the source), then
+/// a tail call to 0x392f5c.
+pub fn tail_0392f08(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = u64::MAX;
+    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0xf));
+    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+    if c.g[V0][0] != 0 {
+        c.g[V1][0] = c.g[A3][0];
+    }
+    c.g[A3][0] = sx(((c.g[V1][0] as u32) as i32 >> 4) as u32);
+    c.pc = 0x0039_2f5c;
+    ee::s13::f_00392f5c(c);
+}
+
+/// `0x00392f20` (no name): `A3 = A3 / 8` (signed, rounds toward zero: the
+/// `A3 + 7` bias applies to negative values), then a tail jump to the shared
+/// body at 0x392f5c.
+pub fn lbl_00392f20_div8_tail(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x7));
+    c.g[V0][0] = ((-1i64) < (c.g[A3][0] as i64)) as u64;
+    if c.g[V0][0] != 0 {
+        c.g[V1][0] = c.g[A3][0];
+    }
+    c.g[A3][0] = sx(((c.g[V1][0] as u32) as i32 >> 3) as u32);
+    c.pc = 0x0039_2f5c;
+    ee::s13::f_00392f5c(c);
+}
+
+/// `0x00392f38` (no name): `A3 = A3 / 4` (signed, rounds toward zero), then a
+/// tail jump to the shared body at 0x392f5c.
+pub fn lbl_00392f38_div4_tail(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(0x3));
+    c.g[V0][0] = ((-1i64) < (c.g[A3][0] as i64)) as u64;
+    if c.g[V0][0] != 0 {
+        c.g[V1][0] = c.g[A3][0];
+    }
+    c.g[A3][0] = sx(((c.g[V1][0] as u32) as i32 >> 2) as u32);
+    c.pc = 0x0039_2f5c;
+    ee::s13::f_00392f5c(c);
+}
+
+/// `0x00392f50` (no name): `A3 = A3 / 2` (signed, rounds toward zero), then a
+/// tail jump to the shared body at 0x392f5c.
+pub fn lbl_00392f50_div2_tail(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = sx((c.g[A3][0] as u32) >> 31);
+    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A3][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+    c.pc = 0x0039_2f5c;
+    ee::s13::f_00392f5c(c);
+}
+
+/// `0x00392f5c` (no name): the shared record update of the three divide
+/// wrappers above. It reads the record at T0 (+0x8 a store pointer, +0x18 and
+/// +0x1c the divisor and the clamp operand, +0x20, +0x24, +0x28 the flags),
+/// divides A3 by the record's value, multiplies the quotient back, and stores
+/// the packed word at the pointer and at `ptr + 8`. Leaves LO/HI as the divide
+/// and multiply left them.
+pub fn lbl_00392f5c_record_update(c: &mut Cpu) {
+    let rec = c.g[T0][0] as u32;
+
+    // 'b_392f84: clamp the divisor and divide.
+    c.cycles += 10;
+    c.g[A0][0] = Addr(rec.wrapping_add(0x1c)).lw(c);
+    c.g[V0][0] = Addr(rec.wrapping_add(0x18)).lw(c);
+    c.g[A2][0] = c.g[V0][0];
+    c.g[V1][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    if c.g[V1][0] != 0 {
+        c.g[V0][0] = c.g[A0][0];
+    }
+    c.g[A1][0] = ((c.g[A2][0] as i64) < (c.g[A0][0] as i64)) as u64;
+    c.div(0, 7, 2);
+    if c.g[A1][0] == 0 {
+        c.g[A0][0] = c.g[A2][0];
+    }
+
+    // 'b_392f94: the quotient times the operand (A3 = V1 * A0, LO/HI set).
+    c.cycles += 3;
+    c.g[V1][0] = c.lo[0];
+    c.mult(0, 7, 3, 4);
+
+    // 'b_392ff4 / 'b_392ff0: pack the word.
+    c.cycles += 20;
+    c.g[V1][0] = Addr(rec.wrapping_add(0x1c)).lw(c);
+    c.g[A1][0] = 0x0100_0000;
+    c.g[V0][0] = Addr(rec.wrapping_add(0x18)).lw(c);
+    c.g[A3][0] &= 0xff;
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 8);
+    c.g[A0][0] = Addr(rec.wrapping_add(0x8)).lw(c);
+    c.g[V0][0] |= c.g[V1][0];
+    Addr(rec.wrapping_add(0x2c)).sw(c, 0);
+    c.g[V0][0] |= c.g[A1][0];
+    c.g[V0][0] <<= 32;
+    c.g[A1][0] = sx((c.g[A3][0] as u32) << 16);
+    let (dst, word) = (c.g[A0][0] as u32, c.g[V0][0]);
+    Addr(dst).sd(c, word);
+    c.g[V1][0] = Addr(rec.wrapping_add(0x8)).lw(c);
+    c.g[V0][0] = Addr(rec.wrapping_add(0x20)).lw(c);
+    c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_add(0x8));
+    c.g[A0][0] = Addr(rec.wrapping_add(0x28)).lw(c);
+    c.g[V0][0] |= 0x60;
+    c.g[A2][0] = Addr(rec.wrapping_add(0x24)).lw(c);
+    let flag_zero = c.g[A0][0] == 0;
+    c.g[V1][0] = sx((c.g[V0][0] as u32) << 24);
+    if flag_zero {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[A2][0] | c.g[A1][0];
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = c.g[A1][0] | 0x8000;
+        c.g[V0][0] = c.g[A2][0] | c.g[V0][0];
+    }
+
+    // Common exit of 'b_392ff4.
+    c.cycles += 4;
+    c.g[V0][0] |= c.g[V1][0];
+    c.g[V0][0] <<= 32;
+    let ra = c.g[RA][0] as u32;
+    let (dst, word) = (c.g[A3][0] as u32, c.g[V0][0]);
+    Addr(dst).sd(c, word);
+    c.pc = ra;
+}
+
+/// `0x003a38b8` (no name): `V0 = A3 * 12` (LO/HI set), `V1 = word at T0+0x80`,
+/// then a tail jump into the function at 0x3a38f8 (a resume point of the
+/// dispatcher at 0x3a38f0).
+pub fn lbl_003a38b8_scale12_tail(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[V0][0] = 0xc;
+    c.g[V1][0] = Addr((c.g[T0][0] as u32).wrapping_add(0x80)).lw(c);
+    c.mult(0, 2, 7, 2);
+    c.pc = 0x003a_38f8;
+    call_indirect(c, 0x003a_38f8);
+}
+
+/// `0x003a3994` (no name): `f0 = f1 * *(GP-0x24e8)`, stored at T0+0x1c, then a
+/// tail jump to 0x3a39e0.
+pub fn lbl_003a3994_fscale_store_tail(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24e8));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x1c));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// `0x003a39a4` (no name): `f0 = f1 * *(GP-0x24e4)`, stored at T0+0x20, then a
+/// tail jump to 0x3a39e0.
+pub fn lbl_003a39a4_fscale_store_tail(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24e4));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x20));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// `lbl_003A39B4` (0x3a39b4): `*(float*)(t0 + 0x24) = f1 * *(float*)(gp - 0x24e0)`,
+/// then a tail jump into 0x3a39e0.
+pub fn fpu_scale_store_24(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24e0));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x24));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// `lbl_003A39C4` (0x3a39c4): the same as [`fpu_scale_store_24`] with the
+/// global at gp - 0x24dc and the store at t0 + 0x28.
+pub fn fpu_scale_store_28(c: &mut Cpu) {
+    c.cycles += 4;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x24dc));
+    c.mul_s(0, 1, 0);
+    c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x28));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// Stores the constant `value` through the pointer in a1 and returns 0. The
+/// generated body tail-jumps to 0x3c55f4, which is the `v0 = 0` return block
+/// of the dispatcher at 0x3c55dc (two cycles, then `pc = ra`); this port takes
+/// that block's effect directly.
+pub(crate) fn snd_store_const_and_return_zero(c: &mut Cpu, value: u32) {
+    c.cycles += 4;
+    c.g[V0][0] = sx(value);
+    let dest = r32(c, A1);
+    let stored = c.g[V0][0];
+    c.sw(dest, stored);
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+/// Stores the constant 0x4958c8 through a1, returns 0 (0x3c555c).
+pub fn snd_store_const_555c(c: &mut Cpu) {
+    snd_store_const_and_return_zero(c, 0x0049_58c8)
+}
+
+/// Stores the constant 0x4958d0 through a1, returns 0 (0x3c556c).
+pub fn snd_store_const_556c(c: &mut Cpu) {
+    snd_store_const_and_return_zero(c, 0x0049_58d0)
+}
+
+/// Stores the constant 0x4958d8 through a1, returns 0 (0x3c557c).
+pub fn snd_store_const_557c(c: &mut Cpu) {
+    snd_store_const_and_return_zero(c, 0x0049_58d8)
+}
+
+/// Stores the constant 0x4958e0 through a1, returns 0 (0x3c558c).
+pub fn snd_store_const_558c(c: &mut Cpu) {
+    snd_store_const_and_return_zero(c, 0x0049_58e0)
+}
+
+/// The `%g` conversion tail of the printf family (0x421ed4): `_gcvt(reent,
+/// value, ndigits, buf)` with `ndigits` the caller's `a3` or 1 and `buf` the
+/// output pointer in `s0`; then it resumes the shared printf epilogue at
+/// 0x421f0c (a tail jump, so nothing returns here).
+pub fn printf_g_tail(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 8;
+        c.g[A2][0] = 0x1;
+        c.g[A0][0] = c.g[T3][0];
+        if c.g[A3][0] != 0 {
+            c.g[A2][0] = c.g[A3][0];
+        }
+        c.g[T1][0] = c.g[T2][0];
+        c.g[A3][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0042_1b98,
+            f: ee::s15::f_00421b98,
+        }
+        .call(c, 0x0042_1eec)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.pc = 0x0042_1f0c;
+        call_indirect(c, 0x0042_1f0c);
+        Ok(())
+    });
+}
+
+/// The `%e` conversion tail of the printf family (0x421ef4): `print_e(reent,
+/// buf, value, precision)` with `buf = s0` and `value` the caller's `a1`;
+/// then it tail-jumps to the shared printf epilogue at 0x421f08.
+pub fn printf_e_tail(c: &mut Cpu) {
+    guest(c, |c| -> Flow {
+        c.cycles += 5;
+        c.g[A2][0] = c.g[A1][0];
+        c.g[A0][0] = c.g[T3][0];
+        c.g[T1][0] = c.g[T2][0];
+        c.g[A1][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0042_16e8,
+            f: ee::s15::f_004216e8,
+        }
+        .call(c, 0x0042_1f08)?;
+        c.pc = 0x0042_1f08;
+        ee::s15::f_00421f08(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -25825,6 +27234,2148 @@ pub(crate) mod tests {
             ov_screen_replay_menu_ctor,
             200,
             &|c, seed| oc998_setup(c, seed, 0x0021_c898, 2),
+        );
+    }
+
+    use crate::difftest::check_lohi;
+    use crate::difftest::check_paths_lohi;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+
+    use crate::difftest::RA as TEST_RA;
+    use crate::difftest::RA as DIFF_RA;
+    use crate::game::be::belibrary::bolts_load_db;
+    pub(crate) use crate::game::fe::fepopupmisc::tests::leaf_fill;
+    pub(crate) use crate::game::fe::festaterewards::c_fe_state_reward_gallery_ctor;
+
+    use crate::game::lib::libc::tests::dbl;
+    use crate::game::lib::libc::tests::dbl_2;
+    use crate::game::lib::libc::tests::heap_init;
+    use crate::game::lib::libc::tests::DST;
+    use crate::game::lib::libc::tests::REENT_3;
+
+    /// Shared fixture of the four jump-table fragments: `t0` points at a
+    /// struct whose word at +0x7c is the destination buffer, `a3` the
+    /// element index; the loop tail gets `t2`/`a1`/`a2` so that three of
+    /// four seeds loop again (a faked call to 0x3a3820) and one returns.
+    pub(crate) fn oc1478_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 1);
+        let base = DATA + 0x2000;
+        c.bus.write32(base + 0x7c, DATA + 0x3000);
+        fill(c, &mut r, DATA + 0x3000, 0x40);
+        c.g[T0][0] = sx(base);
+        c.g[A3][0] = (r.next_u32() % 8) as u64;
+        c.g[T2][0] = (r.next_u32() % 100) as u64;
+        c.g[A1][0] = if seed % 4 == 0 {
+            c.g[T2][0]
+        } else {
+            c.g[T2][0] + 2
+        };
+        c.g[A2][0] = sx(DATA + 0x4000);
+        c.g[RA][0] = sx(TEST_RA);
+        c.pc = entry;
+    }
+
+    #[test]
+    fn lbl_003a38c8_matches() {
+        covered(
+            ssx3_ee::s13::f_003a38c8__generated,
+            lbl_003a38c8,
+            64,
+            &|c, seed| oc1478_setup(c, seed, 0x3a38c8, 0x003a_38c8),
+        );
+    }
+
+    #[test]
+    fn lbl_003a38dc_matches() {
+        covered(
+            ssx3_ee::s13::f_003a38dc__generated,
+            lbl_003a38dc,
+            64,
+            &|c, seed| oc1478_setup(c, seed, 0x3a38dc, 0x003a_38dc),
+        );
+    }
+
+    /// Also the resume entries 0x3a3918 (v0 zero or not) and 0x3a3920 (table
+    /// jump: entry 0 holds the function's own start, the others a stray
+    /// address that goes to `jump_out`).
+    #[test]
+    fn lbl_003a3904_matches() {
+        covered(
+            ssx3_ee::s13::f_003a3904__generated,
+            lbl_003a3904,
+            96,
+            &|c, seed| {
+                let entry = match seed % 6 {
+                    4 => 0x003a_3918,
+                    5 => 0x003a_3920,
+                    _ => 0x003a_3904,
+                };
+                oc1478_setup(c, seed, 0x3a3904, entry);
+                if entry == 0x003a_3918 {
+                    c.g[V0][0] = if seed % 12 == 4 { 0 } else { 1 };
+                }
+                if entry == 0x003a_3920 {
+                    c.g[V0][0] = 1;
+                    c.g[A0][0] = (seed % 2) as u64;
+                    c.bus.write32(0x0049_4170, 0x003a_3904);
+                    c.bus.write32(0x0049_4174, 0x0012_0000);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_003a39e0_matches() {
+        covered(
+            ssx3_ee::s13::f_003a39e0__generated,
+            lbl_003a39e0,
+            64,
+            &|c, seed| {
+                oc1478_setup(c, seed, 0x3a39e0, 0x003a_39e0);
+                if seed % 8 == 1 {
+                    c.pc = 0x003a_39f0;
+                }
+            },
+        );
+    }
+
+    /// `t0` points at a struct whose word at +0x7c is the destination buffer,
+    /// `a3` the element index; `t2`/`a1`/`a2` feed the loop tail so that most
+    /// seeds loop again (faked call to 0x3a3820) and some return. Seeds with
+    /// `seed % 8 == 1` start at the resume entry 0x3a38f8.
+    #[test]
+    fn lbl_003a38f0_matches() {
+        covered(
+            ssx3_ee::s13::f_003a38f0__generated,
+            lbl_003a38f0,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a38f0, 1);
+                let base = DATA + 0x2000;
+                c.bus.write32(base + 0x7c, DATA + 0x3000);
+                fill(c, &mut r, DATA + 0x3000, 0x40);
+                c.g[T0][0] = sx(base);
+                c.g[A3][0] = (r.next_u32() % 8) as u64;
+                c.g[T2][0] = (r.next_u32() % 100) as u64;
+                c.g[A1][0] = if seed % 4 == 0 {
+                    c.g[T2][0]
+                } else {
+                    c.g[T2][0] + 2
+                };
+                c.g[A2][0] = sx(DATA + 0x4000);
+                c.g[RA][0] = sx(TEST_RA);
+                c.pc = if seed % 8 == 1 {
+                    0x003a_38f8
+                } else {
+                    0x003a_38f0
+                };
+                if seed % 8 == 1 {
+                    c.g[V1][0] = sx(DATA + 0x3000);
+                    c.g[V0][0] = (r.next_u32() % 8 * 16) as u64;
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_003a01fc_matches() {
+        check(
+            ee::s13::f_003a01fc__generated,
+            lbl_003a01fc,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1486_3a01, 0);
+                c.g[A3][0] = sx(DATA + 0x1000);
+                c.bus.write32(DATA + 0x1014, r.next_u32());
+                // The tail callee returns at once when its bound is 0.
+                c.g[A1][0] = 0;
+                c.f[1] = r.edge_f32();
+                c.g[RA][0] = sx(crate::difftest::RA);
+            },
+        );
+    }
+
+    /// Fixture of the GP-scaled fragments: a random float at `gp - gp_off`
+    /// (the multiplier) and the operand `f1`, `a3` pointing at a scratch
+    /// struct, and the loop tail 0x3a0274 taking its return path (`t0 + 1`
+    /// is not below `a1`), so no callee runs beyond the fragment.
+    pub(crate) fn oc1487_gp_scale_setup(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        gp_off: u32,
+        entry: u32,
+    ) {
+        let mut r = machine(c, seed, salt, 1);
+        c.bus.write32(GAME_GP.wrapping_sub(gp_off), r.edge_f32());
+        c.f[1] = r.edge_f32();
+        c.g[A3][0] = sx(DATA + 0x2000);
+        c.g[T0][0] = sx(DATA + 0x3000);
+        c.g[A1][0] = sx(DATA + 0x3000);
+        c.g[A2][0] = sx(DATA + 0x4000);
+        c.g[RA][0] = sx(TEST_RA);
+        c.pc = entry;
+    }
+
+    #[test]
+    fn lbl_003a01ac_matches() {
+        check(
+            ee::s13::f_003a01ac__generated,
+            lbl_003a01ac,
+            64,
+            &|c, seed| oc1487_gp_scale_setup(c, seed, 0x3a01ac, 0x251c, 0x003a_01ac),
+        );
+    }
+
+    #[test]
+    fn lbl_003a01bc_matches() {
+        check(
+            ee::s13::f_003a01bc__generated,
+            lbl_003a01bc,
+            64,
+            &|c, seed| oc1487_gp_scale_setup(c, seed, 0x3a01bc, 0x2518, 0x003a_01bc),
+        );
+    }
+
+    #[test]
+    fn lbl_003a01cc_matches() {
+        check(
+            ee::s13::f_003a01cc__generated,
+            lbl_003a01cc,
+            64,
+            &|c, seed| oc1487_gp_scale_setup(c, seed, 0x3a01cc, 0x2514, 0x003a_01cc),
+        );
+    }
+
+    #[test]
+    fn lbl_003a01dc_matches() {
+        check(
+            ee::s13::f_003a01dc__generated,
+            lbl_003a01dc,
+            64,
+            &|c, seed| oc1487_gp_scale_setup(c, seed, 0x3a01dc, 0x2510, 0x003a_01dc),
+        );
+    }
+
+    #[test]
+    fn lbl_003a01ec_matches() {
+        check(
+            ee::s13::f_003a01ec__generated,
+            lbl_003a01ec,
+            64,
+            &|c, seed| oc1487_gp_scale_setup(c, seed, 0x3a01ec, 0x250c, 0x003a_01ec),
+        );
+    }
+
+    #[test]
+    fn lbl_003a0228_matches() {
+        check(
+            ee::s13::f_003a0228__generated,
+            lbl_003a0228,
+            64,
+            &|c, seed| oc1487_gp_scale_setup(c, seed, 0x3a0228, 0x2508, 0x003a_0228),
+        );
+    }
+
+    /// Fixture of the two `mult` fragments: `t0` points at a struct whose
+    /// word at +0x80 is loaded into `v1`, `a3` is a small signed index (the
+    /// `mult` is signed 32-bit), and the callee 0x3a38d0 / 0x3a38e4 (inside
+    /// the `UIVector` copy's fragment at 0x3a38c8, through the function table)
+    /// takes its loop-tail exit (`t2 + 1` is not below `a1`) so it returns.
+    pub(crate) fn oc1487_mult_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        let mut r = machine(c, seed, salt, 1);
+        c.bus.write32(DATA + 0x2080, r.next_u32());
+        c.bus.write32(DATA + 0x2000 + 0x7c, DATA + 0x3000);
+        c.g[T0][0] = sx(DATA + 0x2000);
+        c.g[A3][0] = sx(((r.next_u32() % 16) as i32 - 8) as u32);
+        c.g[T2][0] = (r.next_u32() % 100) as u64;
+        c.g[A1][0] = c.g[T2][0];
+        c.g[A2][0] = sx(DATA + 0x4000);
+        c.g[RA][0] = sx(TEST_RA);
+        c.pc = entry;
+    }
+
+    #[test]
+    fn lbl_003a3898_matches() {
+        check(
+            ee::s13::f_003a3898__generated,
+            lbl_003a3898,
+            64,
+            &|c, seed| oc1487_mult_setup(c, seed, 0x3a3898, 0x003a_3898),
+        );
+    }
+
+    #[test]
+    fn lbl_003a38a8_matches() {
+        check(
+            ee::s13::f_003a38a8__generated,
+            lbl_003a38a8,
+            64,
+            &|c, seed| oc1487_mult_setup(c, seed, 0x3a38a8, 0x003a_38a8),
+        );
+    }
+
+    /// Fixture for both tails: `gp` puts the constant word at `DATA`, `a3`
+    /// points at the store target, and `a1 = 0` keeps the tail callee
+    /// (0x3a0274) on its no-call path.
+    pub(crate) fn scale_store_setup(c: &mut Cpu, seed: u32, gp_off: u32) {
+        let mut r = Rng(0x3a02_3800 ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[GP][0] = sx(DATA + gp_off);
+        c.g[A3][0] = sx(DATA + 0x1000);
+        c.g[A1][0] = 0;
+        let k = if seed % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(100.0)
+        };
+        c.bus.write32(DATA, k);
+        c.f[1] = if seed % 4 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(10.0)
+        };
+    }
+
+    #[test]
+    fn scale_float_store_0238_matches() {
+        check(
+            ssx3_ee::s13::f_003a0238__generated,
+            scale_float_store_0238,
+            300,
+            &|c, seed| {
+                scale_store_setup(c, seed, 0x2504);
+            },
+        );
+    }
+
+    #[test]
+    fn scale_float_store_0248_matches() {
+        check(
+            ssx3_ee::s13::f_003a0248__generated,
+            scale_float_store_0248,
+            300,
+            &|c, seed| {
+                scale_store_setup(c, seed, 0x2500);
+            },
+        );
+    }
+
+    /// Both entries (0x17fe64 and 0x17fe68), random `a2` struct, with the
+    /// callee faked (sometimes unwinding).
+    #[test]
+    fn fe_tail_call_320c48_matches() {
+        covered(
+            ee::s02::f_0017fe64__generated,
+            fe_tail_call_320c48,
+            40,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x17_fe64, 1);
+                c.pc = if seed % 2 == 0 {
+                    0x0017_fe64
+                } else {
+                    0x0017_fe68
+                };
+                c.g[A2][0] = (DATA + 0x2000) as u64;
+                c.g[SP][0] = (DATA + 0x1000) as u64;
+                c.bus.write32(DATA + 0x2018, 0x1234_5678 ^ seed);
+                c.bus.write64(DATA + 0x1000, 0x0030_0000 + 4 * seed as u64);
+            },
+        );
+    }
+
+    /// The tail-call leaves: the float they store, the object in a3, and a
+    /// loop bound of 0 so the shared loop at 0x3a0274 returns at once.
+    pub(crate) fn store_leaf_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        c.g[RA][0] = sx(crate::difftest::RA);
+        c.g[A3][0] = sx(DATA + 0x100);
+        c.g[A1][0] = 0;
+        c.f[0] = r.edge_f32();
+        c.f[1] = r.edge_f32();
+        c.bus.write32(GAME_GP - 0x24fc, r.edge_f32());
+    }
+
+    #[test]
+    fn lbl_3a0258_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| store_leaf_setup(c, seed, 0x3a_0258);
+        check(
+            ee::s13::f_003a0258__generated,
+            lbl_3a0258_scale_store,
+            64,
+            setup,
+        );
+    }
+
+    #[test]
+    fn lbl_3a019c_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| store_leaf_setup(c, seed, 0x3a_019c);
+        check(
+            ee::s13::f_003a019c__generated,
+            lbl_3a019c_store_f1_a3_44,
+            64,
+            setup,
+        );
+    }
+
+    #[test]
+    fn lbl_3a01a4_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| store_leaf_setup(c, seed, 0x3a_01a4);
+        check(
+            ee::s13::f_003a01a4__generated,
+            lbl_3a01a4_store_f1_a3_48,
+            64,
+            setup,
+        );
+    }
+
+    #[test]
+    fn lbl_3a0268_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| store_leaf_setup(c, seed, 0x3a_0268);
+        check(
+            ee::s13::f_003a0268__generated,
+            lbl_3a0268_store_f1_a3_60,
+            64,
+            setup,
+        );
+    }
+
+    /// The packed field: `t0 + 0x14` holds a word, f1 is any float (its
+    /// integer part lands in bits 13..18), and the loop bound is 0.
+    #[test]
+    fn lbl_3a3968_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x3a_3968, 0);
+            c.g[RA][0] = sx(crate::difftest::RA);
+            c.g[T0][0] = sx(DATA + 0x100);
+            c.g[A1][0] = 0;
+            c.g[A2][0] = sx(DATA + 0x200);
+            c.bus.write32(DATA + 0x114, r.next_u32());
+            c.f[1] = r.edge_f32();
+        };
+        check(
+            ee::s13::f_003a3968__generated,
+            lbl_3a3968_pack_field,
+            64,
+            setup,
+        );
+    }
+
+    // Each fake answers only while its own gate word (in the test machine's
+    // RAM) holds its magic; otherwise it runs the body it replaced.
+    pub(crate) const OC1493_RT_GATE: u32 = DATA + 0x0017_0000;
+
+    pub(crate) const OC1493_RT_MAGIC: u32 = 0x1493_0001;
+
+    pub(crate) const OC1493_SIZE_GATE: u32 = DATA + 0x0017_0100;
+
+    pub(crate) const OC1493_SIZE_MAGIC: u32 = 0x1493_0002;
+
+    pub(crate) const OC1493_CLOSE_GATE: u32 = DATA + 0x0017_0200;
+
+    pub(crate) const OC1493_CLOSE_MAGIC: u32 = 0x1493_0003;
+
+    pub(crate) const OC1493_TAIL_0274_GATE: u32 = DATA + 0x0017_0300;
+
+    pub(crate) const OC1493_TAIL_0274_MAGIC: u32 = 0x1493_0004;
+
+    pub(crate) const OC1493_TAIL_39E0_GATE: u32 = DATA + 0x0017_0400;
+
+    pub(crate) const OC1493_TAIL_39E0_MAGIC: u32 = 0x1493_0005;
+
+    pub(crate) const OC1493_QUAD_GATE: u32 = DATA + 0x0017_0500;
+
+    pub(crate) const OC1493_QUAD_MAGIC: u32 = 0x1493_0006;
+
+    /// A fake with no result of its own (the callee's v0 is the fake's hash).
+    macro_rules! oc1493_fake {
+        ($name:ident, $prev:ident, $gen:path, $target:expr, $gate:expr, $magic:expr) => {
+            pub(crate) static $prev: AtomicUsize = AtomicUsize::new(0);
+            pub(crate) fn $name(c: &mut Cpu) {
+                if c.bus.read32($gate) != $magic {
+                    return fakes::fall_back(c, &$prev, $gen);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $target, ra);
+            }
+        };
+    }
+
+    /// Logs the call as a fake and returns the word at `gate + slot` in v0
+    /// (what the test wrote there), when the gate is on and the call returned.
+    pub(crate) fn oc1493_answer(
+        c: &mut Cpu,
+        gate: u32,
+        magic: u32,
+        prev: &AtomicUsize,
+        generated: fn(&mut Cpu),
+        target: u32,
+        slot: u32,
+    ) {
+        if c.bus.read32(gate) != magic {
+            return fakes::fall_back(c, prev, generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, target, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(gate + slot) as u64;
+        }
+    }
+
+    pub(crate) static OC1493_PREV_GET_UINT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1493_fake_get_uint(c: &mut Cpu) {
+        if c.bus.read32(OC1493_RT_GATE) != OC1493_RT_MAGIC {
+            return fakes::fall_back(c, &OC1493_PREV_GET_UINT, ee::s09::f_002d2558__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, 0x002d_2558, ra);
+    }
+
+    pub(crate) static OC1493_PREV_READ_VOLUME: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1493_fake_read_volume(c: &mut Cpu) {
+        oc1493_answer(
+            c,
+            OC1493_RT_GATE,
+            OC1493_RT_MAGIC,
+            &OC1493_PREV_READ_VOLUME,
+            ee::s02::f_0016c4c8__generated,
+            0x0016_c4c8,
+            0x8,
+        );
+    }
+
+    pub(crate) static OC1493_PREV_READ_ACTION: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1493_fake_read_action(c: &mut Cpu) {
+        // The first action read answers at +0xc, the second (returning to
+        // 0x16c4ac) at +0x10.
+        let slot = if c.g[RA][0] as u32 == 0x0016_c4ac {
+            0x10
+        } else {
+            0xc
+        };
+        oc1493_answer(
+            c,
+            OC1493_RT_GATE,
+            OC1493_RT_MAGIC,
+            &OC1493_PREV_READ_ACTION,
+            ee::s02::f_0016c518__generated,
+            0x0016_c518,
+            slot,
+        );
+    }
+
+    pub(crate) static OC1493_PREV_CD_GET_ENTRY: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1493_fake_cd_get_entry(c: &mut Cpu) {
+        oc1493_answer(
+            c,
+            OC1493_SIZE_GATE,
+            OC1493_SIZE_MAGIC,
+            &OC1493_PREV_CD_GET_ENTRY,
+            ee::s14::f_003e48d8__generated,
+            0x003e_48d8,
+            0x8,
+        );
+    }
+
+    pub(crate) static OC1493_PREV_LSEEK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1493_fake_lseek(c: &mut Cpu) {
+        oc1493_answer(
+            c,
+            OC1493_SIZE_GATE,
+            OC1493_SIZE_MAGIC,
+            &OC1493_PREV_LSEEK,
+            ee::s15::f_00428168__generated,
+            0x0042_8168,
+            0x10,
+        );
+    }
+
+    oc1493_fake!(
+        oc1493_fake_sce_close,
+        OC1493_PREV_SCE_CLOSE,
+        ee::s15::f_00427fe8__generated,
+        0x0042_7fe8,
+        OC1493_CLOSE_GATE,
+        OC1493_CLOSE_MAGIC
+    );
+
+    oc1493_fake!(
+        oc1493_fake_tail_0274,
+        OC1493_PREV_TAIL_0274,
+        ee::s13::f_003a0274__generated,
+        0x003a_0274,
+        OC1493_TAIL_0274_GATE,
+        OC1493_TAIL_0274_MAGIC
+    );
+
+    oc1493_fake!(
+        oc1493_fake_tail_39e0,
+        OC1493_PREV_TAIL_39E0,
+        ee::s13::f_003a39e0__generated,
+        0x003a_39e0,
+        OC1493_TAIL_39E0_GATE,
+        OC1493_TAIL_39E0_MAGIC
+    );
+
+    oc1493_fake!(
+        oc1493_fake_quad_init,
+        OC1493_PREV_QUAD_INIT,
+        ee::s08::f_002c17c0__generated,
+        0x002c_17c0,
+        OC1493_QUAD_GATE,
+        OC1493_QUAD_MAGIC
+    );
+
+    pub(crate) fn oc1493_install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s09::OVERRIDE_002D2558),
+            oc1493_fake_get_uint,
+            &OC1493_PREV_GET_UINT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016C4C8),
+            oc1493_fake_read_volume,
+            &OC1493_PREV_READ_VOLUME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016C518),
+            oc1493_fake_read_action,
+            &OC1493_PREV_READ_ACTION,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s14::OVERRIDE_003E48D8),
+            oc1493_fake_cd_get_entry,
+            &OC1493_PREV_CD_GET_ENTRY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00428168),
+            oc1493_fake_lseek,
+            &OC1493_PREV_LSEEK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00427FE8),
+            oc1493_fake_sce_close,
+            &OC1493_PREV_SCE_CLOSE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A0274),
+            oc1493_fake_tail_0274,
+            &OC1493_PREV_TAIL_0274,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_003A39E0),
+            oc1493_fake_tail_39e0,
+            &OC1493_PREV_TAIL_39E0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s08::OVERRIDE_002C17C0),
+            oc1493_fake_quad_init,
+            &OC1493_PREV_QUAD_INIT,
+        );
+    }
+
+    /// `lbl_003A0270`: the store and the tail call to 0x3a0274 (faked).
+    #[test]
+    fn lbl_003a0270_matches() {
+        oc1493_install_fakes();
+        fakes::covered(
+            ee::s13::f_003a0270__generated,
+            lbl_003a0270,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3a0270, 1);
+                c.bus.write32(OC1493_TAIL_0274_GATE, OC1493_TAIL_0274_MAGIC);
+                c.g[A3][0] = (DATA + 0x1000) as u64;
+                c.f[1] = r.edge_f32();
+            },
+        );
+    }
+
+    /// `lbl_003A3948`: `f0 = f1 * gp[-0x24f0]`, stored, tail call (faked).
+    #[test]
+    fn lbl_003a3948_matches() {
+        oc1493_install_fakes();
+        fakes::covered(
+            ee::s13::f_003a3948__generated,
+            lbl_003a3948,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3a3948, 1);
+                c.bus.write32(OC1493_TAIL_39E0_GATE, OC1493_TAIL_39E0_MAGIC);
+                c.bus.write32(GAME_GP.wrapping_sub(0x24f0), r.edge_f32());
+                c.g[T0][0] = (DATA + 0x1000) as u64;
+                c.f[1] = r.edge_f32();
+            },
+        );
+    }
+
+    /// `lbl_003A3958`: as above with `gp[-0x24ec]` and the store at +0x54.
+    #[test]
+    fn lbl_003a3958_matches() {
+        oc1493_install_fakes();
+        fakes::covered(
+            ee::s13::f_003a3958__generated,
+            lbl_003a3958,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3a3958, 1);
+                c.bus.write32(OC1493_TAIL_39E0_GATE, OC1493_TAIL_39E0_MAGIC);
+                c.bus.write32(GAME_GP.wrapping_sub(0x24ec), r.edge_f32());
+                c.g[T0][0] = (DATA + 0x1000) as u64;
+                c.f[1] = r.edge_f32();
+            },
+        );
+    }
+
+    /// Fixture of the three one-store labels: `t0` points at scratch memory,
+    /// the loop count `a1` is zero so the shared tail returns at once.
+    pub(crate) fn oc1494_tail_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        c.g[T0][0] = sx(DATA + 0x100);
+        c.g[A1][0] = 0;
+        c.f[1] = r.next_u32();
+    }
+
+    #[test]
+    fn lbl_003a3938_matches() {
+        check(
+            ee::s13::f_003a3938__generated,
+            lbl_003a3938,
+            200,
+            &|c, seed| oc1494_tail_setup(c, seed, 0x003a_3938),
+        );
+    }
+
+    #[test]
+    fn lbl_003a3940_matches() {
+        check(
+            ee::s13::f_003a3940__generated,
+            lbl_003a3940,
+            200,
+            &|c, seed| oc1494_tail_setup(c, seed, 0x003a_3940),
+        );
+    }
+
+    #[test]
+    fn lbl_003a39d4_matches() {
+        check(
+            ee::s13::f_003a39d4__generated,
+            lbl_003a39d4,
+            200,
+            &|c, seed| oc1494_tail_setup(c, seed, 0x003a_39d4),
+        );
+    }
+
+    /// Magic word that turns a gated fake on in this fixture's machine.
+    pub(crate) const MAGIC: u32 = 0x1499_c0de;
+
+    /// One gate word per fake (each fake answers only in its own machine).
+    pub(crate) const GATE_NEW: u32 = DATA + 0x20_1000;
+
+    pub(crate) const GATE_DELETE: u32 = DATA + 0x20_1040;
+
+    pub(crate) const GATE_INIT1: u32 = DATA + 0x20_1080;
+
+    pub(crate) const GATE_INIT2: u32 = DATA + 0x20_10c0;
+
+    pub(crate) const GATE_LOADTABLE: u32 = DATA + 0x20_1100;
+
+    pub(crate) const GATE_SNDOPEN: u32 = DATA + 0x20_1140;
+
+    pub(crate) const GATE_EVAL: u32 = DATA + 0x20_1180;
+
+    /// Gated fakes for the callees the replacements call directly or through
+    /// a function pointer: each one logs the call (`fakes::fake`) when its gate
+    /// word is set, and runs the body it replaced otherwise.
+    macro_rules! gated_fakes {
+        ($( ($fake:ident, $gate:expr, $target:expr, $slot:path, $generated:path) ),* $(,)?) => {
+            $(
+                fn $fake(c: &mut Cpu) {
+                    if c.bus.read32($gate) != MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($fake), $generated);
+                    }
+                    let ra = c.g[RA][0] as u32;
+                    fakes::fake(c, $target, ra);
+                }
+            )*
+
+            /// Hooks the fakes above (once per process).
+            pub(crate) fn oc1499_install_fakes() {
+                $(
+                    fakes::hook(addr_of_mut!($slot), $fake, fakes::prev_cell($fake));
+                )*
+            }
+        };
+    }
+
+    gated_fakes! {
+        (oc1499_fake_new, GATE_NEW, 0x0031_7e30, ee::s10::OVERRIDE_00317E30, ee::s10::f_00317e30__generated),
+        (oc1499_fake_delete, GATE_DELETE, 0x0031_7e50, ee::s10::OVERRIDE_00317E50, ee::s10::f_00317e50__generated),
+        (oc1499_fake_init1, GATE_INIT1, 0x002f_83b0, ee::s09::OVERRIDE_002F83B0, ee::s09::f_002f83b0__generated),
+        (oc1499_fake_init2, GATE_INIT2, 0x002f_9838, ee::s09::OVERRIDE_002F9838, ee::s09::f_002f9838__generated),
+        (oc1499_fake_loadtable, GATE_LOADTABLE, 0x0019_59a8, ee::s02::OVERRIDE_001959A8, ee::s02::f_001959a8__generated),
+        (oc1499_fake_sndopen, GATE_SNDOPEN, 0x003b_7450, ee::s13::OVERRIDE_003B7450, ee::s13::f_003b7450__generated),
+        (oc1499_fake_eval, GATE_EVAL, 0x0032_0c48, ee::s10::OVERRIDE_00320C48, ee::s10::f_00320c48__generated),
+    }
+
+    #[test]
+    fn lbl_0017fe2c_matches() {
+        oc1499_install_fakes();
+        check(
+            ee::s02::f_0017fe2c__generated,
+            lbl_0017fe2c,
+            200,
+            &|c: &mut Cpu, seed: u32| {
+                let mut r = fakes::machine(c, seed, 0x17_fe2c, 0);
+                c.bus.write32(GATE_EVAL, MAGIC);
+                c.g[A2][0] = (DATA + 0x6000) as u64;
+                c.bus.write32(DATA + 0x6018, r.next_u32());
+            },
+        );
+    }
+
+    /// `cOVStateOverlay_v25` (0x0021_c700) against the generated body.
+    #[test]
+    fn c_ov_state_overlay_v25_0021c700_matches() {
+        check(
+            ee::s05::f_0021c700__generated,
+            c_ov_state_overlay_v25_0021c700,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x21c700, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Gate word of this module's fakes (own address and magic in the machine's
+    /// RAM: other tests' machines run the real bodies).
+    pub(crate) const OC1526_CTRL: u32 = DATA + 0xf_0000;
+
+    pub(crate) const OC1526_MAGIC: u32 = 0x1526_f00d;
+
+    /// Fixture objects, clear of the allocator pools, the arena and the call log.
+    pub(crate) const OC1526_BASE: u32 = DATA + 0x9_0000;
+
+    macro_rules! oc1526_fakes {
+        ($($name:ident, $addr:expr, $slot:path, $gen:path;)*) => {
+            $(
+                fn $name(c: &mut Cpu) {
+                    if c.bus.read32(OC1526_CTRL) != OC1526_MAGIC {
+                        return fakes::fall_back(c, fakes::prev_cell($name), $gen);
+                    }
+                    fakes::fake_call(c, $addr);
+                }
+            )*
+            pub(crate) fn oc1526_hook() {
+                $( fakes::hook(addr_of_mut!($slot), $name, fakes::prev_cell($name)); )*
+            }
+        };
+    }
+
+    oc1526_fakes! {
+        oc1526_fake_init_a, 0x0042_c300, ee::s15::OVERRIDE_0042C300, ee::s15::f_0042c300__generated;
+        oc1526_fake_init_b, 0x0042_4020, ee::s15::OVERRIDE_00424020, ee::s15::f_00424020__generated;
+        oc1526_fake_main, 0x0031_af80, ee::s10::OVERRIDE_0031AF80, ee::s10::f_0031af80__generated;
+        oc1526_fake_exit, 0x0042_c6e8, ee::s15::OVERRIDE_0042C6E8, ee::s15::f_0042c6e8__generated;
+        oc1526_fake_state_ctor, 0x0039_e2a0, ee::s13::OVERRIDE_0039E2A0, ee::s13::f_0039e2a0__generated;
+        oc1526_fake_get_a, 0x001a_1cd0, ee::s03::OVERRIDE_001A1CD0, ee::s03::f_001a1cd0__generated;
+        oc1526_fake_get_b, 0x0014_dc80, ee::s01::OVERRIDE_0014DC80, ee::s01::f_0014dc80__generated;
+        oc1526_fake_get_c, 0x0014_dd58, ee::s01::OVERRIDE_0014DD58, ee::s01::f_0014dd58__generated;
+        oc1526_fake_get_d, 0x0014_7488, ee::s01::OVERRIDE_00147488, ee::s01::f_00147488__generated;
+        oc1526_fake_get_e, 0x0014_a130, ee::s01::OVERRIDE_0014A130, ee::s01::f_0014a130__generated;
+        oc1526_fake_get_f, 0x0014_6d98, ee::s01::OVERRIDE_00146D98, ee::s01::f_00146d98__generated;
+        oc1526_fake_get_g, 0x0015_0928, ee::s01::OVERRIDE_00150928, ee::s01::f_00150928__generated;
+    }
+
+    /// Fixture for the reward gallery constructor: the base constructor and every
+    /// lookup are fakes with forced results (call 3 returns the looked-up object, call 6
+    /// the category that picks the jump-table arm); `a3` and the byte argument vary.
+    pub(crate) fn oc1526_ctor_setup(c: &mut Cpu, seed: u32, calls: u32) -> crate::difftest::Rng {
+        oc1526_hook();
+        let r = fakes::machine_rt(c, seed, 0x1526_c, calls);
+        elf_image(c);
+        c.bus.write32(OC1526_CTRL, OC1526_MAGIC);
+        let h = fakes::mix(seed as u64 ^ 0x1526_0000);
+        let b = OC1526_BASE;
+        let (obj, vt, st) = (b + 0x1000, b + 0x2000, b + 0x3000);
+        c.bus.write32(b + 0x10, st);
+        c.bus.write32(obj + 0xc, vt);
+        c.bus.write16(vt + 0x10, (((h >> 20) % 16) * 4) as u16);
+        c.bus.write32(vt + 0x14, fakes::FAKE + 0x10);
+        // Call 3 (the object lookup) returns `obj`.
+        c.bus.write32(fakes::LOG_RESULTS + 4 * 3, obj);
+        let s3_set = (h & 1) != 0;
+        // With a3 set, call 6 returns the category: 0x11..0x15 pick a jump-table arm,
+        // others fall through to the default.
+        let cats = [0x11u32, 0x12, 0x13, 0x14, 0x15, 0x30, 0x10];
+        c.bus.write32(
+            fakes::LOG_RESULTS + 4 * 6,
+            cats[((h >> 4) % cats.len() as u64) as usize],
+        );
+        c.g[A0][0] = b as u64;
+        c.g[A2][0] = (h >> 8) & 0xff;
+        c.g[A3][0] = if s3_set { 0x1234_5678 } else { 0 };
+        c.g[T0][0] = (h >> 16) & 0xffff_ffff;
+        c.pc = 0x001c_eea0;
+        r
+    }
+
+    /// The seeds take many distinct paths (a3 set or not, each jump-table arm, the
+    /// default, unwinds at different calls).
+    #[test]
+    fn c_fe_state_reward_gallery_ctor_path_count() {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..64 {
+            let mut c = crate::difftest::fresh();
+            oc1526_ctor_setup(&mut c, seed, 11);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s04::f_001ceea0__generated);
+            seen.insert(c.cycles - before);
+        }
+        assert!(seen.len() >= 6, "only {} distinct paths", seen.len());
+    }
+
+    driven!(oc1526_ctor_gen_driven, ee::s04::f_001ceea0__generated);
+
+    driven!(oc1526_ctor_hand_driven, c_fe_state_reward_gallery_ctor);
+
+    /// Events at the zeroing loops' back edges: delivered, or unwinding and resumed natively.
+    #[test]
+    fn c_fe_state_reward_gallery_ctor_events() {
+        check_events(
+            oc1526_ctor_gen_driven,
+            oc1526_ctor_hand_driven,
+            120,
+            &|c, seed| {
+                let mut r = oc1526_ctor_setup(c, seed, 0);
+                schedule(c, &mut r, seed, 0x001c_eea0)
+            },
+        );
+    }
+
+    /// Fixture for the two reward-level leaves: the per-rider byte at
+    /// `0x4a6ca8 + 0xf88*b + 0x9b50*a + 0xbe5` and the neighbouring total word.
+    pub(crate) fn oc1526_level_cell(c: &mut Cpu, a: u32, b: u32, level: u8, total: u32) {
+        let base = 0x004a_6ca8u32
+            .wrapping_add(0x0f88u32.wrapping_mul(b))
+            .wrapping_add(0x9b50u32.wrapping_mul(a));
+        c.bus.write8(base + 0xbe5, level);
+        c.bus.write32(base + 0xac4, total);
+    }
+
+    pub(crate) const OC1526_LEVELS: [u8; 8] = [0, 1, 3, 4, 5, 6, 9, 0xff];
+
+    /// `lbl_00150f98`: at level 5 it returns 0 untouched; otherwise it adds the table cost to
+    /// the total word and increments the level.
+    #[test]
+    fn beecon_raise_attribute_level_matches() {
+        check(
+            ee::s01::f_00150f98__generated,
+            beecon_raise_attribute_level,
+            200,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x1526_a, 0);
+                elf_image(c);
+                let h = fakes::mix(seed as u64 ^ 0x1526_a000);
+                let (a, b) = ((h % 3) as u32, ((h >> 4) % 3) as u32);
+                // t3 is the 0x9b50 stride index, t4 the 0xf88 stride index.
+                c.g[T3][0] = a as u64;
+                c.g[T4][0] = b as u64;
+                oc1526_level_cell(
+                    c,
+                    a,
+                    b,
+                    OC1526_LEVELS[((h >> 8) % 8) as usize],
+                    (h >> 16) as u32,
+                );
+                c.pc = 0x0015_0f98;
+            },
+        );
+    }
+
+    /// Resume points of the twin of `lbl_00150f98`, with plausible registers.
+    #[test]
+    fn beecon_raise_attribute_level_resumes_match() {
+        for pc in [
+            0x0015_0fbcu32,
+            0x0015_0fcc,
+            0x0015_0ff4,
+            0x0015_1034,
+            0x0015_0f9c,
+        ] {
+            check(
+                ee::s01::f_00150f98__generated,
+                beecon_raise_attribute_level,
+                16,
+                &|c, seed| {
+                    fakes::machine(c, seed, 0x1526_b, 0);
+                    elf_image(c);
+                    let h = fakes::mix(seed as u64 ^ 0x1526_b000);
+                    c.bus.write8(DATA + 0x1000, OC1526_LEVELS[(h % 8) as usize]);
+                    c.g[T1][0] = (DATA + 0x1000) as u64;
+                    c.g[T3][0] = (h >> 4) % 3;
+                    c.g[T4][0] = (h >> 8) % 3;
+                    c.g[V0][0] = 5;
+                    c.g[A1][0] = (DATA + 0x2000) as u64;
+                    c.g[A2][0] = 0x0044_0550;
+                    c.g[A3][0] = 0;
+                    c.g[V1][0] = 0;
+                    c.g[T0][0] = (h >> 12) % 8;
+                    c.lo[0] = (h >> 16) % 3;
+                    c.pc = pc;
+                },
+            );
+        }
+    }
+
+    /// `lbl_00151310`: the cost word for the level byte of rider cell (a1, a2).
+    #[test]
+    fn beecon_attribute_cost_word_matches() {
+        check(
+            ee::s01::f_00151310__generated,
+            beecon_attribute_cost_word,
+            200,
+            &|c, seed| {
+                fakes::machine(c, seed, 0x1526_d, 0);
+                elf_image(c);
+                let h = fakes::mix(seed as u64 ^ 0x1526_d000);
+                let (a, b) = ((h % 3) as u32, ((h >> 4) % 3) as u32);
+                c.g[A1][0] = a as u64;
+                c.g[A2][0] = b as u64;
+                oc1526_level_cell(c, a, b, OC1526_LEVELS[((h >> 8) % 8) as usize], 0);
+                c.pc = 0x0015_1310;
+            },
+        );
+    }
+
+    /// Resume points of the twin of `lbl_00151310`.
+    #[test]
+    fn beecon_attribute_cost_word_resumes_match() {
+        for pc in [0x0015_1334u32, 0x0015_1348, 0x0015_1314] {
+            check(
+                ee::s01::f_00151310__generated,
+                beecon_attribute_cost_word,
+                16,
+                &|c, seed| {
+                    fakes::machine(c, seed, 0x1526_e, 0);
+                    elf_image(c);
+                    let h = fakes::mix(seed as u64 ^ 0x1526_e000);
+                    c.bus.write8(DATA + 0x1000, OC1526_LEVELS[(h % 8) as usize]);
+                    c.g[V1][0] = (DATA + 0x1000) as u64;
+                    c.g[V0][0] = (h >> 4) % 10;
+                    c.g[A0][0] = 5;
+                    c.g[A1][0] = (h >> 8) % 3;
+                    c.g[A2][0] = (h >> 12) % 3;
+                    c.pc = pc;
+                },
+            );
+        }
+    }
+
+    /// `0x001ff7a8`: from the start, from the return entry and from an
+    /// address that is no entry (a jump out).
+    #[test]
+    fn tail_return_0x101_matches() {
+        check(
+            ee::s05::f_001ff7a8__generated,
+            tail_return_0x101,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1ff7a8, 0);
+                let sp = c.g[SP][0] as u32;
+                fill_frame(c, sp, seed);
+                c.pc = match seed % 3 {
+                    0 => 0x001f_f7a8,
+                    1 => 0x001f_f7ac,
+                    _ => 0x001f_f7b0,
+                };
+            },
+        );
+    }
+
+    /// A saved `ra` in the frame at `sp`.
+    pub(crate) fn fill_frame(c: &mut Cpu, sp: u32, seed: u32) {
+        let mut r = crate::difftest::Rng(0x1ff7a8 ^ seed as u64);
+        fill(c, &mut r, sp, 4);
+    }
+
+    /// Gate word in the machine's RAM: the callee fakes below answer only
+    /// when it holds [`OC1536_MAGIC`] (otherwise they fall back to the body
+    /// they replaced).
+    pub(crate) const OC1536_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const OC1536_MAGIC: u32 = 0x1536_c0de;
+
+    /// The forced `Bolts_FindBoltIndex` result, read by its fake.
+    pub(crate) const OC1536_FIND_RESULT: u32 = OC1536_CTRL + 0x20;
+
+    pub(crate) static OC1536_PREV_0014D448: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1536_PREV_0014D240: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1536_PREV_0014BE70: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1536_PREV_0014C2B0: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1536_PREV_0014C320: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1536_PREV_0014C3C8: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1536_PREV_0014C488: AtomicUsize = AtomicUsize::new(0);
+
+    /// Log a call the gate lets through (`fakes::fake`; the fixtures use no
+    /// call budget, so it never unwinds). With the gate off, run the body the
+    /// fake replaced and return false.
+    pub(crate) fn oc1536_gated(
+        c: &mut Cpu,
+        addr: u32,
+        prev: &AtomicUsize,
+        generated: fn(&mut Cpu),
+    ) -> bool {
+        if c.bus.read32(OC1536_CTRL) != OC1536_MAGIC {
+            fakes::fall_back(c, prev, generated);
+            return false;
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, addr, ra);
+        true
+    }
+
+    pub(crate) fn oc1536_fake_find_bolt_index(c: &mut Cpu) {
+        if oc1536_gated(
+            c,
+            0x0014_d448,
+            &OC1536_PREV_0014D448,
+            ee::s01::f_0014d448__generated,
+        ) {
+            let index = c.bus.read32(OC1536_FIND_RESULT);
+            c.g[V0][0] = sx(index);
+        }
+    }
+
+    pub(crate) fn oc1536_fake_free_db(c: &mut Cpu) {
+        oc1536_gated(
+            c,
+            0x0014_d240,
+            &OC1536_PREV_0014D240,
+            ee::s01::f_0014d240__generated,
+        );
+    }
+
+    pub(crate) fn oc1536_fake_read_file(c: &mut Cpu) {
+        oc1536_gated(
+            c,
+            0x0014_be70,
+            &OC1536_PREV_0014BE70,
+            ee::s01::f_0014be70__generated,
+        );
+    }
+
+    pub(crate) fn oc1536_fake_index_bolts(c: &mut Cpu) {
+        oc1536_gated(
+            c,
+            0x0014_c2b0,
+            &OC1536_PREV_0014C2B0,
+            ee::s01::f_0014c2b0__generated,
+        );
+    }
+
+    pub(crate) fn oc1536_fake_index_table2(c: &mut Cpu) {
+        oc1536_gated(
+            c,
+            0x0014_c320,
+            &OC1536_PREV_0014C320,
+            ee::s01::f_0014c320__generated,
+        );
+    }
+
+    pub(crate) fn oc1536_fake_index_table3(c: &mut Cpu) {
+        oc1536_gated(
+            c,
+            0x0014_c3c8,
+            &OC1536_PREV_0014C3C8,
+            ee::s01::f_0014c3c8__generated,
+        );
+    }
+
+    pub(crate) fn oc1536_fake_index_table4(c: &mut Cpu) {
+        oc1536_gated(
+            c,
+            0x0014_c488,
+            &OC1536_PREV_0014C488,
+            ee::s01::f_0014c488__generated,
+        );
+    }
+
+    /// Hook the callee fakes (once per process; each falls back when the
+    /// gate is off).
+    pub(crate) fn oc1536_install() {
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014D448),
+            oc1536_fake_find_bolt_index,
+            &OC1536_PREV_0014D448,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014D240),
+            oc1536_fake_free_db,
+            &OC1536_PREV_0014D240,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014BE70),
+            oc1536_fake_read_file,
+            &OC1536_PREV_0014BE70,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014C2B0),
+            oc1536_fake_index_bolts,
+            &OC1536_PREV_0014C2B0,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014C320),
+            oc1536_fake_index_table2,
+            &OC1536_PREV_0014C320,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014C3C8),
+            oc1536_fake_index_table3,
+            &OC1536_PREV_0014C3C8,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s01::OVERRIDE_0014C488),
+            oc1536_fake_index_table4,
+            &OC1536_PREV_0014C488,
+        );
+    }
+
+    /// The `Bolts_LoadDB` fixture: a loaded database (the early return), or
+    /// the full reload with the callees faked and the four index loops fed
+    /// a few entries.
+    pub(crate) fn oc1536_load_db_setup(c: &mut Cpu, seed: u32) {
+        let mut r = fakes::machine(c, seed, 0x14c6a0, 0);
+        c.bus.write32(OC1536_CTRL, OC1536_MAGIC);
+        let this = DATA + 0x1000;
+        c.g[A0][0] = sx(this);
+        if seed % 3 == 0 {
+            c.bus.write32(this + 0x10, DATA + 0x3000);
+            return;
+        }
+        c.bus.write32(this + 0x10, 0);
+        // 0 skips the table loops (the count is below one).
+        c.bus.write32(this + 4, (seed / 3) % 2);
+        // Loop counts at the global table for (outer k, inner j).
+        for (k, j, n) in [(0u32, 0u32, 2u32), (1, 3, 1), (2, 9, 3)] {
+            let base = 0x004a_6ca8 + k * 0x9b50 + j * 0xf88;
+            c.bus.write32(base + 0x28c, n);
+            for i in 0..n {
+                c.bus.write32(base + 0x290 + 4 * i, r.next_u32());
+            }
+        }
+    }
+
+    /// A state thunk fixture: the (T3, T4) pair's state byte, 5 (done) or
+    /// an active value; the caller's `ra` is the test return address.
+    pub(crate) fn oc1536_thunk_setup(c: &mut Cpu, seed: u32, off: u32) {
+        let _ = fakes::machine(c, seed, 0x150ea8, 0);
+        c.g[RA][0] = sx(DIFF_RA);
+        let t3 = seed % 5;
+        let t4 = (seed / 5) % 4;
+        c.g[T3][0] = t3 as u64;
+        c.g[T4][0] = t4 as u64;
+        let state = if seed % 2 == 0 {
+            5
+        } else {
+            ((seed / 2) % 4) as u8
+        };
+        let t1 = 0x004a_6ca8 + t3 * 0x9b50 + t4 * 0xf88 + off;
+        c.bus.write8(t1, state);
+    }
+
+    #[test]
+    fn bolts_load_db_matches() {
+        oc1536_install();
+        check_lohi(
+            ee::s01::f_0014c6a0__generated,
+            bolts_load_db,
+            200,
+            &|c, seed| oc1536_load_db_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn state_thunk_00150ea8_matches() {
+        check_lohi(
+            ee::s01::f_00150ea8__generated,
+            state_thunk_00150ea8,
+            200,
+            &|c, seed| oc1536_thunk_setup(c, seed, 0xbdf),
+        );
+    }
+
+    #[test]
+    fn state_thunk_00150ed0_matches() {
+        check_lohi(
+            ee::s01::f_00150ed0__generated,
+            state_thunk_00150ed0,
+            200,
+            &|c, seed| oc1536_thunk_setup(c, seed, 0xbe0),
+        );
+    }
+
+    #[test]
+    fn state_thunk_00150ef8_matches() {
+        check_lohi(
+            ee::s01::f_00150ef8__generated,
+            state_thunk_00150ef8,
+            200,
+            &|c, seed| oc1536_thunk_setup(c, seed, 0xbe1),
+        );
+    }
+
+    #[test]
+    fn state_thunk_00150f20_matches() {
+        check_lohi(
+            ee::s01::f_00150f20__generated,
+            state_thunk_00150f20,
+            200,
+            &|c, seed| oc1536_thunk_setup(c, seed, 0xbe2),
+        );
+    }
+
+    /// The stub fixture: the two scaled indices are small (so the byte pointer
+    /// stays in RAM), and the byte at the pointer is 5 on one seed in three (the
+    /// dispatcher's early return) and random otherwise. Everything else is junk.
+    pub(crate) fn oc1537_stub_setup(c: &mut Cpu, seed: u32, rs1: usize, rs2: usize, off: u32) {
+        let mut r = Rng(0x1537_0000 ^ seed as u64);
+        scramble(c, &mut r);
+        let a = (seed % 3) as u64;
+        let b = (seed / 3 % 2) as u64;
+        c.g[rs1][0] = a;
+        c.g[rs2][0] = b;
+        let p = 0x004a_6ca8 + off + (b as u32) * 0x9b50 + (a as u32) * 0xf88;
+        let byte = if seed % 3 == 0 { 5 } else { r.next_u32() as u8 };
+        c.bus.write8(p, byte);
+    }
+
+    #[test]
+    fn tail_stub_t1_150f48_matches() {
+        check(
+            ee::s01::f_00150f48__generated,
+            tail_stub_t1_150f48,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, T4, T3, 0xbe3),
+        );
+    }
+
+    #[test]
+    fn tail_stub_t1_150f70_matches() {
+        check(
+            ee::s01::f_00150f70__generated,
+            tail_stub_t1_150f70,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, T4, T3, 0xbe4),
+        );
+    }
+
+    #[test]
+    fn tail_stub_v1_151220_matches() {
+        check(
+            ee::s01::f_00151220__generated,
+            tail_stub_v1_151220,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, A2, A1, 0xbdf),
+        );
+    }
+
+    #[test]
+    fn tail_stub_v1_151248_matches() {
+        check(
+            ee::s01::f_00151248__generated,
+            tail_stub_v1_151248,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, A2, A1, 0xbe0),
+        );
+    }
+
+    #[test]
+    fn tail_stub_v1_151270_matches() {
+        check(
+            ee::s01::f_00151270__generated,
+            tail_stub_v1_151270,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, A2, A1, 0xbe1),
+        );
+    }
+
+    #[test]
+    fn tail_stub_v1_151298_matches() {
+        check(
+            ee::s01::f_00151298__generated,
+            tail_stub_v1_151298,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, A2, A1, 0xbe2),
+        );
+    }
+
+    #[test]
+    fn tail_stub_v1_1512c0_matches() {
+        check(
+            ee::s01::f_001512c0__generated,
+            tail_stub_v1_1512c0,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, A2, A1, 0xbe3),
+        );
+    }
+
+    #[test]
+    fn tail_stub_v1_1512e8_matches() {
+        check(
+            ee::s01::f_001512e8__generated,
+            tail_stub_v1_1512e8,
+            120,
+            &|c, seed| oc1537_stub_setup(c, seed, A2, A1, 0xbe4),
+        );
+    }
+
+    /// The gated fake of `InputBinding_EvalBool` (0x320c48): the resume arm of
+    /// `0x17fe64` calls it, and the real one runs the bytecode VM. With the
+    /// gate word set it returns the forced word; otherwise the body it replaced.
+    pub(crate) const EVAL_GATE: u32 = DATA + 0x5_1538;
+
+    pub(crate) const EVAL_RESULT: u32 = DATA + 0x5_153c;
+
+    pub(crate) const EVAL_MAGIC: u32 = 0x1538_e7a1;
+
+    pub(crate) static EVAL_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn eval_fake(c: &mut Cpu) {
+        if c.bus.read32(EVAL_GATE) != EVAL_MAGIC {
+            return fakes::fall_back(c, &EVAL_PREV, ee::s10::f_00320c48__generated);
+        }
+        c.cycles += 9;
+        c.g[V0][0] = c.bus.read32(EVAL_RESULT) as u64;
+        ret(c);
+    }
+
+    pub(crate) fn hook_eval() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00320C48),
+            eval_fake,
+            &EVAL_PREV,
+        );
+    }
+
+    pub(crate) fn tail_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = Rng(salt ^ seed as u64);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        c.g[A2][0] = DATA as u64;
+        // The arm loads its return address from the frame the stub did not open.
+        c.bus
+            .write64(crate::difftest::SP, crate::difftest::RA as u64);
+        c.bus.write32(EVAL_GATE, EVAL_MAGIC);
+        c.bus.write32(EVAL_RESULT, r.next_u32());
+    }
+
+    #[test]
+    fn lbl_0017fe4c_matches() {
+        hook_eval();
+        check(
+            ssx3_ee::s02::f_0017fe4c__generated,
+            lbl_0017fe4c,
+            60,
+            &|c, seed| tail_fixture(c, seed, 0x1538_4c00),
+        );
+    }
+
+    #[test]
+    fn lbl_0017fe54_matches() {
+        hook_eval();
+        check(
+            ssx3_ee::s02::f_0017fe54__generated,
+            lbl_0017fe54,
+            60,
+            &|c, seed| tail_fixture(c, seed, 0x1538_5400),
+        );
+    }
+
+    #[test]
+    fn lbl_0017fe5c_matches() {
+        hook_eval();
+        check(
+            ssx3_ee::s02::f_0017fe5c__generated,
+            lbl_0017fe5c,
+            60,
+            &|c, seed| tail_fixture(c, seed, 0x1538_5c00),
+        );
+    }
+
+    pub(crate) const GATE_SHOW: u32 = DATA + 0x20_1546;
+
+    pub(crate) const GATE_CTOR: u32 = DATA + 0x20_154a;
+
+    pub(crate) const GATE_MAGIC: u32 = 0x1542_c0de;
+
+    /// `OVScreenRewardList_ShowPage` (0x1ffd08), gated.
+    pub(crate) fn oc1542_fake_show_page(c: &mut Cpu) {
+        if c.bus.read32(GATE_SHOW) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1542_fake_show_page),
+                ee::s05::f_001ffd08__generated,
+            );
+        }
+        fakes::fake_call(c, 0x001f_fd08);
+    }
+
+    /// `UIState_ctor` (0x39e2a0), gated.
+    pub(crate) fn oc1542_fake_ui_state_ctor(c: &mut Cpu) {
+        if c.bus.read32(GATE_CTOR) != GATE_MAGIC {
+            return fakes::fall_back(
+                c,
+                fakes::prev_cell(oc1542_fake_ui_state_ctor),
+                ee::s13::f_0039e2a0__generated,
+            );
+        }
+        fakes::fake_call(c, 0x0039_e2a0);
+    }
+
+    #[test]
+    fn lbl_001ff780_matches() {
+        check(
+            ee::s05::f_001ff780__generated,
+            lbl_001ff780_show_page_tail,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1542_1780, 2);
+                fakes::hook(
+                    addr_of_mut!(ee::s05::OVERRIDE_001FFD08),
+                    oc1542_fake_show_page,
+                    fakes::prev_cell(oc1542_fake_show_page),
+                );
+                c.bus.write32(GATE_SHOW, GATE_MAGIC);
+                c.g[A2][0] = sx(DATA + 0x20_3000 + 0x10 * (seed % 4));
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_001ff790_matches() {
+        check(
+            ee::s05::f_001ff790__generated,
+            lbl_001ff790_tail,
+            50,
+            &|c, seed| {
+                machine(c, seed, 0x1542_1790, 0);
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_001ff798_matches() {
+        check(
+            ee::s05::f_001ff798__generated,
+            lbl_001ff798_tail,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1542_1798, 0);
+                let obj = DATA + 0x20_3400;
+                // Below 10 (signed) takes the 0x1ff7ac tail, else 0x1ff7a8.
+                let v: u32 = match seed % 3 {
+                    0 => seed % 9,
+                    1 => 10 + seed % 7,
+                    _ => 0xffff_fff0,
+                };
+                c.bus.write32(obj + 0x9c, v);
+                c.g[A2][0] = sx(obj);
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_0020df10_matches() {
+        check(
+            ee::s05::f_0020df10__generated,
+            lbl_0020df10_count_check,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1542_0df1, 0);
+                let obj = DATA + 0x20_3800;
+                let count: u32 = if seed % 3 == 0 { 0 } else { 1 + seed % 5 };
+                c.bus.write32(obj + 0x9c, count);
+                c.g[A0][0] = sx(obj);
+                c.g[A2][0] = sx(seed % 12);
+            },
+        );
+    }
+
+    #[test]
+    fn ov_state_overlay_ctor_matches() {
+        check(
+            ee::s05::f_0021c640__generated,
+            ov_state_overlay_ctor,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1542_c640, 1);
+                fakes::hook(
+                    addr_of_mut!(ee::s13::OVERRIDE_0039E2A0),
+                    oc1542_fake_ui_state_ctor,
+                    fakes::prev_cell(oc1542_fake_ui_state_ctor),
+                );
+                c.bus.write32(GATE_CTOR, GATE_MAGIC);
+                c.g[A0][0] = sx(DATA + 0x20_3c00 + 0x10 * (seed % 4));
+            },
+        );
+    }
+
+    /// Gate words of the two gated fakes (unique fixture addresses).
+    pub(crate) const OC1543_MAGIC: u32 = 0x1543_0001;
+
+    pub(crate) const OC1543_INIT_CTRL: u32 = DATA + 0x2e_6000;
+
+    pub(crate) static OC1543_PREV_STATIC_INIT: AtomicUsize = AtomicUsize::new(0);
+
+    /// `cOVStateOverlay_StaticInitDestroy`: a logged no-op while the gate is on.
+    pub(crate) fn oc1543_fake_static_init(c: &mut Cpu) {
+        if c.bus.read32(OC1543_INIT_CTRL) != OC1543_MAGIC {
+            return fakes::fall_back(c, &OC1543_PREV_STATIC_INIT, ee::s05::f_002127e8__generated);
+        }
+        fakes::fake_call(c, 0x0021_27e8);
+    }
+
+    pub(crate) fn oc1543_hook_static_init() {
+        fakes::hook(
+            addr_of_mut!(ee::s05::OVERRIDE_002127E8),
+            oc1543_fake_static_init,
+            &OC1543_PREV_STATIC_INIT,
+        );
+    }
+
+    #[test]
+    fn cov_state_overlay_global_ctors_matches() {
+        oc1543_hook_static_init();
+        check(
+            ee::s05::f_00222428__generated,
+            cov_state_overlay_global_ctors,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x2224, 0);
+                c.bus.write32(OC1543_INIT_CTRL, OC1543_MAGIC);
+                c.pc = 0x0022_2428;
+            },
+        );
+    }
+
+    /// A3 / 3 then the shared body at 0x392f5c (a leaf) reads a record at T0.
+    #[test]
+    fn lbl_00392eec_matches() {
+        check_lohi(
+            ee::s13::f_00392eec__generated,
+            lbl_00392eec_div3_tail,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1565_2eec, 0);
+                c.pc = 0x0039_2eec;
+                c.g[T0][0] = (DATA + 0x1000) as u64;
+                for k in 0..0x40u32 {
+                    let v = r.next_u32() % 64;
+                    c.bus.write32(DATA + 0x1000 + 4 * k, v);
+                }
+                c.g[A3][0] = if seed % 2 == 0 {
+                    r.next_u32() as u64
+                } else {
+                    (r.next_u32() % 100) as u64
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_003c55dc_matches() {
+        check(
+            ee::s13::f_003c55dc__generated,
+            lbl_003c55dc_set_output_ptr,
+            50,
+            &|c, seed| {
+                machine(c, seed, 0x1565_55dc, 0);
+                c.pc = 0x003c_55dc;
+                c.g[A1][0] = (DATA + 0x100 + 4 * (seed % 8)) as u64;
+            },
+        );
+    }
+
+    /// The return address the fixtures put in `ra`.
+    pub(crate) const RET: u32 = crate::difftest::RA;
+
+    // Gate words: each gated fake answers only when its own word holds its
+    // magic in the machine's RAM; with the gate off it runs the body it
+    // replaced.
+    pub(crate) const OC1581_GATE_DMA: u32 = DATA + 0x0042_0000;
+
+    pub(crate) const OC1581_MAGIC_DMA: u32 = 0x3158_1001;
+
+    pub(crate) const OC1581_GATE_END_BLOCK: u32 = DATA + 0x0042_0008;
+
+    pub(crate) const OC1581_MAGIC_END_BLOCK: u32 = 0x3158_1002;
+
+    pub(crate) const OC1581_GATE_F392F5C: u32 = DATA + 0x0042_0010;
+
+    pub(crate) const OC1581_MAGIC_F392F5C: u32 = 0x3158_1003;
+
+    pub(crate) static OC1581_PREV_DMA_RUNNER: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1581_PREV_END_BLOCK: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1581_PREV_F392F5C: AtomicUsize = AtomicUsize::new(0);
+
+    /// The callee of the DMA tail at 0x372100 when the table holds its owner
+    /// (0x371f98, a body with no resume entries): a logged call.
+    pub(crate) fn oc1581_fake_dma_runner(c: &mut Cpu) {
+        if c.bus.read32(OC1581_GATE_DMA) != OC1581_MAGIC_DMA {
+            return fakes::fall_back(c, &OC1581_PREV_DMA_RUNNER, ee::s12::f_00371f98__generated);
+        }
+        fakes::fake_call(c, 0x0037_2100);
+    }
+
+    /// `SprStream_EndBlock` (0x38f598) as a logged call.
+    pub(crate) fn oc1581_fake_end_block(c: &mut Cpu) {
+        if c.bus.read32(OC1581_GATE_END_BLOCK) != OC1581_MAGIC_END_BLOCK {
+            return fakes::fall_back(c, &OC1581_PREV_END_BLOCK, ee::s12::f_0038f598__generated);
+        }
+        fakes::fake_call(c, 0x0038_f598);
+    }
+
+    /// The dispatcher's tail callee 0x392f5c as a logged call.
+    pub(crate) fn oc1581_fake_f392f5c(c: &mut Cpu) {
+        if c.bus.read32(OC1581_GATE_F392F5C) != OC1581_MAGIC_F392F5C {
+            return fakes::fall_back(c, &OC1581_PREV_F392F5C, ee::s13::f_00392f5c__generated);
+        }
+        fakes::fake_call(c, 0x0039_2f5c);
+    }
+
+    pub(crate) fn hook_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_00371F98),
+            oc1581_fake_dma_runner,
+            &OC1581_PREV_DMA_RUNNER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s12::OVERRIDE_0038F598),
+            oc1581_fake_end_block,
+            &OC1581_PREV_END_BLOCK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s13::OVERRIDE_00392F5C),
+            oc1581_fake_f392f5c,
+            &OC1581_PREV_F392F5C,
+        );
+    }
+
+    /// The DMA label family: `a1` at a 16-aligned word of the data area,
+    /// `a2` a small count, `t1` picks the branch of the common tail, `ra` a
+    /// known return address.
+    pub(crate) fn dma_label_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = fakes::machine(c, seed, salt, 1);
+        c.bus.write32(OC1581_GATE_DMA, OC1581_MAGIC_DMA);
+        c.g[RA][0] = sx(RET);
+        c.g[A1][0] = sx(DATA + 0x1000);
+        c.g[A2][0] = (r.next_u32() % 4) as u64;
+        c.g[T0][0] = r.next_u32() as u64;
+        c.g[T1][0] = (seed % 2) as u64;
+        c.g[T2][0] = r.next_u32() as u64;
+        c.g[A3][0] = r.next_u32() as u64;
+    }
+
+    #[test]
+    fn dma_label_tail_0372144_matches() {
+        hook_fakes();
+        check(
+            ee::s12::f_00372144__generated,
+            dma_label_tail_0372144,
+            120,
+            &|c, seed| dma_label_setup(c, seed, 0x0037_2144),
+        );
+    }
+
+    #[test]
+    fn dma_label_tail_0372154_matches() {
+        hook_fakes();
+        check(
+            ee::s12::f_00372154__generated,
+            dma_label_tail_0372154,
+            120,
+            &|c, seed| dma_label_setup(c, seed, 0x0037_2154),
+        );
+    }
+
+    #[test]
+    fn dma_label_tail_0372178_matches() {
+        hook_fakes();
+        check(
+            ee::s12::f_00372178__generated,
+            dma_label_tail_0372178,
+            120,
+            &|c, seed| dma_label_setup(c, seed, 0x0037_2178),
+        );
+    }
+
+    #[test]
+    fn dma_label_tail_0372188_matches() {
+        hook_fakes();
+        check(
+            ee::s12::f_00372188__generated,
+            dma_label_tail_0372188,
+            120,
+            &|c, seed| dma_label_setup(c, seed, 0x0037_2188),
+        );
+    }
+
+    /// Dispatcher tail fixture: `a3` random, the callee 0x392f5c a logged
+    /// call, `ra` known.
+    pub(crate) fn dispatch_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = fakes::machine(c, seed, salt, 1);
+        c.bus.write32(OC1581_GATE_F392F5C, OC1581_MAGIC_F392F5C);
+        c.g[RA][0] = sx(RET);
+        c.g[A3][0] = r.next_u32() as u64;
+    }
+
+    #[test]
+    fn dispatch_tail_0392edc_matches() {
+        hook_fakes();
+        check(
+            ee::s13::f_00392edc__generated,
+            dispatch_tail_0392edc,
+            120,
+            &|c, seed| dispatch_setup(c, seed, 0x0039_2edc),
+        );
+    }
+
+    #[test]
+    fn dispatch_tail_0392ee4_matches() {
+        hook_fakes();
+        check(
+            ee::s13::f_00392ee4__generated,
+            dispatch_tail_0392ee4,
+            120,
+            &|c, seed| dispatch_setup(c, seed, 0x0039_2ee4),
+        );
+    }
+
+    #[test]
+    fn tail_0392f08_matches() {
+        hook_fakes();
+        check(
+            ee::s13::f_00392f08__generated,
+            tail_0392f08,
+            120,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0039_2f08, 1);
+                c.bus.write32(OC1581_GATE_F392F5C, OC1581_MAGIC_F392F5C);
+                c.g[RA][0] = sx(RET);
+                c.g[A3][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// The record at `DATA + 0x1000` that `lbl_00392f5c_record_update` reads
+    /// through T0. The stores go to `DATA + 0x2000` (and `+8` of it). The
+    /// divisor is non-zero; the flag at +0x28 is zero on every third seed.
+    pub(crate) fn oc1582_write_record(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let rec = DATA + 0x1000;
+        c.g[T0][0] = rec as u64;
+        c.bus.write32(rec + 0x8, DATA + 0x2000);
+        c.bus.write32(rec + 0x18, (r.next_u32() % 40) + 1);
+        let operand = if seed % 2 == 0 {
+            r.next_u32() % 40
+        } else {
+            r.next_u32()
+        };
+        c.bus.write32(rec + 0x1c, operand);
+        c.bus.write32(rec + 0x20, r.next_u32());
+        c.bus.write32(rec + 0x24, r.next_u32());
+        c.bus
+            .write32(rec + 0x28, if seed % 3 == 0 { 0 } else { r.next_u32() });
+    }
+
+    /// A3 from a few sign classes: large, small positive, small negative.
+    pub(crate) fn oc1582_a3(r: &mut Rng, seed: u32) -> u64 {
+        let v = match seed % 3 {
+            0 => r.next_u32() as i32,
+            1 => (r.next_u32() % 300) as i32,
+            _ => -((r.next_u32() % 300) as i32) - 1,
+        };
+        sx(v as u32)
+    }
+
+    #[test]
+    fn lbl_00392f20_matches() {
+        check_lohi(
+            ee::s13::f_00392f20__generated,
+            lbl_00392f20_div8_tail,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_2f20, 0);
+                c.pc = 0x0039_2f20;
+                oc1582_write_record(c, &mut r, seed);
+                c.g[A3][0] = oc1582_a3(&mut r, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_00392f38_matches() {
+        check_lohi(
+            ee::s13::f_00392f38__generated,
+            lbl_00392f38_div4_tail,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_2f38, 0);
+                c.pc = 0x0039_2f38;
+                oc1582_write_record(c, &mut r, seed);
+                c.g[A3][0] = oc1582_a3(&mut r, seed);
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_00392f50_matches() {
+        check_lohi(
+            ee::s13::f_00392f50__generated,
+            lbl_00392f50_div2_tail,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_2f50, 0);
+                c.pc = 0x0039_2f50;
+                oc1582_write_record(c, &mut r, seed);
+                c.g[A3][0] = oc1582_a3(&mut r, seed);
+            },
+        );
+    }
+
+    /// Both arms of the flag test (38 and 40 cycles) must be taken.
+    #[test]
+    fn lbl_00392f5c_matches() {
+        check_paths_lohi(
+            ee::s13::f_00392f5c__generated,
+            lbl_00392f5c_record_update,
+            300,
+            &[38, 40],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_2f5c, 0);
+                c.pc = 0x0039_2f5c;
+                oc1582_write_record(c, &mut r, seed);
+                c.g[A3][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// The tail jump into the dispatcher at 0x3a38f8; A1 = 0 makes the callee
+    /// (0x3a39e0) return at once, and the store lands inside DATA.
+    #[test]
+    fn lbl_003a38b8_matches() {
+        check_lohi(
+            ee::s13::f_003a38b8__generated,
+            lbl_003a38b8_scale12_tail,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_38b8, 0);
+                c.pc = 0x003a_38b8;
+                c.g[T0][0] = (DATA + 0x1000) as u64;
+                c.bus.write32(DATA + 0x1000 + 0x80, DATA + 0x3000);
+                c.g[A3][0] = (r.next_u32() % 0x100) as u64;
+                c.g[A1][0] = 0;
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_003a3994_matches() {
+        check_lohi(
+            ee::s13::f_003a3994__generated,
+            lbl_003a3994_fscale_store_tail,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_3994, 0);
+                c.pc = 0x003a_3994;
+                c.bus.write32(GAME_GP.wrapping_sub(0x24e8), r.f32(1000.0));
+                c.g[T0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = 0;
+            },
+        );
+    }
+
+    #[test]
+    fn lbl_003a39a4_matches() {
+        check_lohi(
+            ee::s13::f_003a39a4__generated,
+            lbl_003a39a4_fscale_store_tail,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_39a4, 0);
+                c.pc = 0x003a_39a4;
+                c.bus.write32(GAME_GP.wrapping_sub(0x24e4), r.f32(1000.0));
+                c.g[T0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = 0;
+            },
+        );
+    }
+
+    /// The stub: a float product stored through `t0`, then the tail into
+    /// 0x3a39e0 (its index test fails at once with these registers).
+    #[test]
+    fn fpu_scale_store_24_matches() {
+        check(
+            ee::s13::f_003a39b4__generated,
+            fpu_scale_store_24,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_39b4, 0);
+                c.bus.write32(GAME_GP - 0x24e0, r.edge_f32());
+                c.g[T0][0] = (DATA + 0x100) as u64;
+                c.f[1] = if seed % 2 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(100.0)
+                };
+                c.g[T2][0] = 5;
+                c.g[A1][0] = 3;
+            },
+        );
+    }
+
+    #[test]
+    fn fpu_scale_store_28_matches() {
+        check(
+            ee::s13::f_003a39c4__generated,
+            fpu_scale_store_28,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_39c4, 0);
+                c.bus.write32(GAME_GP - 0x24dc, r.edge_f32());
+                c.g[T0][0] = (DATA + 0x100) as u64;
+                c.f[1] = if seed % 2 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(100.0)
+                };
+                c.g[T2][0] = 5;
+                c.g[A1][0] = 3;
+            },
+        );
+    }
+
+    /// Fixture of the four 16-byte stores: scrambled registers, and a1 at one
+    /// of four words of the test data.
+    pub(crate) fn stub_setup(c: &mut Cpu, seed: u32, salt: u32) {
+        let mut r = Rng(salt as u64 ^ (seed as u64) << 8);
+        scramble(c, &mut r);
+        c.g[A1][0] = sx(DATA + 0x1000 + 4 * (seed % 4));
+    }
+
+    /// `lbl_003C555C` against its generated body.
+    #[test]
+    fn snd_store_const_555c_matches() {
+        check(
+            ee::s13::f_003c555c__generated,
+            snd_store_const_555c,
+            120,
+            &|c, seed| stub_setup(c, seed, 0x003c_555c),
+        );
+    }
+
+    /// `lbl_003C556C` against its generated body.
+    #[test]
+    fn snd_store_const_556c_matches() {
+        check(
+            ee::s13::f_003c556c__generated,
+            snd_store_const_556c,
+            120,
+            &|c, seed| stub_setup(c, seed, 0x003c_556c),
+        );
+    }
+
+    /// `lbl_003C557C` against its generated body.
+    #[test]
+    fn snd_store_const_557c_matches() {
+        check(
+            ee::s13::f_003c557c__generated,
+            snd_store_const_557c,
+            120,
+            &|c, seed| stub_setup(c, seed, 0x003c_557c),
+        );
+    }
+
+    /// `lbl_003C558C` against its generated body.
+    #[test]
+    fn snd_store_const_558c_matches() {
+        check(
+            ee::s13::f_003c558c__generated,
+            snd_store_const_558c,
+            120,
+            &|c, seed| stub_setup(c, seed, 0x003c_558c),
+        );
+    }
+
+    /// `%g` tail: `_gcvt` writes the digits at `s0`, then the epilogue at
+    /// 0x421f0c returns through the frame's saved `ra`.
+    #[test]
+    fn printf_g_tail_matches() {
+        check(
+            ee::s15::f_00421ed4__generated,
+            printf_g_tail,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x421e_d4 ^ seed as u64);
+                heap_init(c, &mut r);
+                for i in 0..0x80 {
+                    c.bus.write8(DST + i, 0xcc);
+                }
+                c.g[T3][0] = REENT_3 as u64;
+                c.g[T2][0] = [0, 1][seed as usize % 2] as u64;
+                c.g[S0][0] = DST as u64;
+                c.g[A1][0] = dbl_2(seed, &mut r);
+                c.g[A3][0] = [0, 3, 6][seed as usize % 3] as u64;
+                if seed % 4 == 3 {
+                    c.g[A1][0] = 123.456f64.to_bits();
+                    c.g[A3][0] = 2;
+                }
+            },
+        );
+    }
+
+    /// `%e` tail: `print_e` writes the digits at `s0`, then the epilogue at
+    /// 0x421f08 returns through the frame's saved `ra`.
+    #[test]
+    fn printf_e_tail_matches() {
+        check(
+            ee::s15::f_00421ef4__generated,
+            printf_e_tail,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x421e_f4 ^ seed as u64);
+                heap_init(c, &mut r);
+                for i in 0..0x200 {
+                    c.bus.write8(DST + i, 0xcc);
+                }
+                c.g[T3][0] = REENT_3 as u64;
+                c.g[T2][0] = [0, 1][seed as usize % 2] as u64;
+                c.g[S0][0] = DST as u64;
+                c.g[A1][0] = dbl(seed, &mut r);
+                c.g[A3][0] = [0, 1, 2, 3, 6, 10, 17, 30][seed as usize % 8] as u64;
+                if seed % 8 == 2 {
+                    c.g[A1][0] = 123.456f64.to_bits();
+                    c.g[A3][0] = 3;
+                }
+            },
         );
     }
 }

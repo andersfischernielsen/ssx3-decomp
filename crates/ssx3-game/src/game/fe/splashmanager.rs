@@ -107,6 +107,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_splash_manager_add_drop,
         "cSplashManager_AddDrop",
     ),
+    (0x002f_3550, c_splash_manager_ctor, "cSplashManager_ctor"),
+    (0x002f_3618, c_splash_manager_dtor, "cSplashManager_dtor"),
+    (
+        0x002f_41a8,
+        csplash_manager_reset_for_camera,
+        "cSplashManager_ResetForCamera",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2698,6 +2705,200 @@ pub fn c_splash_manager_add_drop(c: &mut Cpu) {
     })
 }
 
+/// `cSplashManager_ResetForCamera(this, camera)` (0x2f41a8): for every view
+/// whose player camera is `camera` (the `camera` argument in `a0`), resets that
+/// view's splash manager: the manager is looked up through the view table at
+/// `+0x84` of the world global (`gp-0x848`), and the object it returns gets a
+/// virtual call through the function pointer at `+0x74` of its `+0xc` record.
+pub fn csplash_manager_reset_for_camera(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x10));
+        let has_views = c.g[A0][0] != 0;
+        c.g[S0][0] = 0;
+        if has_views {
+            c.cycles += 1;
+            c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+            'views: loop {
+                c.cycles += 7;
+                c.g[A0][0] = sx((c.g[S0][0] as u32) << 2);
+                c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                let other_camera = c.g[S1][0] != c.g[V1][0];
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if !other_camera {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[A1][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    call_ptr(c, 0x0023_06a8, 0x002f_4200)?;
+                    let no_splash = c.g[V0][0] == 0;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                    if !no_splash {
+                        c.cycles += 8;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                        call_ptr(c, 0x0023_06a8, 0x002f_4214)?;
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x70));
+                        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x74));
+                        let target = c.g[A1][0] as u32;
+                        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, target, 0x002f_4228)?;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                }
+                c.cycles += 7;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                if !more {
+                    break 'views;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_41d8);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cSplashManager* cSplashManager_ctor(cSplashManager* this, int bucket,
+/// int viewIndex)` (0x2f3550): constructs the object node (`bucket` is in
+/// `a1`, passed on unchanged), sets the view index, clears the 30 drop
+/// entries (`+0x1c`, 0x3c apart) and the 30 crystal entries (from `+0x724`,
+/// 0x4c apart), zeroes the camera-tracking and counter words, then resets
+/// the manager. Returns `this`.
+pub fn c_splash_manager_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1c));
+        call_ptr(c, 0x0035_4648, 0x002f_3578)?;
+        c.g[S3][0] = u64::MAX;
+        c.g[V0][0] = 0x49_0000;
+        let view = c.g[S0][0];
+        Addr(c.g[S1][0] as u32).off(0x10).sw(c, view);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7dd0));
+        Addr(c.g[S1][0] as u32).off(0x14).sw(c, 0);
+        let v0 = c.g[V0][0];
+        Addr(c.g[S1][0] as u32).off(0xc).sw(c, v0);
+        c.g[S0][0] = 0x1d;
+        Addr(c.g[S1][0] as u32).off(0x18).sw(c, 0);
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+            Callee {
+                addr: 0x002f_2588,
+                f: ee::s09::f_002f2588,
+            }
+            .call(c, 0x002f_35a4)?;
+            let t = c.g[S0][0] != c.g[S3][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x3c));
+            if !t {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002f_3598);
+            }
+        }
+        c.cycles += 3;
+        c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x724));
+        c.g[S2][0] = 0x1d;
+        c.g[S3][0] = u64::MAX;
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+            Callee {
+                addr: 0x002f_2d60,
+                f: ee::s09::f_002f2d60,
+            }
+            .call(c, 0x002f_35c4)?;
+            let t = c.g[S2][0] != c.g[S3][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x4c));
+            if !t {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002f_35b8);
+            }
+        }
+        c.cycles += 19;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        c.g[A0][0] = c.g[S1][0];
+        let this = Addr(c.g[S1][0] as u32);
+        this.off(0x100c).sw(c, 0);
+        this.off(0x1010).sw(c, 0);
+        this.off(0x1014).sw(c, 0);
+        this.off(0x1018).sw(c, 0);
+        this.off(0x1020).sw(c, 0);
+        this.off(0x1024).sw(c, 0);
+        c.swc1(0, this.off(0x101c).0);
+        Callee {
+            addr: 0x002f_39c8,
+            f: ee::s09::f_002f39c8,
+        }
+        .call(c, 0x002f_35f8)?;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `cSplashManager::~cSplashManager(this)` (0x2f3618): sets the vtable at
+/// `+0xc` and calls the base destructor (0x3546c8).
+pub fn c_splash_manager_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = 0x490000;
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x7dd0));
+        let vtable = c.g[V0][0];
+        Addr((c.g[V1][0] as u32).wrapping_add(0xc)).sw(c, vtable);
+        call_ptr(c, 0x0035_46c8, 0x002f_3634)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3934,6 +4135,82 @@ pub(crate) mod tests {
                 c.bus.write32(obj + 0x14, seed % 3);
                 c.bus.write32(tmpl, r.next_u32());
                 c.bus.write32(tmpl + 4, r.next_u32());
+            },
+        );
+    }
+
+    use crate::difftest::fakes::machine_rt;
+    use crate::difftest::fill;
+
+    /// `cSplashManager_ResetForCamera`: zero to three views, each with or
+    /// without a splash manager, the camera matching view 0..2 or none.
+    #[test]
+    fn csplash_manager_reset_for_camera_matches() {
+        check(
+            ee::s09::f_002f41a8__generated,
+            csplash_manager_reset_for_camera,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002f_41a8, 2);
+                let world = DATA + 0x1000;
+                let views = DATA + 0x2000;
+                let arr = DATA + 0x3000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, views);
+                c.bus.write32(views + 0x84, arr);
+                c.bus.write32(arr + 0x10, seed % 4);
+                for i in 0..3u32 {
+                    c.bus.write32(arr + 4 * i + 4, DATA + 0x6000 + 0x40 * i);
+                    let splash = if (seed / 4 + i) % 2 == 0 {
+                        0
+                    } else {
+                        DATA + 0x7000 + 0x100 * i
+                    };
+                    c.bus.write32(views + 4 * i + 0x68, splash);
+                    let owner = DATA + 0x8000 + 0x100 * i;
+                    c.bus.write32(DATA + 0x7000 + 0x100 * i + 0xc, owner);
+                    c.bus.write16(owner + 0x70, (r.next_u32() % 64) as u16);
+                    c.bus.write32(owner + 0x74, 0x00F0_0000 + 0x10 * i);
+                }
+                let k = seed % 3;
+                c.g[A0][0] = if seed % 5 == 0 {
+                    r.next_u32() as u64
+                } else {
+                    (DATA + 0x6000 + 0x40 * k) as u64
+                };
+            },
+        );
+    }
+
+    /// `cSplashManager_ctor` against the generated body: both 30-entry
+    /// loops run to completion; the object node, drop and crystal
+    /// constructors and the reset are real code over random object words.
+    #[test]
+    fn c_splash_manager_ctor_matches() {
+        check(
+            ee::s09::f_002f3550__generated,
+            c_splash_manager_ctor,
+            100,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x002f_3550, 6);
+                let obj = DATA + 0x1000;
+                fill(c, &mut r, obj, 0x1040 / 4);
+                c.g[A0][0] = obj as u64;
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn c_splash_manager_dtor_matches() {
+        check(
+            ee::s09::f_002f3618__generated,
+            c_splash_manager_dtor,
+            200,
+            &|c, seed| {
+                let _r = machine_rt(c, seed, 0x002f_3618, 0);
+                c.g[A0][0] = sx(DATA + 0x1000);
             },
         );
     }

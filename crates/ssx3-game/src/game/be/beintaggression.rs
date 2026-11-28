@@ -1,6 +1,7 @@
 //! `src/be/beintaggression.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -57,6 +58,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_62b8,
         be_library_switch_phase,
         "BELibrary_SwitchPhase",
+    ),
+    (
+        0x0015_5aa0,
+        be_aggression_int_commit_00155aa0,
+        "BEAggressionInt_Commit",
+    ),
+    (
+        0x0015_5aa8,
+        be_aggression_int_reset_00155aa8,
+        "BEAggressionInt_Reset",
     ),
 ];
 
@@ -852,6 +863,18 @@ pub fn be_library_switch_phase(c: &mut Cpu) {
     })
 }
 
+/// `BEAggressionInt_Commit` (0x0015_5aa0): straight-line leaf. Mechanical port of the generated body.
+pub fn be_aggression_int_commit_00155aa0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEAggressionInt_Reset` (0x0015_5aa8): straight-line leaf. Mechanical port of the generated body.
+pub fn be_aggression_int_reset_00155aa8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1069,6 +1092,34 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP.wrapping_sub(0x1efc), seed % 4);
                 c.g[A0][0] = DATA as u64 + 0x3000 + (seed % 4) as u64 * 4;
                 c.bus.write32(DATA + 0x3000 + (seed % 4) * 4, seed % 4);
+            },
+        );
+    }
+
+    /// `BEAggressionInt_Commit` (0x0015_5aa0) against the generated body.
+    #[test]
+    fn be_aggression_int_commit_00155aa0_matches() {
+        check(
+            ee::s01::f_00155aa0__generated,
+            be_aggression_int_commit_00155aa0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x155aa0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEAggressionInt_Reset` (0x0015_5aa8) against the generated body.
+    #[test]
+    fn be_aggression_int_reset_00155aa8_matches() {
+        check(
+            ee::s01::f_00155aa8__generated,
+            be_aggression_int_reset_00155aa8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x155aa8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

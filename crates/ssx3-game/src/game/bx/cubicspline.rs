@@ -15,6 +15,7 @@ use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::bx::ps2main::gp_below;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -183,6 +184,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_fc20, dlheap_mallinfo, "DLHeap_Mallinfo"),
     (0x0031_fe30, dlheap_mallopt, "DLHeap_Mallopt"),
     (0x0032_0038, dlheap_malloc_wrapper, "DLHeap_Malloc_Wrapper"),
+    (0x0031_d618, ccsi_cubic_spline_dtor, "cCSICubicSpline_dtor"),
+    (
+        0x0031_d738,
+        c_csi_cubic_spline_init_with_start_slope,
+        "cCSICubicSpline_InitWithStartSlope",
+    ),
+    (
+        0x0031_e0e0,
+        c_csi_cubic_spline_sample_range,
+        "cCSICubicSpline_SampleRange",
+    ),
+    (
+        0x0032_0550,
+        eacore_static_init_destroy,
+        "EACore_StaticInitDestroy",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -8665,6 +8682,469 @@ pub fn dlheap_malloc_wrapper(c: &mut Cpu) {
     tail_wrapper(c, None, Target::Direct(DLHEAP_MALLOC), 0x0032_0048);
 }
 
+/// `cCSICubicSpline` destructor (0x31d618): frees the spline's storage, and
+/// when bit 0 of `flags` is set also deletes the object itself.
+pub fn ccsi_cubic_spline_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        Callee {
+            addr: 0x0031_d790,
+            f: ee::s10::f_0031d790,
+        }
+        .call(c, 0x0031_d634)?;
+        c.g[S0][0] = c.g[S0][0] & 0x1;
+        let delete_object = c.g[S0][0] != 0;
+        frame.restore(c, S0, 0x20);
+        if delete_object {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0031_7e50,
+                f: ee::s10::f_00317e50,
+            }
+            .call(c, 0x0031_d648)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void cCSICubicSpline_InitWithStartSlope(float f12, float f13, spline* s)`
+/// (0x31d738, `a0` is the spline): allocates the spline data
+/// (`cCSICubicSpline_Alloc`), sets bit 0 of the spline's first word, stores
+/// `f12` at data `+0x10` and `f13` at spline `+4`.
+pub fn c_csi_cubic_spline_init_with_start_slope(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        c.mov_s(21, 13);
+        frame.save_ra(c, 0);
+        c.mov_s(20, 12);
+        Callee {
+            addr: 0x0031_d660,
+            f: ee::s10::f_0031d660,
+        }
+        .call(c, 0x0031_d75c)?;
+        let spline = Addr(c.g[S0][0] as u32);
+        c.g[V0][0] = spline.lw(c);
+        c.g[V1][0] = spline.off(0x8).lw(c);
+        c.g[V0][0] |= 1;
+        frame.restore_ra(c, 0);
+        let flags = c.g[V0][0];
+        spline.sw(c, flags);
+        let data = c.g[V1][0];
+        c.swc1(20, (data as u32).wrapping_add(0x10));
+        c.swc1(21, spline.off(0x4).0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 0x00320550 EACore_StaticInitDestroy
+
+/// `void EACore_StaticInitDestroy(int init, int priority)` (0x320550, the
+/// compiler's `__sti__all_in_one_bx_cpp`): the translation unit's static
+/// initialisation. Only for priority 0xffff: with `init` set, construct the
+/// block manager (`BlockMan_ctor` at 0x4ff000), the two random generators
+/// (`Rand_GetDefaultState`), the constant colour, 2D/3D/4D vector, matrix,
+/// quaternion and pose globals (the flat float stores below, in the
+/// generated order with every scratch register it leaves) and the dynamic
+/// memory manager (`EACoreGlobal_ctor`); with `init` clear, destroy it
+/// (`EACoreGlobal_dtor(&the manager, 2)`). Any other priority does nothing.
+pub fn eacore_static_init_destroy(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0xffff;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        let init_priority = c.g[A1][0] == c.g[V0][0];
+        frame.save_ra(c, 0);
+        if init_priority {
+            c.cycles += 2;
+            if c.g[A0][0] != 0 {
+                // Construct: the block manager and the two random states.
+                c.cycles += 214;
+                c.g[A0][0] = 0x0050_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1000));
+                OC1567_BLOCK_MAN_CTOR.call(c, 0x0032_0598)?;
+                c.g[A0][0] = 0x0050_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xfe8));
+                OC1567_RAND_DEFAULT_STATE.call(c, 0x0032_05a4)?;
+                c.g[A0][0] = 0x0050_0000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xfd0));
+                OC1567_RAND_DEFAULT_STATE.call(c, 0x0032_05b0)?;
+                // The constant globals (flat stores of 0, 0.25, 0.5, 1).
+                c.g[T5][0] = 0x500000;
+                c.g[AT][0] = 0x3e800000;
+                c.mtc1(1, 2);
+                c.g[T1][0] = c.g[T5][0];
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 1);
+                c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_sub(0xf38));
+                c.mtc1(0, 0);
+                c.swc1(2, (c.g[T1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = 0x500000;
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_sub(0xfb8));
+                c.g[S6][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xfb8));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x8));
+                c.g[V1][0] = 0x500000;
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_sub(0xfa8));
+                c.g[A0][0] = 0x500000;
+                c.g[FP][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xfa8));
+                c.g[V0][0] = c.g[A0][0];
+                c.swc1(1, (c.g[FP][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = 0x500000;
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_sub(0xf98));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xf98));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = c.g[A2][0];
+                c.swc1(1, (c.g[A2][0] as u32).wrapping_sub(0xf88));
+                c.g[A3][0] = 0x500000;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xf88));
+                c.g[A2][0] = c.g[A3][0];
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xf78));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_sub(0xf78));
+                c.g[T0][0] = 0x500000;
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = sx((c.g[T0][0] as u32).wrapping_sub(0xf68));
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 3);
+                c.g[T2][0] = 0x500000;
+                c.swc1(1, (c.g[T0][0] as u32).wrapping_sub(0xf68));
+                c.g[V0][0] = c.g[T2][0];
+                c.swc1(3, (c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[T3][0] = 0x500000;
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xf58));
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_sub(0xf58));
+                c.g[A0][0] = c.g[T3][0];
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xf48));
+                c.swc1(1, (c.g[T3][0] as u32).wrapping_sub(0xf48));
+                c.g[V0][0] = 0x500000;
+                c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x8));
+                c.g[S3][0] = 0x4a0000;
+                c.g[T7][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xf08));
+                c.g[S4][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2868));
+                c.g[A0][0] = 0x500000;
+                c.g[V0][0] = c.g[S3][0];
+                c.swc1(2, (c.g[T5][0] as u32).wrapping_sub(0xf38));
+                c.g[S5][0] = 0x4a0000;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0xda4), c.g[S4][0]);
+                c.g[T6][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xef8));
+                c.swc1(0, (c.g[S3][0] as u32).wrapping_add(0x5960));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5960));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.g[S5][0];
+                c.swc1(1, (c.g[S5][0] as u32).wrapping_add(0x5968));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x5968));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                c.g[S1][0] = 0x500000;
+                c.g[A0][0] = 0x4a0000;
+                c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_sub(0xf28));
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x5970));
+                c.g[T4][0] = 0x500000;
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = 0x500000;
+                c.g[S6][0] = 0x500000;
+                c.swc1(0, (c.g[FP][0] as u32).wrapping_add(0x4));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf98));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xf88));
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[S0][0] = sx((c.g[T4][0] as u32).wrapping_sub(0xf18));
+                c.g[S6][0] = 0x500000;
+                c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x4));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf78));
+                c.g[T1][0] = 0x500000;
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[A2][0] = sx((c.g[T1][0] as u32).wrapping_sub(0xee0));
+                c.g[S6][0] = 0x500000;
+                c.g[S7][0] = 0x500000;
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf58));
+                c.g[A3][0] = sx((c.g[S7][0] as u32).wrapping_sub(0xec0));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[T8][0] = 0x500000;
+                c.g[S6][0] = 0x500000;
+                c.g[T0][0] = sx((c.g[T8][0] as u32).wrapping_sub(0xeb0));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf48));
+                c.g[T9][0] = 0x500000;
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[T1][0] = sx((c.g[T9][0] as u32).wrapping_sub(0xea0));
+                c.g[S6][0] = 0x500000;
+                c.g[T5][0] = 0x500000;
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_sub(0xf38));
+                c.g[V1][0] = sx((c.g[T5][0] as u32).wrapping_sub(0xe90));
+                c.swc1(2, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[S3][0] = 0x500000;
+                c.g[S6][0] = 0x4a0000;
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0xe60));
+                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x5970));
+                c.g[S4][0] = 0x500000;
+                c.swc1(1, (c.g[S6][0] as u32).wrapping_add(0x4));
+                c.g[A1][0] = sx((c.g[S4][0] as u32).wrapping_sub(0xe20));
+                c.swc1(0, (c.g[S1][0] as u32).wrapping_sub(0xf28));
+                c.g[S6][0] = 0x500000;
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x8));
+                c.g[S5][0] = 0x500000;
+                c.swc1(1, (c.g[T4][0] as u32).wrapping_sub(0xf18));
+                c.g[T2][0] = sx((c.g[S5][0] as u32).wrapping_sub(0xde0));
+                c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[T4][0] = 0x500000;
+                c.swc1(0, (c.g[T4][0] as u32).wrapping_sub(0xf08));
+                c.g[T3][0] = 0x500000;
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_sub(0xef8));
+                c.g[T4][0] = 0x500000;
+                c.swc1(0, (c.g[T7][0] as u32).wrapping_add(0x8));
+                c.g[S6][0] = 0x500000;
+                c.swc1(1, (c.g[T6][0] as u32).wrapping_add(0x8));
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_sub(0xdd0));
+                c.swc1(0, (c.g[T4][0] as u32).wrapping_sub(0xee0));
+                c.g[A0][0] = 0x500000;
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xdb0));
+                c.swc1(0, (c.g[S6][0] as u32).wrapping_sub(0xed0));
+                c.swc1(1, (c.g[S7][0] as u32).wrapping_sub(0xec0));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[T8][0] as u32).wrapping_sub(0xeb0));
+                c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[T9][0] as u32).wrapping_sub(0xea0));
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[T5][0] as u32).wrapping_sub(0xe90));
+                c.swc1(0, (c.g[S2][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[T7][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[T6][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.g[A2][0] = c.g[S6][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(0xed0));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A2][0] as u32).wrapping_add(0x8));
+                c.swc1(1, (c.g[A2][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A3][0] as u32).wrapping_add(0x8));
+                c.swc1(1, (c.g[T0][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[T0][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T1][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[T1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0xc));
+                c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x20));
+                c.swc1(1, (c.g[S3][0] as u32).wrapping_sub(0xe60));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x3c));
+                c.swc1(0, (c.g[S4][0] as u32).wrapping_sub(0xe20));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x10));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x1c));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x10));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x20));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x30));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x4));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x24));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x34));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x18));
+                c.swc1(1, (c.g[V0][0] as u32).wrapping_add(0x28));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x38));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x1c));
+                c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x2c));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x10));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x20));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x30));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x4));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x14));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x24));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x34));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x18));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x28));
+                c.swc1(1, (c.g[T2][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[S5][0] as u32).wrapping_sub(0xde0));
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x8));
+                c.swc1(0, (c.g[T2][0] as u32).wrapping_add(0x4));
+                c.lq(3, c.g[A2][0] as u32);
+                c.lq(2, c.g[T2][0] as u32);
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x3c));
+                c.sq(2, (c.g[T3][0] as u32).wrapping_add(0x10));
+                c.sq(3, c.g[T3][0] as u32);
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x38));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0xc));
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x1c));
+                // The jal's delay slot, then `EACoreGlobal_ctor(&manager)`.
+                c.swc1(0, (c.g[A1][0] as u32).wrapping_add(0x2c));
+                OC1567_CORE_GLOBAL_CTOR.call(c, 0x0032_08dc)?;
+                frame.restore(c, S0, 0x90);
+                oc1567_static_init_epilogue(c, frame);
+                return Ok(());
+            }
+            c.g[A0][0] = 0x0050_0000;
+            // Destroy the dynamic memory manager.
+            c.cycles += 3;
+            c.g[A1][0] = 2;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xdb0));
+            OC1567_CORE_GLOBAL_DTOR.call(c, 0x0032_08f0)?;
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x90);
+        oc1567_static_init_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+/// The common exit of [`eacore_static_init_destroy`]: restore s1..s7, fp and
+/// ra, release the frame.
+pub(crate) fn oc1567_static_init_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 11;
+    frame.restore(c, S1, 0x80);
+    frame.restore(c, S2, 0x70);
+    frame.restore(c, S3, 0x60);
+    frame.restore(c, S4, 0x50);
+    frame.restore(c, S5, 0x40);
+    frame.restore(c, S6, 0x30);
+    frame.restore(c, S7, 0x20);
+    frame.restore(c, FP, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+}
+
+/// `BlockMan_ctor` (0x316a00).
+pub(crate) const OC1567_BLOCK_MAN_CTOR: Callee = Callee {
+    addr: 0x0031_6a00,
+    f: ee::s10::BlockMan_ctor,
+};
+
+/// `Rand_GetDefaultState` (0x317930).
+pub(crate) const OC1567_RAND_DEFAULT_STATE: Callee = Callee {
+    addr: 0x0031_7930,
+    f: ee::s10::Rand_GetDefaultState,
+};
+
+/// `EACoreGlobal_ctor` (0x31ff20).
+pub(crate) const OC1567_CORE_GLOBAL_CTOR: Callee = Callee {
+    addr: 0x0031_ff20,
+    f: ee::s10::EACoreGlobal_ctor,
+};
+
+/// `EACoreGlobal_dtor` (0x31ff38).
+pub(crate) const OC1567_CORE_GLOBAL_DTOR: Callee = Callee {
+    addr: 0x0031_ff38,
+    f: ee::s10::EACoreGlobal_dtor,
+};
+
+// ---------------------------------------------------------------------------
+// 0x0031e0e0 cCSICubicSpline_SampleRange
+// ---------------------------------------------------------------------------
+
+/// `void cCSICubicSpline_SampleRange(Spline* s, float t0, ...)` (0x31e0e0):
+/// steps the sample time from the spline's first knot up to its last one
+/// (`t += step`, `step = (last - first) * gp-0x2e40`), evaluating the spline
+/// with `cCSICubicSpline_Evaluate` at each sample. The first loop finds the
+/// first sample at or after the start; the second evaluates until the end.
+pub fn c_csi_cubic_spline_sample_range(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        let step_addr = gp_below(c, 0x2e40);
+        c.lwc1(0, step_addr);
+        frame.save(c, 16, 0x10);
+        frame.save_fpr(c, 22, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        let s = c.g[S0][0] as u32;
+        let knots_addr = s.wrapping_add(8);
+        c.g[V0][0] = c.lw(knots_addr);
+        c.lwc1(21, s.wrapping_add(4));
+        let knot = c.g[V0][0] as u32;
+        c.lwc1(12, knot.wrapping_add(0x10));
+        c.sub_s(1, 21, 12);
+        c.mov_s(2, 12);
+        c.c_le_s(12, 21);
+        let in_range = c.fcc();
+        c.mul_s(22, 1, 0);
+        if in_range {
+            c.cycles += 1;
+            c.add_s(2, 2, 22);
+            loop {
+                c.cycles += 5;
+                c.c_le_s(2, 21);
+                if !c.fcc() {
+                    break;
+                }
+                c.add_s(2, 2, 22);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_e128);
+                }
+            }
+        }
+
+        c.cycles += 5;
+        c.mov_s(20, 12);
+        c.c_le_s(20, 21);
+        if c.fcc() {
+            c.cycles += 2;
+            c.mov_s(12, 20);
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S0][0];
+                c.add_s(20, 20, 22);
+                call_ptr(c, 0x0031_dee0, 0x0031_e164)?; // cCSICubicSpline_Evaluate(s)
+                c.c_le_s(20, 21);
+                let more = c.fcc();
+                c.mov_s(12, 20);
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_e158);
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                break;
+            }
+        }
+        frame.restore(c, 16, 0x10);
+        c.cycles += 6;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x30);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13334,6 +13814,256 @@ pub(crate) mod tests {
                 };
                 c.g[RA][0] = ra;
                 c.pc = 0x0032_0038;
+            },
+        );
+    }
+
+    use crate::difftest::fakes::covered;
+
+    use crate::difftest::fakes::hook;
+    use crate::difftest::fakes::machine_rt;
+
+    pub(crate) use crate::game::animation::rideranimbase::tests::OC1495_MAGIC;
+
+    pub(crate) use crate::game::bx::ps2main::tests::oc1579_install;
+    pub(crate) use crate::game::bx::ps2main::tests::oc1579_machine;
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc1567_gated;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_CTRL;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_MAGIC;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_RET;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::OC1567_RET_CTOR;
+
+    pub(crate) const OC1495_DTOR_CTRL: u32 = DATA + 0x20_1000;
+
+    pub(crate) static OC1495_PREV_FREE: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1495_PREV_DELETE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `cCSICubicSpline_Free` and `__builtin_delete`: logged no-op calls.
+    pub(crate) fn oc1495_fake_free(c: &mut Cpu) {
+        if c.bus.read32(OC1495_DTOR_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_FREE, ee::s10::f_0031d790__generated);
+        }
+        fakes::fake_call(c, 0x0031_d790);
+    }
+
+    pub(crate) fn oc1495_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC1495_DTOR_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_DELETE, ee::s10::f_00317e50__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e50);
+    }
+
+    pub(crate) fn oc1495_install_dtor() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031D790),
+            oc1495_fake_free,
+            &OC1495_PREV_FREE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+            oc1495_fake_delete,
+            &OC1495_PREV_DELETE,
+        );
+    }
+
+    /// `cCSICubicSpline_dtor`: the flag bit 0 both ways, with and without
+    /// the object delete.
+    #[test]
+    fn ccsi_cubic_spline_dtor_matches() {
+        check(
+            ee::s10::f_0031d618__generated,
+            ccsi_cubic_spline_dtor,
+            300,
+            &|c, seed| {
+                oc1495_install_dtor();
+                let mut r = machine(c, seed, 0x0031_d618, 0);
+                c.bus.write32(OC1495_DTOR_CTRL, OC1495_MAGIC);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                if seed % 2 == 0 {
+                    c.g[A1][0] &= !1u64;
+                } else {
+                    c.g[A1][0] |= 1;
+                }
+            },
+        );
+    }
+
+    /// Gate word of the `cCSICubicSpline_Alloc` fake (own RAM word).
+    pub(crate) const OC1497_ALLOC_GATE: u32 = DATA + 0x3f00;
+
+    pub(crate) const OC1497_ALLOC_MAGIC: u32 = 0x1497_a110;
+
+    /// The slot body the fake replaced (for its gate-off path).
+    pub(crate) static OC1497_ALLOC_PREV: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    /// `cCSICubicSpline_Alloc` with its allocator replaced: when the gate is
+    /// set, it returns a fixed data block (`DATA+0x3300`) and returns, so the
+    /// allocator walk (which spins on test data) never runs. Gate off: the
+    /// replaced body.
+    pub(crate) fn oc1497_spline_alloc_fake(c: &mut Cpu) {
+        if c.bus.read32(OC1497_ALLOC_GATE) != OC1497_ALLOC_MAGIC {
+            return fakes::fall_back(c, &OC1497_ALLOC_PREV, ee::s10::f_0031d660__generated);
+        }
+        c.g[V0][0] = (DATA + 0x3300) as u64;
+        ret(c);
+    }
+
+    /// `cCSICubicSpline_InitWithStartSlope` against the generated body: the
+    /// allocation (gated fake, same on both sides) and the two float stores,
+    /// with random float inputs.
+    #[test]
+    fn c_csi_cubic_spline_init_with_start_slope_matches() {
+        check(
+            ee::s10::f_0031d738__generated,
+            c_csi_cubic_spline_init_with_start_slope,
+            200,
+            &|c, seed| {
+                fakes::hook(
+                    std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031D660),
+                    oc1497_spline_alloc_fake,
+                    &OC1497_ALLOC_PREV,
+                );
+                let mut r = machine_rt(c, seed, 0x0031_d738, 4);
+                c.bus.write32(OC1497_ALLOC_GATE, OC1497_ALLOC_MAGIC);
+                let spline = DATA + 0x3200;
+                fill(c, &mut r, spline, 16);
+                c.bus.write32(spline + 8, DATA + 0x3300);
+                fill(c, &mut r, DATA + 0x3300, 8);
+                c.g[A0][0] = spline as u64;
+                c.f[12] = r.f32(1000.0);
+                c.f[13] = r.edge_f32();
+            },
+        );
+    }
+
+    // -- EACore_StaticInitDestroy -------------------------------------------
+
+    pub(crate) static OC1567_PREV_BLOCK_MAN: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1567_PREV_RAND: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1567_PREV_CORE_CTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1567_PREV_CORE_DTOR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn oc1567_fake_block_man(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_6a00,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_BLOCK_MAN,
+            ee::s10::f_00316a00__generated,
+        );
+    }
+
+    pub(crate) fn oc1567_fake_rand(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_7930,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_RAND,
+            ee::s10::f_00317930__generated,
+        );
+    }
+
+    pub(crate) fn oc1567_fake_core_ctor(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_ff20,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_CORE_CTOR,
+            ee::s10::f_0031ff20__generated,
+        );
+    }
+
+    pub(crate) fn oc1567_fake_core_dtor(c: &mut Cpu) {
+        oc1567_gated(
+            c,
+            0x0031_ff38,
+            OC1567_RET_CTOR,
+            &OC1567_PREV_CORE_DTOR,
+            ee::s10::f_0031ff38__generated,
+        );
+    }
+
+    /// `EACore_StaticInitDestroy`: another priority (nothing happens), the
+    /// destroy path (`init` clear) and the construct path (the whole flat
+    /// store block); the five callees are faked.
+    #[test]
+    fn eacore_static_init_destroy_matches() {
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00316A00),
+            oc1567_fake_block_man,
+            &OC1567_PREV_BLOCK_MAN,
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_00317930),
+            oc1567_fake_rand,
+            &OC1567_PREV_RAND,
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031FF20),
+            oc1567_fake_core_ctor,
+            &OC1567_PREV_CORE_CTOR,
+        );
+        hook(
+            std::ptr::addr_of_mut!(ee::s10::OVERRIDE_0031FF38),
+            oc1567_fake_core_dtor,
+            &OC1567_PREV_CORE_DTOR,
+        );
+        covered(
+            ee::s10::f_00320550__generated,
+            eacore_static_init_destroy,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_0550, 4);
+                c.pc = 0x0032_0550;
+                c.bus.write32(OC1567_CTRL, OC1567_MAGIC);
+                c.bus
+                    .write32(OC1567_RET + 4 * OC1567_RET_CTOR, r.next_u32());
+                // The globals the static init overwrites hold junk first.
+                for i in 0..0x180u32 {
+                    c.bus.write32(0x004f_f000 + 4 * i, r.next_u32());
+                }
+                let init = if seed % 4 == 0 { 0 } else { r.next_u32() | 1 };
+                c.g[A0][0] = sx(init);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0xffff,
+                    1 => 0xffff,
+                    _ => {
+                        if seed % 2 == 0 {
+                            0x1_0000 | 0xffff
+                        } else {
+                            r.next_u32() as u64
+                        }
+                    }
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn c_csi_cubic_spline_sample_range_matches() {
+        oc1579_install();
+        check(
+            ee::s10::f_0031e0e0__generated,
+            c_csi_cubic_spline_sample_range,
+            200,
+            &|c, seed| {
+                oc1579_machine(c, seed, 0x1579_0008, 4);
+                let s = DATA + 0x2000;
+                c.g[A0][0] = sx(s);
+                // Knots: first at 0 (in range) or past the last one (skipped).
+                let first = if seed % 5 == 0 { 9.0f32 } else { 0.0 };
+                c.bus.write32(s + 4, (4.0f32 + (seed % 3) as f32).to_bits());
+                c.bus.write32(s + 8, DATA + 0x2100);
+                c.bus.write32(DATA + 0x2110, first.to_bits());
+                // Step scale: a positive constant, so the loops end.
+                c.bus.write32(GAME_GP - 0x2e40, 0x3f00_0000);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -161,6 +162,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "OVScreenSession_ctor_2",
     ),
     (0x0022_13d8, ov_screen_session_dtor, "OVScreenSession_dtor"),
+    (
+        0x0020_87e8,
+        ov_screen_session_on_widget_created_002087e8,
+        "OVScreenSession_OnWidgetCreated",
+    ),
+    (
+        0x0022_1400,
+        ov_screen_session_v13_00221400,
+        "OVScreenSession_v13",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1841,8 +1852,8 @@ fn ov_screen_session_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1870));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1895,16 +1906,16 @@ fn ov_screen_session_on_widget_action_resume(c: &mut Cpu) {
                     c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x28f0));
                     c.g[V0][0] = sx((c.g[T0][0] as u32) << 2);
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[T1][0] = 0x3;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[A3][0] = 0u64;
                     c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[A1][0] = 0xf;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x9f4), c.g[T1][0]);
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.g[A2][0] = 0u64;
                     c.sw((c.g[GP][0] as u32).wrapping_sub(0x69c), c.g[T0][0]);
                     c.g[RA][0] = sx(0x00208d04);
@@ -1957,9 +1968,9 @@ fn ov_screen_session_on_widget_action_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
@@ -4161,6 +4172,18 @@ pub fn ov_screen_session_dtor(c: &mut Cpu) {
     guest(c, |c| ov_state_dtor_body(c, 0x0022_13f4));
 }
 
+/// `OVScreenSession_OnWidgetCreated` (0x0020_87e8): straight-line leaf. Mechanical port of the generated body.
+pub fn ov_screen_session_on_widget_created_002087e8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `OVScreenSession_v13` (0x0022_1400): straight-line leaf. Mechanical port of the generated body.
+pub fn ov_screen_session_v13_00221400(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5294,6 +5317,34 @@ pub(crate) mod tests {
             ov_screen_session_dtor,
             200,
             &|c, seed| ov_object_setup(c, seed),
+        );
+    }
+
+    /// `OVScreenSession_OnWidgetCreated` (0x0020_87e8) against the generated body.
+    #[test]
+    fn ov_screen_session_on_widget_created_002087e8_matches() {
+        check(
+            ee::s05::f_002087e8__generated,
+            ov_screen_session_on_widget_created_002087e8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x2087e8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `OVScreenSession_v13` (0x0022_1400) against the generated body.
+    #[test]
+    fn ov_screen_session_v13_00221400_matches() {
+        check(
+            ee::s05::f_00221400__generated,
+            ov_screen_session_v13_00221400,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x221400, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
         );
     }
 }

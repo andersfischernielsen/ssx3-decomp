@@ -985,7 +985,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3e00));
                     c.g[S0][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.sb((c.g[S0][0] as u32).wrapping_add(0x10), c.g[A1][0]);
                     c.g[A1][0] = sx((c.g[A1][0] as u32) >> 8);
                     c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x4288));
@@ -1011,8 +1011,8 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3db0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1035,7 +1035,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0490)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1060,7 +1060,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c04b8)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1085,7 +1085,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c04e0)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1110,7 +1110,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0508)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1135,7 +1135,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0530)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1160,7 +1160,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0558)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1185,7 +1185,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0580)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1210,7 +1210,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c05a8)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1235,7 +1235,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c05d0)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1260,7 +1260,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c05f8)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1285,7 +1285,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0620)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1310,7 +1310,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0648)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1335,7 +1335,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x002c0670)?;
                     let t = true;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         pc = 0x002c069c;
                         continue;
@@ -1359,7 +1359,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                         f: ee::s08::tWPIGD_Danger_ctor,
                     }
                     .call(c, 0x002c0698)?;
-                    c.sw((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                     pc = 0x002c069c;
                     continue;
                 }
@@ -1367,7 +1367,7 @@ fn world_painter_query_ctor_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x790));
                     c.g[V0][0] = c.g[S0][0];
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x14), c.g[V1][0]);
                     c.sw((c.g[GP][0] as u32).wrapping_add(0x790), c.g[S0][0]);
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));

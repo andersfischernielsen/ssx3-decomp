@@ -346,6 +346,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_tuning_fill_table_4a6310,
         "RiderTuning_FillTable4a6310",
     ),
+    (
+        0x0011_6e08,
+        trick_get_bonus_trick_name_00116e08,
+        "Trick_GetBonusTrickName",
+    ),
+    (0x0011_7248, rider_metrix_ctor, "RiderMetrix_ctor"),
+    (0x0011_7290, rider_metrix_dtor_00117290, "RiderMetrix_dtor"),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -7923,6 +7930,216 @@ pub fn rider_tuning_fill_table_4a6310(c: &mut Cpu) {
     ret(c);
 }
 
+/// `cRiderMetrix* RiderMetrix_ctor(cRiderMetrix* this)` (0x117248): clears
+/// the HUD-effect, points and flag words, sets the points multiplier to 1.0
+/// (`+0x1c4`), then resets the metrix. Returns `this`.
+pub fn rider_metrix_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = Addr(c.g[S0][0] as u32);
+        this.off(0x1ac).sw(c, 0);
+        this.off(0x1b0).sw(c, 0);
+        this.off(0x1b4).sw(c, 0);
+        this.off(0x1c8).sw(c, 0);
+        c.swc1(0, this.off(0x1c4).0);
+        Callee {
+            addr: 0x0011_7540,
+            f: ee::s00::f_00117540,
+        }
+        .call(c, 0x0011_7278)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void Trick_GetBonusTrickName(char* buf, unsigned trick, int size)` (0x116e08):
+/// searches `gMonsterComboTable` (24 entries of 0x10 bytes at 0x43d608: the
+/// trick id word first, the request fields at +8..+0xe) for `trick`. On a
+/// match it packs the entry's request fields into a 64-bit trick id on the
+/// stack (`MEM_fill` zeroes it first), then `Trick_BuildName` (0x116950)
+/// builds the name into `buf`; without a match `buf` becomes "".
+///
+/// The bit packing is the generated op sequence, kept op for op: the masks
+/// and shifts place the fields of the trick id word.
+pub fn trick_get_bonus_trick_name_00116e08(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x0044_0000;
+        frame.save(c, S0, 0x40);
+        c.g[V1][0] = 0;
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x29f8));
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[S2][0] = c.g[A2][0];
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+            let t = c.g[V0][0] != c.g[A1][0];
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+            if !t {
+                // Match: pack the request fields into the id word on the stack.
+                c.cycles += 70;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = 0u64;
+                c.g[A2][0] = 0x8;
+                call_ptr(c, 0x003e_6448, 0x0011_6e4c)?; // EA_MemSet(&id, 0, 8)
+                c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = 0xffff_ffff_ffff_f3ff;
+                c.g[V1][0] = c.ld(c.g[SP][0] as u32);
+                c.g[A2][0] = 0xffff_ffff_ffff_0000;
+                c.g[A2][0] = c.g[A2][0] | 0xfff;
+                c.g[V0][0] = c.g[V0][0] & 0x3;
+                c.g[A0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0x9));
+                c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+                c.g[V0][0] = c.g[V0][0] << 10;
+                c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+                c.g[A0][0] = c.g[A0][0] & 0xf;
+                c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xa));
+                c.g[A0][0] = c.g[A0][0] << 12;
+                c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
+                c.g[A1][0] = 0xffff_ffff_fff8_0000;
+                c.g[A1][0] = c.g[A1][0] | 0xffff;
+                c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
+                c.g[V0][0] = c.g[V0][0] & 0x7;
+                c.g[A0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xb));
+                c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+                c.g[V0][0] = c.g[V0][0] << 16;
+                c.g[A1][0] = 0xffff_ffff_ffc7_0000;
+                c.g[A1][0] = c.g[A1][0] | 0xffff;
+                c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+                c.g[A0][0] = c.g[A0][0] & 0x7;
+                c.g[V0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xc));
+                c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+                c.g[A0][0] = c.g[A0][0] << 19;
+                c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+                c.g[A1][0] = c.g[A1][0] << 16;
+                c.g[A1][0] = c.g[A1][0] | 0xfff;
+                c.g[A1][0] = c.g[A1][0] << 16;
+                c.g[A1][0] = c.g[A1][0] | 0xffff;
+                c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
+                c.g[V0][0] = c.g[V0][0] & 0xf;
+                c.g[A0][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xd));
+                c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+                c.g[V0][0] = c.g[V0][0] << 28;
+                c.g[A1][0] = c.lbu((c.g[S0][0] as u32).wrapping_add(0xe));
+                c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
+                c.g[A0][0] = c.g[A0][0] & 0x7f;
+                c.g[V0][0] = 0xffff_ffff_ffff_fc07;
+                c.g[V0][0] = c.g[V0][0] << 16;
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                c.g[V0][0] = c.g[V0][0] << 16;
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                c.g[A0][0] = c.g[A0][0] << 35;
+                c.g[V1][0] = c.g[V1][0] & c.g[V0][0];
+                c.g[A1][0] = c.g[A1][0] & 0x7f;
+                c.g[V1][0] = c.g[V1][0] | c.g[A0][0];
+                c.g[V0][0] = 0xffff_ffff_fffc_0000;
+                c.g[V0][0] = c.g[V0][0] | 0x7ff;
+                c.g[V0][0] = c.g[V0][0] << 16;
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                c.g[V0][0] = c.g[V0][0] << 16;
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                c.g[A0][0] = c.g[V1][0] & c.g[V0][0];
+                c.g[A1][0] = c.g[A1][0] << 43;
+                c.g[A0][0] = c.g[A0][0] | c.g[A1][0];
+                c.g[V1][0] = 0x30000;
+                c.sd(c.g[SP][0] as u32, c.g[A0][0]);
+                c.g[V1][0] = c.g[V1][0] | 0xf800;
+                c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+                if c.g[V0][0] == 0u64 {
+                    c.g[A0][0] = c.g[S1][0];
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0x8000;
+                    c.g[V0][0] = c.g[V0][0] << 27;
+                    c.g[V0][0] = c.g[A0][0] | c.g[V0][0];
+                    c.sd(c.g[SP][0] as u32, c.g[V0][0]);
+                    c.g[A0][0] = c.g[S1][0];
+                }
+                c.cycles += 5;
+                c.g[A2][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[SP][0];
+                Callee {
+                    addr: 0x0011_6950,
+                    f: ee::s00::Trick_BuildName,
+                }
+                .call(c, 0x0011_6f74)?;
+                frame.restore(c, S0, 0x40);
+                break;
+            }
+            // No match at this entry: next entry, or give up at the table end.
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < 24i64) as u64;
+            let more = c.g[V0][0] != 0u64;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+            if more {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_6e30);
+                }
+                continue;
+            }
+            c.cycles += 2;
+            c.sb(c.g[S1][0] as u32, 0u64);
+            frame.restore(c, S0, 0x40);
+            break;
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cRiderMetrix::~cRiderMetrix(this, flags)` (0x117290): frees the HUD
+/// effect object (`this+0x1b0`) if there is one, then deletes `this` when
+/// bit 0 of `flags` is set.
+pub fn rider_metrix_dtor_00117290(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(c.g[S0][0] as u32).off(0x1b0).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[A0][0] != 0u64 {
+            c.cycles += 2;
+            call_ptr(c, 0x0031_7e98, 0x0011_72b8)?; // EA_MemFree(HUDfx)
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.g[S1][0] & 0x1;
+        if c.g[V0][0] == 0u64 {
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0031_7e50, 0x0011_72cc)?; // __builtin_delete(this)
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10564,6 +10781,148 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.pc = 0x0011_b2c0;
                 fill(c, &mut r, OC439_TUNING_TABLE, 0x60);
+            },
+        );
+    }
+
+    use crate::difftest::fakes::machine_rt;
+    pub(crate) use crate::game::be::belibrary::tests::OC1535_MAGIC;
+
+    /// `RiderMetrix_ctor` against the generated body: random object words,
+    /// the real reset runs underneath (its memset is a fake).
+    #[test]
+    fn rider_metrix_ctor_matches() {
+        check(
+            ee::s00::f_00117248__generated,
+            rider_metrix_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine_rt(c, seed, 0x0011_7248, 6);
+                let obj = DATA + 0x1000;
+                fill(c, &mut r, obj, 0x200);
+                c.g[A0][0] = obj as u64;
+            },
+        );
+    }
+
+    pub(crate) const OC1535_FREE_GATE: u32 = DATA + 0x20_1200;
+
+    pub(crate) const OC1535_DELETE_GATE: u32 = DATA + 0x20_1300;
+
+    pub(crate) const OC1535_MEMSET_GATE: u32 = DATA + 0x20_1500;
+
+    pub(crate) const OC1535_BUILD_GATE: u32 = DATA + 0x20_1600;
+
+    pub(crate) static OC1535_FREE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1535_DELETE_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1535_MEMSET_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1535_BUILD_PREV: AtomicUsize = AtomicUsize::new(0);
+
+    /// `EA_MemFree` (0x317e98), gated.
+    pub(crate) fn oc1535_fake_free(c: &mut Cpu) {
+        if c.bus.read32(OC1535_FREE_GATE) != OC1535_MAGIC {
+            return fakes::fall_back(c, &OC1535_FREE_PREV, ee::s10::f_00317e98__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e98);
+    }
+
+    /// `__builtin_delete` (0x317e50), gated.
+    pub(crate) fn oc1535_fake_delete(c: &mut Cpu) {
+        if c.bus.read32(OC1535_DELETE_GATE) != OC1535_MAGIC {
+            return fakes::fall_back(c, &OC1535_DELETE_PREV, ee::s10::f_00317e50__generated);
+        }
+        fakes::fake_call(c, 0x0031_7e50);
+    }
+
+    /// `EA_MemSet` (0x3e6448), gated.
+    pub(crate) fn oc1535_fake_mem_set(c: &mut Cpu) {
+        if c.bus.read32(OC1535_MEMSET_GATE) != OC1535_MAGIC {
+            return fakes::fall_back(c, &OC1535_MEMSET_PREV, ee::s14::f_003e6448__generated);
+        }
+        fakes::fake_call(c, 0x003e_6448);
+    }
+
+    /// `Trick_BuildName` (0x116950), gated.
+    pub(crate) fn oc1535_fake_build_name(c: &mut Cpu) {
+        if c.bus.read32(OC1535_BUILD_GATE) != OC1535_MAGIC {
+            return fakes::fall_back(c, &OC1535_BUILD_PREV, ee::s00::f_00116950__generated);
+        }
+        fakes::fake_call(c, 0x0011_6950);
+    }
+
+    #[test]
+    fn trick_get_bonus_trick_name_00116e08_matches() {
+        check(
+            ee::s00::f_00116e08__generated,
+            trick_get_bonus_trick_name_00116e08,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x116e08, 2);
+                fakes::hook(
+                    addr_of_mut!(ee::s14::OVERRIDE_003E6448),
+                    oc1535_fake_mem_set,
+                    &OC1535_MEMSET_PREV,
+                );
+                fakes::hook(
+                    addr_of_mut!(ee::s00::OVERRIDE_00116950),
+                    oc1535_fake_build_name,
+                    &OC1535_BUILD_PREV,
+                );
+                c.bus.write32(OC1535_MEMSET_GATE, OC1535_MAGIC);
+                c.bus.write32(OC1535_BUILD_GATE, OC1535_MAGIC);
+                // The monster combo table in the game image (0x43d608): 24
+                // entries, the id word first, request bytes at +8..+0xe. One
+                // entry matches the trick (seed % 25 == 24: none does).
+                let table = 0x0043_d608;
+                let trick = 0x0100 + seed % 0x40;
+                let hit = seed % 25;
+                for i in 0..24u32 {
+                    let e = table + 0x10 * i;
+                    let id = if i == hit { trick } else { 0x0200 + i };
+                    c.bus.write32(e, id);
+                    for off in 8..0xf {
+                        c.bus.write8(e + off, r.next_u32() as u8);
+                    }
+                }
+                c.g[A0][0] = sx(DATA + 0x5000);
+                c.g[A1][0] = sx(trick);
+                c.g[A2][0] = sx(0x40 + seed % 8);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_metrix_dtor_00117290_matches() {
+        check(
+            ee::s00::f_00117290__generated,
+            rider_metrix_dtor_00117290,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x117290, 2);
+                fakes::hook(
+                    addr_of_mut!(ee::s10::OVERRIDE_00317E98),
+                    oc1535_fake_free,
+                    &OC1535_FREE_PREV,
+                );
+                fakes::hook(
+                    addr_of_mut!(ee::s10::OVERRIDE_00317E50),
+                    oc1535_fake_delete,
+                    &OC1535_DELETE_PREV,
+                );
+                c.bus.write32(OC1535_FREE_GATE, OC1535_MAGIC);
+                c.bus.write32(OC1535_DELETE_GATE, OC1535_MAGIC);
+                let metrix = DATA + 0x6000;
+                fill(c, &mut r, metrix, 0x80);
+                // HUD effect object present on 2 seeds in 3; the flags bit 0 on half.
+                let hud = if seed % 3 == 0 { 0 } else { DATA + 0x7000 };
+                c.bus.write32(metrix + 0x1b0, hud);
+                c.g[A0][0] = sx(metrix);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

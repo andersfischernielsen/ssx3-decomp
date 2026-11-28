@@ -37,43 +37,11 @@ const END_TRI_STRIP: u32 = 0x0037_a430;
 static PREVIOUS: std::sync::Mutex<Vec<(u32, fn(&mut Cpu))>> = std::sync::Mutex::new(Vec::new());
 
 const HOOKED: &[u32] = &[
-    0x002dc7b0,
-    0x00362978,
-    0x00363490,
-    0x0036ac00,
-    0x0036c790,
-    0x00377cf0,
-    0x003781a0,
-    0x00378808,
-    0x00379028,
-    0x00379860,
-    0x00379bd0,
-    0x0037a260,
-    0x0037a430,
-    0x0037a610,
-    0x0037b548,
-    0x0037ba50,
-    0x0037cc98,
-    0x0037d348,
-    0x0037d450,
-    0x0037d800,
-    0x0037e238,
-    0x00380518,
-    0x003807a0,
-    0x00380ce0,
-    0x00381310,
-    0x003816f0,
-    0x00381ad0,
-    0x00381f10,
-    0x00385c10,
-    0x00386e78,
-    0x00387ec0,
-    0x003883b8,
-    0x003885e0,
-    0x0038b370,
-    0x0038d690,
-    0x003904a0,
-    0x00396b40,
+    0x002dc7b0, 0x00362978, 0x00363490, 0x0036ac00, 0x0036c790, 0x00377cf0, 0x003781a0, 0x00378808,
+    0x00379028, 0x00379860, 0x00379bd0, 0x0037a260, 0x0037a430, 0x0037a610, 0x0037b548, 0x0037ba50,
+    0x0037cc98, 0x0037d348, 0x0037d450, 0x0037d800, 0x0037e238, 0x00380518, 0x003807a0, 0x00380ce0,
+    0x00381310, 0x003816f0, 0x00381ad0, 0x00381f10, 0x00385c10, 0x00386e78, 0x00387ec0, 0x003883b8,
+    0x003885e0, 0x0038b370, 0x0038d690, 0x003904a0, 0x00396b40,
 ];
 
 fn remember_previous() {
@@ -506,9 +474,7 @@ pub fn install() -> bool {
         ),
         (
             0x0036_3490,
-            |c: &mut Cpu| {
-                crate::packetless::dispatch_render_frame(c, previous(0x00363490))
-            },
+            |c: &mut Cpu| crate::packetless::dispatch_render_frame(c, previous(0x00363490)),
             "PS2GraphicsMan_RenderFrame",
         ),
         (
@@ -1239,64 +1205,34 @@ fn draw_m_emitter(c: &mut Cpu) {
 /// Slot 85 `DrawTrail(gm, d)` (0x381310): SnowBox flakes (type 5).
 fn draw_trail(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(
-        c,
-        previous(0x00381310),
-        gm + 0x5a00,
-        None,
-        Shape::OneCnt,
-    );
+    capture_packets(c, previous(0x00381310), gm + 0x5a00, None, Shape::OneCnt);
 }
 
 /// Slot 86 `DrawTrailB(gm, d)` (0x3816f0): the depth-faded variant.
 fn draw_trail_b(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(
-        c,
-        previous(0x003816f0),
-        gm + 0x5a00,
-        None,
-        Shape::OneCnt,
-    );
+    capture_packets(c, previous(0x003816f0), gm + 0x5a00, None, Shape::OneCnt);
 }
 
 /// `PS2BezierMan_DrawPatchFX(bm, patch, entry, cursor)` (0x38d690): patch
 /// glitter (type 4, entry 0x1460).
 fn draw_patch_fx(c: &mut Cpu) {
     let cursor = c.g[A3][0] as u32;
-    capture_packets(
-        c,
-        previous(0x0038d690),
-        cursor,
-        None,
-        Shape::OneCnt,
-    );
+    capture_packets(c, previous(0x0038d690), cursor, None, Shape::OneCnt);
 }
 
 /// Slot 95 `DrawModel(f12 alpha, gm, inst, ...)` (0x37e238): per strip
 /// group a header packet and a CALL into the model's mesh chain.
 fn draw_model(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(
-        c,
-        previous(0x0037e238),
-        gm + 0x5a00,
-        None,
-        Shape::UntilCall,
-    );
+    capture_packets(c, previous(0x0037e238), gm + 0x5a00, None, Shape::UntilCall);
 }
 
 /// `cPS2GridMesh_Draw(this, matrix, texId, mat2)` (0x385c10): one header
 /// packet and a CALL into the grid's (double-buffered) chain.
 fn grid_mesh_draw(c: &mut Cpu) {
     let gm = c.bus.read32(c.g[A0][0] as u32 + 0x1c4);
-    capture_packets(
-        c,
-        previous(0x00385c10),
-        gm + 0x5a00,
-        None,
-        Shape::UntilCall,
-    );
+    capture_packets(c, previous(0x00385c10), gm + 0x5a00, None, Shape::UntilCall);
 }
 
 /// Slot 99 `DrawSkinnedModel(gm, model, base, outline)` (0x37a610): per
@@ -1462,11 +1398,7 @@ fn render_bloom(c: &mut Cpu) {
 }
 
 fn render_color_filter(c: &mut Cpu) {
-    capture_post(
-        c,
-        previous(0x003904a0),
-        PostKind::ColorFilter,
-    );
+    capture_post(c, previous(0x003904a0), PostKind::ColorFilter);
 }
 
 /// A packet that is one RET transfer with its data (the w3 packets the

@@ -91,6 +91,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UIObject_SetAnimProgress",
     ),
     (0x0039_fdd8, ui_object_is_anim_done, "UIObject_IsAnimDone"),
+    (0x0039_f290, ui_state_mgr_push_popup, "UIStateMgr_PushPopup"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1104,7 +1105,7 @@ fn ui_state_mgr_destroy_all_resume(c: &mut Cpu) {
                     c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x0039f8e4);
                     c.g[S2][0] = c.g[A0][0];
                     Callee {
@@ -1153,7 +1154,7 @@ fn ui_state_mgr_destroy_all_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0039f91c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0039f91c)?;
                     let t = c.g[S0][0] == 0u64;
                     c.g[A1][0] = 0x3;
@@ -1171,7 +1172,7 @@ fn ui_state_mgr_destroy_all_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0039f938);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0039f938)?;
                     pc = 0x0039f938;
                     continue;
@@ -1253,7 +1254,7 @@ fn ui_state_mgr_destroy_all_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0039f98c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0039f98c)?;
                     let t = c.g[S0][0] == 0u64;
                     c.g[A1][0] = 0x3;
@@ -1271,7 +1272,7 @@ fn ui_state_mgr_destroy_all_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0039f9a8);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0039f9a8)?;
                     pc = 0x0039f9a8;
                     continue;
@@ -1313,7 +1314,7 @@ fn ui_state_mgr_destroy_all_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -1395,6 +1396,80 @@ pub fn ui_object_is_anim_done(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `UIStateMgr_PushPopup` (0x39f290, `cUIStateStack::pushPopup`): pushes the
+/// popup object (S1 = the list head in A0) onto the state's list (A1). A state
+/// whose popup slot (+0x20) is empty first takes the list's first element
+/// there; the popup's +0x1c word gets its flag bits rebuilt, and the state's
+/// +0x1c word receives the popup flags before `UIList_PushFront` runs.
+pub fn ui_state_mgr_push_popup(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x20)).lw(c);
+        c.g[S1][0] = c.g[A0][0];
+
+        // Empty popup slot: take the list's first element (a call).
+        let mut skip_flags = false;
+        if c.g[A2][0] == 0 {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0039_7840,
+                f: ee::s13::f_00397840,
+            }
+            .call(c, 0x0039_f2b8)?;
+            c.g[A2][0] = c.g[V0][0];
+            if c.g[A2][0] == 0 {
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c)).lw(c);
+                skip_flags = true;
+            }
+        }
+
+        if !skip_flags {
+            c.cycles += 13;
+            let popup = c.g[A2][0] as u32;
+            c.g[V1][0] = Addr(popup.wrapping_add(0x1c)).lw(c);
+            c.g[A0][0] = 0xffff_ffff_ffff_ffdf;
+            c.g[A1][0] = 0xffff_ffff_ffff_fff9;
+            c.g[V1][0] &= c.g[A0][0];
+            c.g[V0][0] = sx((c.g[V1][0] as u32) >> 1);
+            c.g[V0][0] &= 0x3;
+            c.g[V1][0] &= c.g[A1][0];
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] &= 0x3;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+            c.g[V1][0] |= c.g[V0][0];
+            let flags = c.g[V1][0];
+            Addr(popup.wrapping_add(0x1c)).sw(c, flags);
+            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c)).lw(c);
+        }
+
+        // 'b_39f2f8 exit: push the popup on the list.
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[V0][0] |= 0x21;
+        c.g[RA][0] = sx(0x0039_f30c);
+        let (dst, word) = ((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[V0][0]);
+        Addr(dst).sw(c, word);
+        Callee {
+            addr: 0x0039_78f0,
+            f: ee::s13::f_003978f0,
+        }
+        .call(c, 0x0039_f30c)?;
+
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -1851,6 +1926,40 @@ pub(crate) mod tests {
                 c.bus.write16(anim + 0xa, r.next_u32() as u16);
                 c.bus.write16(p + 2, r.next_u32() as u16);
                 c.g[A0][0] = this as u64;
+            },
+        );
+    }
+
+    use crate::difftest::check_lohi;
+
+    /// A list that is empty (popup slot zero, first element points to itself
+    /// or to a second node) and one that already holds a popup. The callees
+    /// (UIList_First, UIList_PushFront) are the real ones on DATA addresses.
+    #[test]
+    fn ui_state_mgr_push_popup_matches() {
+        check_lohi(
+            ee::s13::f_0039f290__generated,
+            ui_state_mgr_push_popup,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1582_f290, 0);
+                c.pc = 0x0039_f290;
+                let state = DATA + 0x3000;
+                let head = DATA + 0x3100;
+                let node = DATA + 0x3200;
+                let other = DATA + 0x3300;
+                c.g[A0][0] = head as u64;
+                c.g[A1][0] = state as u64;
+                let popup = if seed % 3 == 0 { 0 } else { node };
+                c.bus.write32(state + 0x20, popup);
+                c.bus.write32(state + 0x1c, r.next_u32());
+                c.bus.write32(head + 0x4, node);
+                let next = if seed % 5 == 0 { node } else { other };
+                c.bus.write32(node + 0x4, next);
+                c.bus.write32(node, r.next_u32());
+                c.bus.write32(node + 0x1c, r.next_u32());
+                c.bus.write32(other, r.next_u32());
+                c.bus.write32(other + 0x4, r.next_u32());
             },
         );
     }

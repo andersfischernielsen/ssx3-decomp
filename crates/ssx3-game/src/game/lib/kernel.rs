@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -167,6 +168,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         libkernl_exception_return_handler,
         "libkernl_ExceptionReturnHandler",
     ),
+    (
+        0x0042_4aa0,
+        libkernl_intr_helper_thread_2,
+        "libkernl_IntrHelperThread",
+    ),
+    (0x0042_c4d0, kcopy_3_impl, "kCopy_3_Impl"),
+    (0x0042_c780, kcopy_4_impl, "kCopy_4_Impl"),
+    (0x0042_cb78, kcopy_5_impl, "kCopy_5_Impl"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3097,7 +3106,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
                     c.g[V0][0] = 0x3;
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
-                    c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                     c.g[S1][0] = c.g[A2][0];
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
                     c.g[S0][0] = c.g[A1][0];
@@ -3169,7 +3178,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 0x00424ef8 => {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[V0][0] = (c.g[V0][0] < 0x141u64) as u64;
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = 0x4a0000;
@@ -3197,9 +3206,9 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[A2][0] = c.g[S0][0] & 0xffff;
                     c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x14));
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[RA][0] = sx(0x00424f2c);
-                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     Callee {
                         addr: 0x0042c968,
                         f: ee::s15::sceDeci2ExRecv,
@@ -3231,7 +3240,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 0x00424f44 => {
                     c.cycles += 5;
                     c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
                     let t = true;
                     c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
@@ -3245,7 +3254,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 0x00424f58 => {
                     c.cycles += 5;
                     c.g[S0][0] = 0xc;
-                    c.g[V0][0] = c.lhu((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lhu(c.g[S2][0] as u32);
                     c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V1][0] = c.g[S2][0];
@@ -3280,11 +3289,11 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 }
                 0x00424f7c => {
                     c.cycles += 11;
-                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.g[V1][0] = c.lbu((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[V0][0] as u32);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
-                    c.sb((c.g[V0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[V0][0] as u32, c.g[V1][0]);
                     c.g[RA][0] = sx(0x00424f98);
                     c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x18));
                     Callee {
@@ -3292,7 +3301,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                         f: ee::s15::libkernl_TtyRingPush,
                     }
                     .call(c, 0x00424f98)?;
-                    c.g[V0][0] = c.lhu((c.g[S2][0] as u32));
+                    c.g[V0][0] = c.lhu(c.g[S2][0] as u32);
                     c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
@@ -3321,7 +3330,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 0x00424fb4 => {
                     c.cycles += 8;
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-                    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S1][0] as u32);
                     c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
                     c.g[RA][0] = sx(0x00424fc8);
                     c.g[A2][0] = c.g[A2][0] & 0xffff;
@@ -3362,8 +3371,8 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 0x00424fe8 => {
                     c.cycles += 7;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A1][0] as u32));
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x10), c.g[V0][0]);
                     c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V1][0]);
                     let t = true;
@@ -3417,7 +3426,7 @@ fn libkernl_tty_deci2_handler_resume(c: &mut Cpu) {
                 0x0042502c => {
                     c.cycles += 4;
                     c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = t;
@@ -3725,7 +3734,7 @@ fn libkernl_print_double_resume(c: &mut Cpu) {
                     c.cycles += 12;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
-                    c.sd((c.g[SP][0] as u32), c.g[S0][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[S0][0]);
                     c.g[S2][0] = 0u64;
                     c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
                     c.g[S0][0] = c.g[A0][0];
@@ -3974,7 +3983,7 @@ fn libkernl_print_double_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5478));
                     c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = 0x00425c28;
                     ee::s15::libkernl_printf(c);
@@ -3987,7 +3996,7 @@ fn libkernl_print_double_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x5470));
                     c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[S0][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
                     c.pc = 0x00425c28;
                     ee::s15::libkernl_printf(c);
@@ -5341,9 +5350,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     }
                     .call(c, 0x00425668)?;
                     c.g[S6][0] = c.g[V0][0];
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] == 0u64;
-                    c.g[V1][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         pc = 0x00425bec;
                         continue;
@@ -5380,7 +5389,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                 }
                 0x00425698 => {
                     c.cycles += 7;
-                    c.g[V0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x30));
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
                     c.g[A0][0] = sx(((c.g[V0][0] as u32) as i32 >> 24) as u32);
@@ -5398,8 +5407,8 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5450));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -5439,7 +5448,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.mult(0, 3, 5, 3);
                     c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x2));
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
-                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     c.g[V0][0] = ((c.g[A1][0] as i64) < 32i64) as u64;
                     let t = true;
                     if c.g[V0][0] == 0 {
@@ -5462,7 +5471,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.cycles += 3;
                     c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x1f));
                     let t = (c.g[A1][0] as i64) <= 0;
-                    c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[A1][0] as u32)));
+                    c.g[S4][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x00425690) {
                             return Ok(());
@@ -5483,10 +5492,10 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.cycles += 8;
                     c.g[V0][0] = 0x1f;
                     c.g[A0][0] = 0x30;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[A1][0] as u32)));
-                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
-                    c.sb((c.g[V1][0] as u32), c.g[A0][0]);
+                    c.sb(c.g[V1][0] as u32, c.g[A0][0]);
                     let t = (c.g[A1][0] as i64) > 0;
 
                     if t {
@@ -5638,7 +5647,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0].wrapping_add(0x30);
                     c.g[S1][0] = c.g[S1][0] >> 3;
                     c.g[V0][0] = c.g[V0][0] & 0xff;
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     let t = c.g[S1][0] != 0u64;
 
                     if t {
@@ -5672,9 +5681,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                 }
                 0x004257e4 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         pc = 0x00425bdc;
                         continue;
@@ -5697,9 +5706,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0042580c);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     call_ptr(c, t, 0x0042580c)?;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x004257f8) {
                             return Ok(());
@@ -5830,7 +5839,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     c.g[S1][0] = c.g[S1][0] >> 4;
                     let t = c.g[S1][0] != 0u64;
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     if t {
                         if back_edge_unwinds(c, 0x00425870) {
                             return Ok(());
@@ -5862,9 +5871,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                 }
                 0x004258a4 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         pc = 0x00425bdc;
                         continue;
@@ -5887,9 +5896,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x004258cc);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     call_ptr(c, t, 0x004258cc)?;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x004258b8) {
                             return Ok(());
@@ -6042,7 +6051,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     c.g[A1][0] = 0xa;
                     c.g[RA][0] = sx(0x00425974);
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     Callee {
                         addr: 0x0040fcb0,
                         f: ee::s15::__divdi3,
@@ -6099,9 +6108,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                 }
                 0x00425998 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         pc = 0x00425bdc;
                         continue;
@@ -6124,9 +6133,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x004259bc);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     call_ptr(c, t, 0x004259bc)?;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x004259a8) {
                             return Ok(());
@@ -6248,7 +6257,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.g[V0][0] & 0xff;
                     c.g[A1][0] = 0xa;
                     c.g[RA][0] = sx(0x00425a4c);
-                    c.sb((c.g[S0][0] as u32), c.g[V0][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
                     Callee {
                         addr: 0x00411538,
                         f: ee::s15::__udivdi3,
@@ -6288,9 +6297,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                 }
                 0x00425a64 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         pc = 0x00425bdc;
                         continue;
@@ -6313,9 +6322,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x00425a8c);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     call_ptr(c, t, 0x00425a8c)?;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != 0u64;
-                    c.g[A0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x00425a78) {
                             return Ok(());
@@ -6398,9 +6407,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x8));
                     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_sub(0x8));
-                    c.g[V0][0] = c.lb((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
-                    c.g[A0][0] = c.lbu((c.g[V1][0] as u32));
+                    c.g[A0][0] = c.lbu(c.g[V1][0] as u32);
                     if t {
                         pc = 0x00425b58;
                         continue;
@@ -6468,7 +6477,7 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x00425b7c);
                     c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
                     call_ptr(c, t, 0x00425b7c)?;
-                    c.g[V0][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lbu(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = c.g[V0][0];
                     if t {
@@ -6555,9 +6564,9 @@ fn libkernl_vprintf_resume(c: &mut Cpu) {
                 }
                 0x00425be0 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != 0u64;
-                    c.g[V1][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
                     if t {
                         if back_edge_unwinds(c, 0x00425678) {
                             return Ok(());
@@ -7257,6 +7266,232 @@ pub fn libkernl_exception_return_handler(c: &mut Cpu) {
         c.mtc0(26, 12);
         c.pc = c.cop0[14];
         Ok(())
+    })
+}
+
+/// `kCopy_3_Impl(dst, src, count)` (0x42c4d0): copies `count` bytes from
+/// `src` to `dst` one at a time, then returns 0. The loop checks events at
+/// its back edge (head 0x42c4d8).
+pub fn kcopy_3_impl(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[A3][0] = 0u64;
+    if c.g[A2][0] != 0u64 {
+        loop {
+            c.cycles += 8;
+            c.g[V1][0] = c.lbu(c.g[A1][0] as u32);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = (c.g[A3][0] < c.g[A2][0]) as u64;
+            c.sb(c.g[A0][0] as u32, c.g[V1][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+            if c.g[V0][0] == 0u64 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0042_c4d8);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// The word copy shared by `kCopy_4_Impl` and `kCopy_5_Impl`: `a2` is a byte
+/// count, copied as `a2 >> 2` words from `a1` to `a0`, then returns 0. The
+/// back edge checks events at `head`.
+pub(crate) fn kcopy_words(c: &mut Cpu, head: u32) {
+    c.cycles += 3;
+    c.g[A2][0] = sx((c.g[A2][0] as u32) >> 2);
+    let empty = c.g[A2][0] == 0u64;
+    c.g[A3][0] = 0u64;
+    if !empty {
+        c.cycles += 1;
+        loop {
+            c.cycles += 8;
+            c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4));
+            c.g[V0][0] = (c.g[A3][0] < c.g[A2][0]) as u64;
+            c.sw(c.g[A0][0] as u32, c.g[V1][0]);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4));
+            if c.g[V0][0] == 0u64 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, head);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `kCopy_4_Impl(dst, src, bytes)` (0x42c780): word copy, see [`kcopy_words`].
+pub fn kcopy_4_impl(c: &mut Cpu) {
+    kcopy_words(c, 0x0042_c790);
+}
+
+/// `kCopy_5_Impl(dst, src, bytes)` (0x42cb78): the same word copy as
+/// [`kcopy_4_impl`], with its own loop head (0x42cb88).
+pub fn kcopy_5_impl(c: &mut Cpu) {
+    kcopy_words(c, 0x0042_cb88);
+}
+
+/// Internal arms of [`libkernl_intr_helper_thread`] (not guest addresses: they
+/// never reach `c.pc`).
+pub(crate) const ARM_WAKEUP: u32 = 0xfff0_0001;
+
+pub(crate) const ARM_ROTATE: u32 = 0xfff0_0002;
+
+pub(crate) const ARM_SUSPEND: u32 = 0xfff0_0003;
+
+pub(crate) const ARM_PRINTF: u32 = 0xfff0_0004;
+
+/// `void libkernl_IntrHelperThread(void *queue)` (0x00424aa0): the interrupt
+/// helper thread's main. Forever: `WaitSema(sema)`, pop the next 2-byte record
+/// of the queue (`queue[0] & 0x1ff` is the read index; type at `+8 + 2 * idx`,
+/// argument at `+9 + 2 * idx`) and dispatch on its type: 0 `WakeupThread(arg)`,
+/// 1 `RotateThreadReadyQueue(arg)`, 2 `SuspendThread(arg)`, anything else
+/// `printf(fmt)`. It never returns. A `match pc` body so a thread that
+/// unwound inside a callee (the parked `WaitSema`) resumes in the middle:
+/// every return address of the generated body and the loop head are arms. The
+/// generated body charges the whole receive block (12 cycles) before the
+/// `WaitSema` call, so the resume arm after it charges nothing.
+pub fn libkernl_intr_helper_thread_2(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0042_4aa0 => {
+                    c.cycles += 16;
+                    c.g[SP][0] = sx(sp(c).wrapping_sub(0x80));
+                    c.sd(sp(c).wrapping_add(0x10), c.g[S1][0]);
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sd(sp(c).wrapping_add(0x60), c.g[S6][0]);
+                    c.sd(sp(c).wrapping_add(0x50), c.g[S5][0]);
+                    c.g[S6][0] = 0x530000;
+                    c.sd(sp(c).wrapping_add(0x40), c.g[S4][0]);
+                    c.g[S5][0] = 0x4a0000;
+                    c.sd(sp(c).wrapping_add(0x30), c.g[S3][0]);
+                    c.g[S4][0] = 0x1;
+                    c.sd(sp(c).wrapping_add(0x20), c.g[S2][0]);
+                    c.g[S3][0] = 0x2;
+                    c.sd(sp(c), c.g[S0][0]);
+                    c.g[S2][0] = sx((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.sd(sp(c).wrapping_add(0x70), c.g[RA][0]);
+                    c.g[S0][0] = sx((c.g[S1][0] as u32).wrapping_add(0x9));
+                    pc = 0x0042_4ae0;
+                }
+                // loop head: wait for the semaphore
+                0x0042_4ae0 => {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.lw((c.g[S6][0] as u32).wrapping_sub(0x4c60));
+                    Callee {
+                        addr: 0x0042_3de0,
+                        f: ee::s15::WaitSema,
+                    }
+                    .call(c, 0x0042_4ae8)?;
+                    pc = 0x0042_4ae8;
+                }
+                // after WaitSema: pop the record and dispatch on its type
+                0x0042_4ae8 => {
+                    c.g[V1][0] = c.lw(c.g[S1][0] as u32);
+                    c.g[V1][0] &= 0x1ff;
+                    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+                    c.sw(c.g[S1][0] as u32, c.g[A0][0]);
+                    c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lbu(c.g[V0][0] as u32);
+                    let is_rotate = c.g[V0][0] == c.g[S4][0];
+                    c.g[A1][0] = ((c.g[V0][0] as i64) < 2i64) as u64;
+                    if is_rotate {
+                        pc = ARM_ROTATE;
+                        continue;
+                    }
+                    c.cycles += 2;
+                    let not_small = c.g[A1][0] == 0;
+                    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x5520));
+                    if not_small {
+                        c.cycles += 2;
+                        let is_suspend = c.g[V0][0] == c.g[S3][0];
+                        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        if is_suspend {
+                            pc = ARM_SUSPEND;
+                        } else {
+                            c.cycles += 2;
+                            pc = ARM_PRINTF;
+                        }
+                    } else {
+                        c.cycles += 2;
+                        let is_wakeup = c.g[V0][0] == 0;
+                        c.g[V1][0] = c.g[A2][0];
+                        if is_wakeup {
+                            pc = ARM_WAKEUP;
+                        } else {
+                            c.cycles += 2;
+                            pc = ARM_PRINTF;
+                        }
+                    }
+                }
+                // type 0: WakeupThread(arg)
+                ARM_WAKEUP => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lbu(c.g[V1][0] as u32);
+                    Callee {
+                        addr: 0x0042_3cd0,
+                        f: ee::s15::WakeupThread,
+                    }
+                    .call(c, 0x0042_4b40)?;
+                    pc = 0x0042_4b40;
+                }
+                // type 1: RotateThreadReadyQueue(arg)
+                ARM_ROTATE => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lbu(c.g[A2][0] as u32);
+                    Callee {
+                        addr: 0x0042_3c50,
+                        f: ee::s15::RotateThreadReadyQueue,
+                    }
+                    .call(c, 0x0042_4b50)?;
+                    pc = 0x0042_4b50;
+                }
+                // type 2: SuspendThread(arg)
+                ARM_SUSPEND => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lbu(c.g[V1][0] as u32);
+                    Callee {
+                        addr: 0x0042_3d10,
+                        f: ee::s15::SuspendThread,
+                    }
+                    .call(c, 0x0042_4b60)?;
+                    pc = 0x0042_4b60;
+                }
+                // other types: printf(fmt)
+                ARM_PRINTF => {
+                    c.cycles += 4;
+                    Callee {
+                        addr: 0x0042_5c28,
+                        f: ee::s15::libkernl_printf,
+                    }
+                    .call(c, 0x0042_4b70)?;
+                    pc = 0x0042_4b70;
+                }
+                // back edge after any handler
+                0x0042_4b40 | 0x0042_4b50 | 0x0042_4b60 | 0x0042_4b70 => {
+                    if back_edge_unwinds(c, 0x0042_4ae0) {
+                        return Ok(());
+                    }
+                    pc = 0x0042_4ae0;
+                }
+                _ => {
+                    c.jump_out(pc, 0x0042_4aa0, 0x0042_4b78);
+                    return Ok(());
+                }
+            }
+        }
     })
 }
 
@@ -9618,5 +9853,149 @@ pub(crate) mod tests {
                 exit_arm_fakes(c);
             },
         );
+    }
+
+    use crate::difftest::fill;
+    use crate::difftest::strict_ok;
+
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc1601_install;
+    pub(crate) use crate::game::seg::seg_1fbe38::tests::oc1601_machine;
+
+    /// The copy fixture: the event schedule for `seed`, then a2 = `count`,
+    /// a0 = dst and a1 = src in DATA, both filled with random words.
+    pub(crate) fn oc1597_copy_setup(c: &mut Cpu, seed: u32, entry: u32, count: u32) -> Events {
+        let mut r = machine(c, seed, entry as u64, 0);
+        let mode = schedule(c, &mut r, seed, entry);
+        fill(c, &mut r, DATA + 0x1000, 32);
+        fill(c, &mut r, DATA + 0x2000, 32);
+        c.g[A0][0] = (DATA + 0x1000) as u64;
+        c.g[A1][0] = (DATA + 0x2000) as u64;
+        c.g[A2][0] = count as u64;
+        mode
+    }
+
+    #[test]
+    fn kcopy_3_impl_matches() {
+        check_events(
+            ee::s15::f_0042c4d0__generated,
+            kcopy_3_impl,
+            200,
+            &|c, seed| {
+                let n = if seed % 7 == 0 { 0 } else { 1 + seed % 20 };
+                oc1597_copy_setup(c, seed, 0x0042_c4d0, n)
+            },
+        );
+    }
+
+    #[test]
+    fn kcopy_4_impl_matches() {
+        check_events(
+            ee::s15::f_0042c780__generated,
+            kcopy_4_impl,
+            200,
+            &|c, seed| {
+                // a2 = words * 4 + (0..3): the shift drops the low bits.
+                let words = if seed % 7 == 0 { 0 } else { 1 + seed % 9 };
+                oc1597_copy_setup(c, seed, 0x0042_c780, words * 4 + seed % 4)
+            },
+        );
+    }
+
+    #[test]
+    fn kcopy_5_impl_matches() {
+        check_events(
+            ee::s15::f_0042cb78__generated,
+            kcopy_5_impl,
+            200,
+            &|c, seed| {
+                let words = if seed % 7 == 0 { 0 } else { 1 + seed % 9 };
+                oc1597_copy_setup(c, seed, 0x0042_cb78, words * 4 + seed % 4)
+            },
+        );
+    }
+
+    /// Target number of fake calls of the helper-thread resume test.
+    pub(crate) const OC1601_TOTAL: u32 = DATA + 0x21_6020;
+
+    /// The generated helper thread, driven until the fake call number
+    /// `OC1601_TOTAL` unwinds.
+    pub(crate) fn oc1601_helper_generated(c: &mut Cpu) {
+        let total = c.bus.read32(OC1601_TOTAL);
+        c.bus.write32(fakes::LOG_UNWIND_AT, total);
+        ee::s15::f_00424aa0__generated(c);
+    }
+
+    /// The port, driven until the fake call number `OC1601_TOTAL` unwinds.
+    pub(crate) fn oc1601_helper_port(c: &mut Cpu) {
+        let total = c.bus.read32(OC1601_TOTAL);
+        c.bus.write32(fakes::LOG_UNWIND_AT, total);
+        libkernl_intr_helper_thread_2(c);
+    }
+
+    /// The port driven the same way as a native thread would be: every fake
+    /// call unwinds, and the thread is re-entered at the call's return address
+    /// (the fake's results are the same as for a normal return), until call
+    /// number `OC1601_TOTAL` unwinds.
+    pub(crate) fn oc1601_helper_resumed(c: &mut Cpu) {
+        let total = c.bus.read32(OC1601_TOTAL);
+        c.bus.write32(fakes::LOG_UNWIND_AT, 0);
+        libkernl_intr_helper_thread_2(c);
+        while c.pc & 0xffff_0000 == 0xdead_0000 {
+            let n = (c.pc & 0xffff) >> 4;
+            if n >= total {
+                break;
+            }
+            c.bus.write32(fakes::LOG_UNWIND_AT, n + 1);
+            let ret = fakes::logged_returns(c)[n as usize];
+            c.pc = ret;
+            libkernl_intr_helper_thread_2(c);
+        }
+    }
+
+    /// Queue and registers of the helper thread: the read index, 64 records of
+    /// every type (wake, rotate, suspend, two printf kinds).
+    pub(crate) fn oc1601_helper_setup(c: &mut Cpu, seed: u32) {
+        let mut r = oc1601_machine(c, seed, 0x0042_4aa0, 0);
+        let queue = DATA + 0x4000;
+        c.bus.write32(queue, r.next_u32() % 20);
+        for i in 0..64u32 {
+            c.bus.write8(queue + 8 + 2 * i, (r.next_u32() % 5) as u8);
+            c.bus.write8(queue + 9 + 2 * i, r.next_u32() as u8);
+        }
+        c.bus
+            .write32(0x0053_0000u32.wrapping_sub(0x4c60), r.next_u32());
+        c.bus.write32(OC1601_TOTAL, 1 + seed % 11);
+        c.g[A0][0] = queue as u64;
+        c.pc = 0x0042_4aa0;
+    }
+
+    /// `libkernl_IntrHelperThread` over many dispatched records: wake, rotate,
+    /// suspend and printf arms, the loop back edge, ending at a chosen fake
+    /// call's unwind (the thread never returns).
+    #[test]
+    fn libkernl_intr_helper_thread_matches() {
+        oc1601_install();
+        for seed in 0..60 {
+            let r = compare(oc1601_helper_generated, oc1601_helper_port, &|c| {
+                oc1601_helper_setup(c, seed)
+            });
+            assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+            assert!(strict_ok(&r.soft), "seed {seed} (scratch): {:#?}", r.soft);
+        }
+    }
+
+    /// The resume shape: the port unwinding at every call and re-entered at the
+    /// call's return address ends in exactly the state of the generated
+    /// (uninterrupted) body.
+    #[test]
+    fn libkernl_intr_helper_thread_resumes() {
+        oc1601_install();
+        for seed in 0..60 {
+            let r = compare(oc1601_helper_generated, oc1601_helper_resumed, &|c| {
+                oc1601_helper_setup(c, seed)
+            });
+            assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+            assert!(strict_ok(&r.soft), "seed {seed} (scratch): {:#?}", r.soft);
+        }
     }
 }

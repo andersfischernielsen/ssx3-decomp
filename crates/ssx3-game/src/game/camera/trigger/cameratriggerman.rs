@@ -175,6 +175,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         camera_trigger_apply_action,
         "CameraTrigger_ApplyAction",
     ),
+    (
+        0x0016_c428,
+        camera_trigger_man_read_trigger,
+        "CameraTriggerMan_ReadTrigger",
+    ),
+    (
+        0x0016_c4c8,
+        camera_trigger_man_read_trigger_volume,
+        "CameraTriggerMan_ReadTriggerVolume",
+    ),
+    (
+        0x0016_c4f0,
+        camera_trigger_man_read_bound_obj_action,
+        "CameraTriggerMan_ReadBoundObjAction",
+    ),
+    (
+        0x0016_c518,
+        camera_trigger_man_read_trigger_action,
+        "CameraTriggerMan_ReadTriggerAction",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1931,15 +1951,15 @@ fn camera_trigger_man_update_triggers_resume(c: &mut Cpu) {
                 0x0016cf84 => {
                     c.cycles += 3;
                     c.g[S5][0] = 0xffffffffffffffff;
-                    c.g[V0][0] = c.lw((c.g[S6][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S6][0] as u32);
                     pc = 0x0016cf90;
                     continue;
                 }
                 0x0016cf90 => {
                     c.cycles += 7;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) << 2);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[S2][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[S2][0] = c.lw(c.g[V1][0] as u32);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.g[V0][0] & c.g[S7][0];
                     let t = c.g[V0][0] == 0u64;
@@ -1976,7 +1996,7 @@ fn camera_trigger_man_update_triggers_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x20));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0016cfe4);
-                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     call_ptr(c, t, 0x0016cfe4)?;
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x0016cff0);
@@ -2038,7 +2058,7 @@ fn camera_trigger_man_update_triggers_resume(c: &mut Cpu) {
                     c.g[S0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x20));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0016d06c);
-                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     call_ptr(c, t, 0x0016d06c)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -2073,7 +2093,7 @@ fn camera_trigger_man_update_triggers_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[S0][0];
                     call_ptr(c, 0x003284b8, 0x0016d0cc)?;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
 
                     if c.g[V0][0] != 0u64 {
                         c.g[S4][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
@@ -2192,7 +2212,7 @@ fn camera_trigger_man_update_triggers_resume(c: &mut Cpu) {
                 }
                 0x0016d140 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     if t {
@@ -2259,7 +2279,7 @@ fn camera_trigger_man_update_triggers_resume(c: &mut Cpu) {
                     c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
-                        c.g[V0][0] = c.lw((c.g[S6][0] as u32));
+                        c.g[V0][0] = c.lw(c.g[S6][0] as u32);
                         if back_edge_unwinds(c, 0x0016cf90) {
                             return Ok(());
                         }
@@ -5235,7 +5255,7 @@ fn camera_trigger_man_remove_trigger_regions_resume(c: &mut Cpu) {
                 0x0016ca44 => {
                     c.cycles += 3;
                     c.g[S4][0] = 0xffffffffffffffff;
-                    c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S3][0] as u32);
                     pc = 0x0016ca50;
                     continue;
                 }
@@ -5244,8 +5264,8 @@ fn camera_trigger_man_remove_trigger_regions_resume(c: &mut Cpu) {
                     c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
                     c.g[A1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
                     c.g[A0][0] = c.g[SP][0];
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[S1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[S1][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
                     c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
                     c.g[S0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x20));
@@ -5255,7 +5275,7 @@ fn camera_trigger_man_remove_trigger_regions_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x0016ca88);
-                    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     call_ptr(c, t, 0x0016ca88)?;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xa0));
                     c.g[A0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
@@ -5290,7 +5310,7 @@ fn camera_trigger_man_remove_trigger_regions_resume(c: &mut Cpu) {
                     c.g[T0][0] = c.g[S0][0];
                     call_ptr(c, 0x003284b8, 0x0016cae8)?;
                     c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
 
                     if c.g[V0][0] != 0u64 {
                         c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
@@ -5403,7 +5423,7 @@ fn camera_trigger_man_remove_trigger_regions_resume(c: &mut Cpu) {
                 }
                 0x0016cb58 => {
                     c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[V0][0] != 0u64;
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     if t {
@@ -5464,7 +5484,7 @@ fn camera_trigger_man_remove_trigger_regions_resume(c: &mut Cpu) {
                     c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
                     if c.g[V0][0] != 0u64 {
-                        c.g[V1][0] = c.lw((c.g[S3][0] as u32));
+                        c.g[V1][0] = c.lw(c.g[S3][0] as u32);
                         if back_edge_unwinds(c, 0x0016ca50) {
                             return Ok(());
                         }
@@ -6549,15 +6569,15 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                     c.cycles += 14;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
                     c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[A2][0] = c.g[A0][0];
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
                     c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x870));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
                     c.g[A1][0] = 0x1;
                     c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
-                    c.g[A3][0] = c.lw((c.g[A2][0] as u32));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A3][0] = c.lw(c.g[A2][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
                     let t = c.g[A3][0] == c.g[A1][0];
                     c.g[T0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xa8));
@@ -6583,7 +6603,7 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                 0x0016e21c => {
                     c.cycles += 2;
                     let t = c.g[A3][0] == 0u64;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0016e2c4;
                         continue;
@@ -6605,7 +6625,7 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                 0x0016e22c => {
                     c.cycles += 2;
                     let t = c.g[A3][0] != c.g[V0][0];
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0016e554;
                         continue;
@@ -6656,7 +6676,7 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x5c;
                     call_ptr(c, 0x00162060, 0x0016e274)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0016e554;
                         continue;
@@ -6707,7 +6727,7 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x5b;
                     call_ptr(c, 0x00162060, 0x0016e2bc)?;
                     let t = true;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     if t {
                         pc = 0x0016e554;
                         continue;
@@ -6769,8 +6789,8 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4080));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -7525,7 +7545,7 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                     c.g[RA][0] = sx(0x0016e550);
                     c.g[A2][0] = 0u64;
                     call_ptr(c, 0x00162060, 0x0016e550)?;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     pc = 0x0016e554;
                     continue;
                 }
@@ -7542,6 +7562,208 @@ fn camera_trigger_apply_action_resume(c: &mut Cpu) {
                 }
             }
         }
+    });
+}
+
+/// `CameraTriggerMan_ReadTriggerAction(cursor, actionOut, cookie)` (0x16c518):
+/// reads one action (`CameraTrigger_ReadAction`); result 6 if none. The
+/// action's type word then picks the bound-object reader (type 1, at
+/// `action + 8`, its result returned) or the spline reader (type 2, at
+/// `action + 8`, result 0). Other types return 0.
+pub fn camera_trigger_man_read_trigger_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0];
+        'a: {
+            'b: {
+                'c: {
+                    Callee {
+                        addr: 0x0017_12b0,
+                        f: ee::s02::f_001712b0,
+                    }
+                    .call(c, 0x0016_c53c)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[A1][0] = c.lw(c.g[S1][0] as u32);
+                        break 'c;
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x6;
+                    break 'b;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = 0x1;
+                c.g[V1][0] = c.lw(c.g[A1][0] as u32);
+                'd: {
+                    let not_bound = c.g[V1][0] != c.g[V0][0];
+                    c.g[V0][0] = 0x2;
+                    if not_bound {
+                        break 'd;
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                    c.g[A2][0] = c.g[S2][0];
+                    Callee {
+                        addr: 0x0016_c4f0,
+                        f: ee::s02::f_0016c4f0,
+                    }
+                    .call(c, 0x0016_c56c)?;
+                    frame.restore(c, S0, 0x30);
+                    break 'a;
+                }
+                // Type 2 (spline), or another type: v0 still holds 2 here.
+                c.cycles += 2;
+                let other = c.g[V1][0] != c.g[V0][0];
+                c.g[V0][0] = 0;
+                if other {
+                    break 'b;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+                Callee {
+                    addr: 0x0017_1d58,
+                    f: ee::s02::f_00171d58,
+                }
+                .call(c, 0x0016_c588)?;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Camera trigger file reading.
+
+/// `int CameraTriggerMan_ReadTrigger(void* buffer, void* trigger, int version)`
+/// (0x16c428): reads one camera trigger. Two `get_uint` reads fill its first
+/// two words from `*trigger` and `*trigger + 4`; then `ReadTriggerVolume` reads
+/// `*trigger + 8` and, when that status is zero, `ReadTriggerAction` reads the
+/// actions at `*trigger + 0xc` and `*trigger + 0x10`. Returns the first
+/// non-zero status, or the status of the last read (0). Frame 0x40 (s0-s2).
+pub fn camera_trigger_man_read_trigger(c: &mut Cpu) {
+    const GET_UINT: u32 = 0x002d_2558;
+    const READ_VOLUME: Callee = Callee {
+        addr: 0x0016_c4c8,
+        f: ee::s02::f_0016c4c8,
+    };
+    const READ_ACTION: Callee = Callee {
+        addr: 0x0016_c518,
+        f: ee::s02::f_0016c518,
+    };
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0]; // the buffer
+        c.g[S1][0] = c.g[A1][0]; // the trigger
+        c.g[S2][0] = c.g[A2][0]; // the version
+        c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+        call_ptr(c, GET_UINT, 0x0016_c450)?;
+        c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x4));
+        call_ptr(c, GET_UINT, 0x0016_c460)?;
+        c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x8));
+        READ_VOLUME.call(c, 0x0016_c474)?;
+        'done: {
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'done;
+            }
+            c.cycles += 7;
+            c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(0xc));
+            READ_ACTION.call(c, 0x0016_c490)?;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'done;
+            }
+            c.cycles += 6;
+            c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x10));
+            READ_ACTION.call(c, 0x0016_c4ac)?;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `CameraTriggerMan_ReadTriggerVolume` (0x16c4c8; the reference's `readVolume`):
+/// reads the trigger's volume through `CameraTrigger_ReadSphereTrigger`
+/// (0x172e18). Returns 0 when that read reports a volume, else 4.
+pub fn camera_trigger_man_read_trigger_volume(c: &mut Cpu) {
+    const RET: u32 = 0x0016_c4d8;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x0017_2e18,
+            f: ee::s02::f_00172e18,
+        }
+        .call(c, RET)?;
+        c.g[V1][0] = 0x4;
+        frame.restore_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = 0;
+        }
+        c.g[V0][0] = c.g[V1][0];
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `CameraTriggerMan::ReadBoundObjAction` (0x16c4f0): returns 5 when
+/// `CameraTrigger_ReadBoundObj` gives nothing, else 0.
+pub fn camera_trigger_man_read_bound_obj_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        Callee {
+            addr: 0x0017_1690,
+            f: ee::s02::f_00171690,
+        }
+        .call(c, 0x0016_c500)?;
+        c.g[V1][0] = 0x5;
+        frame.restore_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = 0;
+        }
+        c.g[V0][0] = c.g[V1][0];
+        frame.close(c);
+        Ok(())
     });
 }
 
@@ -8617,6 +8839,217 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x0016e1d8;
+            },
+        );
+    }
+
+    pub(crate) use crate::game::animation::rideranimbase::tests::OC1495_MAGIC;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::oc1493_install_fakes;
+
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1493_RT_GATE;
+    pub(crate) use crate::game::fe::ovstatereplay::tests::OC1493_RT_MAGIC;
+
+    // CameraTriggerMan_ReadTriggerAction fixture: the three callees are gated
+    // fakes; the action's type word decides the path.
+    pub(crate) const RT_GATE: u32 = DATA + 0x1_2000;
+
+    pub(crate) const RT_ACTION: u32 = RT_GATE + 4;
+
+    pub(crate) const RT_BOUND: u32 = RT_GATE + 8;
+
+    pub(crate) const RT_MAGIC: u32 = 0x1492_0b0b;
+
+    pub(crate) static OC1492_RT_PREV_ACTION: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1492_RT_PREV_BOUND: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) static OC1492_RT_PREV_SPLINE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `CameraTrigger_ReadAction`: the forced result in v0.
+    pub(crate) fn oc1492_rt_action(c: &mut Cpu) {
+        if c.bus.read32(RT_GATE) != RT_MAGIC {
+            return fakes::fall_back(c, &OC1492_RT_PREV_ACTION, ee::s02::f_001712b0__generated);
+        }
+        let v = c.bus.read32(RT_ACTION);
+        c.g[V0][0] = v as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `CameraTriggerMan_ReadBoundObjAction`: the forced result in v0.
+    pub(crate) fn oc1492_rt_bound(c: &mut Cpu) {
+        if c.bus.read32(RT_GATE) != RT_MAGIC {
+            return fakes::fall_back(c, &OC1492_RT_PREV_BOUND, ee::s02::f_0016c4f0__generated);
+        }
+        let v = c.bus.read32(RT_BOUND);
+        c.g[V0][0] = v as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// `CameraTrigger_ReadSpline`: nothing to write in this fixture.
+    pub(crate) fn oc1492_rt_spline(c: &mut Cpu) {
+        if c.bus.read32(RT_GATE) != RT_MAGIC {
+            return fakes::fall_back(c, &OC1492_RT_PREV_SPLINE, ee::s02::f_00171d58__generated);
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    #[test]
+    fn camera_trigger_man_read_trigger_action_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_001712B0),
+            oc1492_rt_action,
+            &OC1492_RT_PREV_ACTION,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_0016C4F0),
+            oc1492_rt_bound,
+            &OC1492_RT_PREV_BOUND,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00171D58),
+            oc1492_rt_spline,
+            &OC1492_RT_PREV_SPLINE,
+        );
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let _r = machine(c, seed, 0x16_c518, 0);
+            c.bus.write32(RT_GATE, RT_MAGIC);
+            c.bus.write32(RT_ACTION, if seed % 3 == 0 { 0 } else { 1 });
+            c.bus.write32(RT_BOUND, 0x7000 + seed);
+            // *actionOut = the action; the action's type word picks the path.
+            c.bus.write32(DATA + 0x100, DATA + 0x200);
+            c.bus
+                .write32(DATA + 0x200, [1, 2, 3][((seed / 3) % 3) as usize]);
+            c.g[A0][0] = sx(DATA + 0x600);
+            c.g[A1][0] = sx(DATA + 0x100);
+            c.g[A2][0] = seed as u64;
+        };
+        check(
+            ee::s02::f_0016c518__generated,
+            camera_trigger_man_read_trigger_action,
+            64,
+            setup,
+        );
+    }
+
+    /// `CameraTriggerMan_ReadTrigger`: the two get_uint reads, the volume and
+    /// the two action reads are fakes (answers from the gate words); the
+    /// statuses cover every early exit.
+    #[test]
+    fn camera_trigger_man_read_trigger_matches() {
+        oc1493_install_fakes();
+        fakes::covered(
+            ee::s02::f_0016c428__generated,
+            camera_trigger_man_read_trigger,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x16c428, 3);
+                c.bus.write32(OC1493_RT_GATE, OC1493_RT_MAGIC);
+                let nonzero = |r: &mut Rng| r.next_u32() | 1;
+                c.bus.write32(
+                    OC1493_RT_GATE + 0x8,
+                    if seed % 3 == 0 { 0 } else { nonzero(&mut r) },
+                );
+                c.bus.write32(
+                    OC1493_RT_GATE + 0xc,
+                    if seed % 4 == 0 { 0 } else { nonzero(&mut r) },
+                );
+                c.bus.write32(
+                    OC1493_RT_GATE + 0x10,
+                    if seed % 5 == 0 { 0 } else { nonzero(&mut r) },
+                );
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = sx(r.next_u32());
+                for i in 0..4u32 {
+                    c.bus.write32(DATA + 0x2000 + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// Gate and mailbox words of the test fakes (one pair per fake: a fake's
+    /// gate must be its own word, see the writer brief).
+    pub(crate) const OC1494_MAGIC: u32 = 0x1494_0c0d;
+
+    pub(crate) const OC1494_SPHERE_GATE: u32 = DATA + 0x2000;
+
+    pub(crate) const OC1494_SPHERE_RESULT: u32 = DATA + 0x2004;
+
+    pub(crate) static OC1494_PREV_SPHERE: AtomicUsize = AtomicUsize::new(0);
+
+    /// `CameraTrigger_ReadSphereTrigger` (0x172e18) with a forced "volume read"
+    /// result: 0 or 1 in v0 (the real body allocates and reads the cursor).
+    pub(crate) fn oc1494_fake_sphere(c: &mut Cpu) {
+        if c.bus.read32(OC1494_SPHERE_GATE) != OC1494_MAGIC {
+            return fakes::fall_back(c, &OC1494_PREV_SPHERE, ee::s02::f_00172e18__generated);
+        }
+        let ra = c.g[RA][0] as u32;
+        let read = c.bus.read32(OC1494_SPHERE_RESULT) != 0;
+        fakes::fake(c, 0x0017_2e18, ra);
+        if c.pc == ra {
+            c.g[V0][0] = read as u64;
+        }
+    }
+
+    #[test]
+    fn camera_trigger_man_read_trigger_volume_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00172E18),
+            oc1494_fake_sphere,
+            &OC1494_PREV_SPHERE,
+        );
+        // calls = 1: the fake may unwind, which the wrapper must pass through.
+        check(
+            ee::s02::f_0016c4c8__generated,
+            camera_trigger_man_read_trigger_volume,
+            200,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x0016_c4c8, 1);
+                c.bus.write32(OC1494_SPHERE_GATE, OC1494_MAGIC);
+                c.bus.write32(OC1494_SPHERE_RESULT, seed & 1);
+            },
+        );
+    }
+
+    pub(crate) const OC1495_BOUND_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) static OC1495_PREV_BOUND_OBJ: AtomicUsize = AtomicUsize::new(0);
+
+    /// `CameraTrigger_ReadBoundObj`: returns the mailbox word in `v0`.
+    pub(crate) fn oc1495_fake_bound_obj(c: &mut Cpu) {
+        if c.bus.read32(OC1495_BOUND_CTRL) != OC1495_MAGIC {
+            return fakes::fall_back(c, &OC1495_PREV_BOUND_OBJ, ee::s02::f_00171690__generated);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.bus.read32(OC1495_BOUND_CTRL + 4) as u64;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn oc1495_install_bound_obj() {
+        fakes::hook(
+            addr_of_mut!(ee::s02::OVERRIDE_00171690),
+            oc1495_fake_bound_obj,
+            &OC1495_PREV_BOUND_OBJ,
+        );
+    }
+
+    /// `CameraTriggerMan_ReadBoundObjAction`: the bound object result is 0 or
+    /// not, both give the same return value.
+    #[test]
+    fn camera_trigger_man_read_bound_obj_action_matches() {
+        check(
+            ee::s02::f_0016c4f0__generated,
+            camera_trigger_man_read_bound_obj_action,
+            300,
+            &|c, seed| {
+                oc1495_install_bound_obj();
+                let mut r = machine(c, seed, 0x0016_c4f0, 0);
+                c.bus.write32(OC1495_BOUND_CTRL, OC1495_MAGIC);
+                c.bus.write32(
+                    OC1495_BOUND_CTRL + 4,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() },
+                );
             },
         );
     }

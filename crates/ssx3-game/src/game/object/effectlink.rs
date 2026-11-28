@@ -142,6 +142,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_6350, flex_bridge_ctor, "FlexBridge_ctor"),
     (0x0034_64e0, flex_bridge_ctor_2_2, "FlexBridge_ctor_2"),
     (0x0034_6568, flex_bridge_dtor, "FlexBridge_dtor"),
+    (
+        0x0034_6060,
+        dynamic_particle_modifier_on_transfer_00346060,
+        "DynamicParticleModifier_OnTransfer",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2068,6 +2073,14 @@ pub(crate) fn flex_bridge_dtor_body(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+/// `DynamicParticleModifier_OnTransfer` (0x0034_6060): straight-line leaf: 1 store(s). Mechanical port of the generated body.
+pub fn dynamic_particle_modifier_on_transfer_00346060(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0x1;
+    c.sw((c.g[A0][0] as u32).wrapping_add(0x14), c.g[V0][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3476,6 +3489,24 @@ pub(crate) mod tests {
             flex_bridge_dtor,
             120,
             &|c, seed| dtor_setup(c, seed),
+        );
+    }
+
+    pub(crate) use crate::game::object::railmodifier::tests::leaf_fill;
+
+    /// `DynamicParticleModifier_OnTransfer` (0x0034_6060) against the generated body.
+    #[test]
+    fn dynamic_particle_modifier_on_transfer_00346060_matches() {
+        check(
+            ee::s11::f_00346060__generated,
+            dynamic_particle_modifier_on_transfer_00346060,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x346060, 0);
+                leaf_fill(c, &mut r, 0x0080_2000, 0x2000, false, 0x0080_2000);
+                c.g[A0][0] = sx(0x0080_2000 + 16 * (r.next_u32() % 32));
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
         );
     }
 }

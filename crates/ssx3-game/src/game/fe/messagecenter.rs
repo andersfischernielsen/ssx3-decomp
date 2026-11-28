@@ -4172,7 +4172,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
                     c.g[RA][0] = sx(0x00196fdc);
                     c.g[S4][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x38));
@@ -4358,7 +4358,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
                     c.g[V0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x20));
                     c.g[RA][0] = sx(0x001970b0);
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     call_ptr(c, 0x00317670, 0x001970b0)?;
                     c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
                     c.g[A1][0] = c.g[V0][0];
@@ -4392,7 +4392,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = ((c.g[A0][0] as i64) < 64i64) as u64;
                     let t = c.g[V1][0] != 0u64;
-                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x001970f8) {
                             return Ok(());
@@ -4523,7 +4523,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001971b4);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001971b4)?;
                     let t = true;
                     c.sw((c.g[S3][0] as u32).wrapping_add(0x1dc), c.g[S2][0]);
@@ -4702,7 +4702,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = ((c.g[A1][0] as i64) < 64i64) as u64;
                     let t = c.g[V1][0] != 0u64;
-                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A2][0] as u32)));
+                    c.g[A2][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x00197288) {
                             return Ok(());
@@ -4836,7 +4836,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00197334);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00197334)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
@@ -4885,7 +4885,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00197368);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00197368)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
@@ -4898,7 +4898,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x00197370 => {
                     c.cycles += 10;
-                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[A1][0] = 0u64;
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x194), c.g[S2][0]);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
@@ -4906,7 +4906,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00197390);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00197390)?;
                     let t = true;
 
@@ -4935,7 +4935,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                 0x001973b0 => {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001973b8);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x001973b8)?;
                     let t = c.g[S4][0] == c.g[V0][0];
                     c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x4));
@@ -4969,12 +4969,12 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001973d0 => {
                     c.cycles += 5;
-                    c.g[A0][0] = c.lw((c.g[S5][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[S5][0] as u32);
                     c.g[RA][0] = sx(0x001973dc);
                     c.g[S0][0] = sx((c.g[S1][0] as u32) << 2);
                     call_ptr(c, 0x00317670, 0x001973dc)?;
                     let t = c.g[S4][0] != c.g[V0][0];
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[FP][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[FP][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x001973b0) {
                             return Ok(());
@@ -4987,15 +4987,15 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x001973e4 => {
                     c.cycles += 8;
-                    c.g[V1][0] = sx((c.g[S7][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[S7][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[A1][0] = 0u64;
-                    c.sw((c.g[V1][0] as u32), c.g[S2][0]);
+                    c.sw(c.g[V1][0] as u32, c.g[S2][0]);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x48));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00197404);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00197404)?;
                     pc = 0x00197404;
                     continue;
@@ -5035,9 +5035,9 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                 0x00197428 => {
                     c.cycles += 6;
                     c.g[S5][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
-                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[FP][0] as u32)));
+                    c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[FP][0] as u32));
                     c.g[RA][0] = sx(0x00197438);
-                    c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V0][0] as u32);
                     call_ptr(c, 0x00317670, 0x00197438)?;
 
                     if c.g[S4][0] != c.g[V0][0] {
@@ -5050,11 +5050,11 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                 }
                 0x00197440 => {
                     c.cycles += 5;
-                    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add((c.g[S0][0] as u32)));
-                    c.sw((c.g[V0][0] as u32), c.g[S2][0]);
+                    c.g[V0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                    c.sw(c.g[V0][0] as u32, c.g[S2][0]);
                     c.g[V1][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x16c));
                     let t = c.g[V1][0] == 0u64;
-                    c.g[T0][0] = sx((c.g[S7][0] as u32).wrapping_sub((c.g[S1][0] as u32)));
+                    c.g[T0][0] = sx((c.g[S7][0] as u32).wrapping_sub(c.g[S1][0] as u32));
                     if t {
                         pc = 0x001974a8;
                         continue;
@@ -5078,7 +5078,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
                     c.g[V1][0] = ((c.g[A0][0] as i64) < 64i64) as u64;
                     let t = c.g[V1][0] != 0u64;
-                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
                     if t {
                         if back_edge_unwinds(c, 0x00197468) {
                             return Ok(());
@@ -5107,7 +5107,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001974a0);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001974a0)?;
                     let t = true;
                     c.g[S1][0] = c.g[S5][0];
@@ -5126,7 +5126,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001974c0);
-                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001974c0)?;
                     c.g[S1][0] = c.g[S5][0];
                     pc = 0x001974c4;
@@ -5163,7 +5163,7 @@ fn cfe_state_request_line_on_widget_created_resume(c: &mut Cpu) {
                     c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(30, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.pc = t;

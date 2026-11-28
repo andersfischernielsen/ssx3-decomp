@@ -1367,7 +1367,7 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     let t = c.g[S2][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x00196ae4;
                         continue;
@@ -1507,16 +1507,16 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x60));
                     c.g[A2][0] = 0xffffffffffffffff;
                     c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
-                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[V0][0] as u32);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x78), c.g[A2][0]);
                     c.sw((c.g[V1][0] as u32).wrapping_add(0x7c), c.g[A1][0]);
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
                     c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x5c));
                     c.g[V1][0] = sx((c.g[V0][0] as u32) << 2);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x78), c.g[V0][0]);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A0][0] as u32);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x78), c.g[A2][0]);
                     c.g[RA][0] = sx(0x001967b8);
                     c.sw((c.g[V0][0] as u32).wrapping_add(0x7c), c.g[A1][0]);
@@ -1696,13 +1696,13 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     c.g[A1][0] = c.g[S0][0];
                     c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x18));
-                    c.g[A3][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00196910);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00196910)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[V0][0];
@@ -1771,8 +1771,8 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x560));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2054,7 +2054,7 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00196aac);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00196aac)?;
                     c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x68));
                     c.g[A1][0] = c.g[S3][0];
@@ -2063,7 +2063,7 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00196ac8);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00196ac8)?;
                     c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x6c));
                     c.g[A1][0] = c.g[S4][0];
@@ -2072,7 +2072,7 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x34));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00196ae4);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00196ae4)?;
                     pc = 0x00196ae4;
                     continue;
@@ -2089,7 +2089,7 @@ fn cfe_state_audio_options_on_widget_action_resume(c: &mut Cpu) {
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
                     c.pc = t;

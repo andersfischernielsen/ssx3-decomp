@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -135,6 +136,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_7c18,
         fe_screen_autosave_popup_ctor,
         "FEScreenAutosavePopup_ctor",
+    ),
+    (
+        0x0018_7c10,
+        c_fe_state_mem_card_handle_input_00187c10,
+        "cFEStateMemCard_HandleInput",
+    ),
+    (
+        0x001d_e940,
+        c_fe_state_mem_card_on_widget_action_001de940,
+        "cFEStateMemCard_OnWidgetAction",
+    ),
+    (
+        0x001d_e948,
+        c_fe_state_mem_card_v37_001de948,
+        "cFEStateMemCard_v37",
     ),
 ];
 
@@ -1894,6 +1910,25 @@ pub fn fe_screen_autosave_popup_ctor(c: &mut Cpu) {
     })
 }
 
+/// `cFEStateMemCard_HandleInput` (0x0018_7c10): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_mem_card_handle_input_00187c10(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `cFEStateMemCard_OnWidgetAction` (0x001d_e940): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_mem_card_on_widget_action_001de940(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cFEStateMemCard_v37` (0x001d_e948): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_mem_card_v37_001de948(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2676,6 +2711,48 @@ pub(crate) mod tests {
                 c.pc = 0x0018_7c18;
                 c.g[A0][0] = sx(OC832_OBJ);
                 oc832_w(c, OC832_OBJ + 0x48, 77);
+            },
+        );
+    }
+
+    /// `cFEStateMemCard_HandleInput` (0x0018_7c10) against the generated body.
+    #[test]
+    fn c_fe_state_mem_card_handle_input_00187c10_matches() {
+        check(
+            ee::s02::f_00187c10__generated,
+            c_fe_state_mem_card_handle_input_00187c10,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x187c10, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateMemCard_OnWidgetAction` (0x001d_e940) against the generated body.
+    #[test]
+    fn c_fe_state_mem_card_on_widget_action_001de940_matches() {
+        check(
+            ee::s04::f_001de940__generated,
+            c_fe_state_mem_card_on_widget_action_001de940,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de940, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cFEStateMemCard_v37` (0x001d_e948) against the generated body.
+    #[test]
+    fn c_fe_state_mem_card_v37_001de948_matches() {
+        check(
+            ee::s04::f_001de948__generated,
+            c_fe_state_mem_card_v37_001de948,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1de948, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

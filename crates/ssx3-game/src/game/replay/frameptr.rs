@@ -2929,7 +2929,7 @@ fn replay_process_command_resume(c: &mut Cpu) {
                     c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
                     c.g[S0][0] = c.g[A0][0];
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x618));
                     c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
                     c.g[V1][0] = (c.g[A0][0] < 0x8u64) as u64;
@@ -2947,8 +2947,8 @@ fn replay_process_command_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x480000;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1790));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -3230,7 +3230,7 @@ fn replay_process_command_resume(c: &mut Cpu) {
                 }
                 0x0026ffc8 => {
                     c.cycles += 4;
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[V0][0] = 0x3;
                     let t = c.g[V1][0] != c.g[V0][0];
                     c.g[A0][0] = c.g[S0][0];
@@ -3285,7 +3285,7 @@ fn replay_process_command_resume(c: &mut Cpu) {
                 }
                 0x0026fffc => {
                     c.cycles += 4;
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[V0][0] = 0x3;
                     let t = c.g[V1][0] == c.g[V0][0];
                     c.g[V0][0] = 0x1;
@@ -3341,7 +3341,7 @@ fn replay_process_command_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00270054);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00270054)?;
                     c.g[RA][0] = sx(0x0027005c);
                     c.g[A0][0] = c.g[S1][0];
@@ -3353,7 +3353,7 @@ fn replay_process_command_resume(c: &mut Cpu) {
                     c.cycles += 5;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
                     c.pc = t;

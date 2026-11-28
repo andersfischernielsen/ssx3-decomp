@@ -2860,7 +2860,7 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                     c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.g[S2][0] = c.g[A2][0];
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     c.g[RA][0] = sx(0x0019e990);
                     c.g[S3][0] = c.g[A1][0];
                     call_ptr(c, 0x0014dc80, 0x0019e990)?;
@@ -2869,7 +2869,7 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                     c.g[A1][0] = 0x9;
                     call_ptr(c, 0x0014dd58, 0x0019e99c)?;
                     c.g[S4][0] = c.g[V0][0];
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
                     let t = c.g[V0][0] != c.g[S2][0];
 
                     if t {
@@ -2893,7 +2893,7 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                 }
                 0x0019e9b8 => {
                     c.cycles += 1;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
                     pc = 0x0019e9bc;
                     continue;
                 }
@@ -2931,7 +2931,7 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                     c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[S3][0]);
                     c.g[V1][0] = c.g[V1][0] | c.g[V0][0];
-                    c.sw((c.g[S0][0] as u32), c.g[S2][0]);
+                    c.sw(c.g[S0][0] as u32, c.g[S2][0]);
                     c.sw((c.g[S0][0] as u32).wrapping_add(0xc28), 0u64);
                     c.g[A2][0] = 0u64;
                     c.sw((c.g[S0][0] as u32).wrapping_add(0x14), 0u64);
@@ -3043,7 +3043,7 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                         f: ee::s03::FEModule_RiderPreviewUpdate,
                     }
                     .call(c, 0x0019eb04)?;
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lw(c.g[S0][0] as u32);
                     c.g[V0][0] = (c.g[V1][0] < 0xau64) as u64;
                     let t = c.g[V0][0] == 0u64;
                     c.g[V0][0] = 0x460000;
@@ -3058,8 +3058,8 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb00));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -3189,7 +3189,7 @@ fn fe_module_rider_preview_load_char_resume(c: &mut Cpu) {
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
                     c.pc = t;

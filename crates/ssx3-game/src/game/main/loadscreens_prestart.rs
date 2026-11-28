@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -171,6 +172,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0023_3048,
         c_game_load_screen_load_pictures_3,
         "cGameLoadScreen_LoadPictures",
+    ),
+    (
+        0x0023_2710,
+        c_pre_game_load_screen_load_00232710,
+        "cPreGameLoadScreen_Load",
+    ),
+    (
+        0x0023_2718,
+        c_pre_fe_load_screen_load_00232718,
+        "cPreFELoadScreen_Load",
     ),
 ];
 
@@ -1994,6 +2005,18 @@ pub fn init_load_screen_enter_load(c: &mut Cpu) {
     })
 }
 
+/// `cPreGameLoadScreen_Load` (0x0023_2710): straight-line leaf. Mechanical port of the generated body.
+pub fn c_pre_game_load_screen_load_00232710(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `cPreFELoadScreen_Load` (0x0023_2718): straight-line leaf. Mechanical port of the generated body.
+pub fn c_pre_fe_load_screen_load_00232718(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2686,6 +2709,34 @@ pub(crate) mod tests {
                 c.pc = 0x0023_2568;
                 let at = oc674_gp(c, 0x848);
                 c.bus.write32(at, r.next_u32() & 0x00ff_fff0);
+            },
+        );
+    }
+
+    /// `cPreGameLoadScreen_Load` (0x0023_2710) against the generated body.
+    #[test]
+    fn c_pre_game_load_screen_load_00232710_matches() {
+        check(
+            ee::s06::f_00232710__generated,
+            c_pre_game_load_screen_load_00232710,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x232710, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `cPreFELoadScreen_Load` (0x0023_2718) against the generated body.
+    #[test]
+    fn c_pre_fe_load_screen_load_00232718_matches() {
+        check(
+            ee::s06::f_00232718__generated,
+            c_pre_fe_load_screen_load_00232718,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x232718, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

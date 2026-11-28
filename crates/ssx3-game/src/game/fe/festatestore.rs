@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -110,6 +111,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0018_5268,
         c_fe_state_uber_trick_on_widget_action,
         "cFEStateUberTrick_OnWidgetAction",
+    ),
+    (
+        0x001d_d918,
+        c_fe_state_uber_trick_v13_001dd918,
+        "cFEStateUberTrick_v13",
     ),
 ];
 
@@ -2960,8 +2966,8 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x24a0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -3004,7 +3010,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001852fc);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001852fc)?;
                     c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
                     c.g[RA][0] = sx(0x00185308);
@@ -3017,7 +3023,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00185324);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00185324)?;
                     c.g[RA][0] = sx(0x0018532c);
                     c.g[A0][0] = c.g[S2][0];
@@ -3146,7 +3152,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001853f0);
-                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001853f0)?;
                     c.g[RA][0] = sx(0x001853f8);
                     c.g[A0][0] = c.g[S2][0];
@@ -3219,7 +3225,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x0018546c);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x0018546c)?;
                     c.g[RA][0] = sx(0x00185474);
                     call_ptr(c, 0x0014dc80, 0x00185474)?;
@@ -3240,7 +3246,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
                     call_ptr(c, 0x0014ff90, 0x001854a8)?;
                     c.g[V1][0] = sx((c.g[S5][0] as u32) << 3);
-                    c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[S1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[RA][0] = sx(0x001854b8);
                     c.g[A0][0] = c.lhu((c.g[S1][0] as u32).wrapping_add(0x4));
                     call_ptr(c, 0x00116938, 0x001854b8)?;
@@ -3310,12 +3316,12 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                 }
                 0x0018553c => {
                     c.cycles += 7;
-                    c.g[V0][0] = c.lw((c.g[A2][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[A2][0] as u32);
                     c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x10));
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x14));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00185550);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00185550)?;
                     let t = true;
                     c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
@@ -3348,7 +3354,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x00185584);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00185584)?;
                     c.g[A2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
                     c.g[A1][0] = 0u64;
@@ -3357,7 +3363,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x3c));
                     let t = c.g[V1][0] as u32;
                     c.g[RA][0] = sx(0x001855a0);
-                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001855a0)?;
                     c.g[V0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x50));
                     c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xa0));
@@ -3376,9 +3382,9 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[AT][0] = 0x3f800000;
                     c.mtc1(1, 0);
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-                    c.swc1(0, (c.g[SP][0] as u32));
+                    c.swc1(0, c.g[SP][0] as u32);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x4), 0u64);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     c.sw((c.g[SP][0] as u32).wrapping_add(0x8), 0u64);
                     c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
@@ -3437,13 +3443,13 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.cycles += 10;
                     c.g[A1][0] = c.g[S2][0];
                     c.g[A2][0] = 0u64;
-                    c.g[A3][0] = c.lw((c.g[V0][0] as u32));
+                    c.g[A3][0] = c.lw(c.g[V0][0] as u32);
                     c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x4));
                     c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x00185638);
-                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00185638)?;
                     let t = c.g[V0][0] == 0u64;
                     c.g[A1][0] = c.g[V0][0];
@@ -3542,10 +3548,10 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     call_ptr(c, 0x001a0548, 0x001856cc)?;
                     c.g[V1][0] = sx((c.g[S3][0] as u32) << 3);
                     c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
                     c.g[AT][0] = 0xffffffffbf800000;
                     c.mtc1(1, 12);
-                    c.g[A1][0] = c.lhu((c.g[V1][0] as u32));
+                    c.g[A1][0] = c.lhu(c.g[V1][0] as u32);
                     c.g[RA][0] = sx(0x001856ec);
                     c.g[A2][0] = 0u64;
                     call_ptr(c, 0x003128e8, 0x001856ec)?;
@@ -3888,7 +3894,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[V0][0] as u32;
                     c.g[RA][0] = sx(0x001858f4);
-                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x001858f4)?;
                     c.g[RA][0] = sx(0x001858fc);
                     call_ptr(c, 0x0014dc80, 0x001858fc)?;
@@ -3909,7 +3915,7 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
                     c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x18));
                     call_ptr(c, 0x0014ff90, 0x00185930)?;
                     c.g[V1][0] = sx((c.g[S5][0] as u32) << 3);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x6));
                     c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
 
@@ -4030,6 +4036,12 @@ fn c_fe_state_uber_trick_on_widget_action_resume(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// `cFEStateUberTrick_v13` (0x001d_d918): straight-line leaf. Mechanical port of the generated body.
+pub fn c_fe_state_uber_trick_v13_001dd918(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -4629,6 +4641,20 @@ pub(crate) mod tests {
             seen.len() >= 5,
             "only {} distinct call sequences",
             seen.len()
+        );
+    }
+
+    /// `cFEStateUberTrick_v13` (0x001d_d918) against the generated body.
+    #[test]
+    fn c_fe_state_uber_trick_v13_001dd918_matches() {
+        check(
+            ee::s04::f_001dd918__generated,
+            c_fe_state_uber_trick_v13_001dd918,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1dd918, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
         );
     }
 }

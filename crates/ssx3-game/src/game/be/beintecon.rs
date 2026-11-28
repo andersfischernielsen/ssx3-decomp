@@ -2643,7 +2643,7 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.g[V0][0] = ((c.g[S1][0] as i64) < 2i64) as u64;
                     c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
                     let t = c.g[V0][0] == 0u64;
-                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.sd(c.g[SP][0] as u32, c.g[RA][0]);
                     if t {
                         pc = 0x00150ddc;
                         continue;
@@ -2662,8 +2662,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.g[S3][0] = c.g[V1][0];
                     c.g[A1][0] = (c.g[A3][0] < 0x7u64) as u64;
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     let t = c.g[A1][0] == 0u64;
                     c.g[S4][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xac4));
                     if t {
@@ -2678,8 +2678,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A3][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x58d0));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -2692,8 +2692,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbdf));
                     if t {
@@ -2710,8 +2710,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbe0));
                     if t {
@@ -2728,8 +2728,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbe1));
                     if t {
@@ -2746,8 +2746,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbe2));
                     if t {
@@ -2764,8 +2764,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbe3));
                     if t {
@@ -2782,8 +2782,8 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = true;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbe4));
                     if t {
@@ -2800,15 +2800,15 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 18, 2);
                     c.mult(0, 3, 17, 3);
                     c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbe5));
                     pc = 0x00150d98;
                     continue;
                 }
                 0x00150d98 => {
                     c.cycles += 4;
-                    c.g[A1][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[A1][0] = c.lb(c.g[S0][0] as u32);
                     c.g[V0][0] = 0x5;
 
                     if c.g[V0][0] == 0u64 {
@@ -2843,7 +2843,7 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                 }
                 0x00150dcc => {
                     c.cycles += 4;
-                    c.g[V1][0] = c.lb((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lb(c.g[S0][0] as u32);
                     c.g[V0][0] = 0x37;
                     let t = c.g[V1][0] != c.g[V0][0];
                     c.g[A0][0] = 0xf88;
@@ -2871,15 +2871,15 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.mult(0, 2, 17, 2);
                     c.mult(0, 4, 18, 4);
                     c.g[V1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x6ca8));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V1][0] as u32)));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
                     c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xac4));
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub((c.g[A1][0] as u32)));
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
                     c.sw((c.g[A0][0] as u32).wrapping_add(0xac4), c.g[V0][0]);
-                    c.g[V1][0] = c.lbu((c.g[S0][0] as u32));
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
                     c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                     c.g[RA][0] = sx(0x00150e18);
-                    c.sb((c.g[S0][0] as u32), c.g[V1][0]);
+                    c.sb(c.g[S0][0] as u32, c.g[V1][0]);
                     Callee {
                         addr: 0x00147f78,
                         f: ee::s01::BECharInt_GetInstance,
@@ -2890,7 +2890,7 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
                     let t = c.g[A1][0] as u32;
                     c.g[RA][0] = sx(0x00150e2c);
-                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
                     call_ptr(c, t, 0x00150e2c)?;
                     c.g[V0][0] = 0x1;
                     pc = 0x00150e30;
@@ -2903,7 +2903,7 @@ fn be_econ_int_buy_attribute_resume(c: &mut Cpu) {
                     c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
                     c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
                     c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    c.g[RA][0] = c.ld(c.g[SP][0] as u32);
                     let t = c.g[RA][0] as u32;
                     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
                     c.pc = t;

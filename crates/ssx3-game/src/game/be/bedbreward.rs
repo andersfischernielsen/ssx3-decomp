@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -81,6 +82,51 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_reward_int_get_reward_type_text,
         "BERewardInt_GetRewardTypeText",
     ),
+    (0x0015_afe8, debug_printf_stub_afe8, "DebugPrintf_Stub_afe8"),
+    (
+        0x0015_bb00,
+        be_interface_commit_0015bb00,
+        "BEInterface_Commit",
+    ),
+    (
+        0x0015_bb08,
+        be_interface_reset_0015bb08,
+        "BEInterface_Reset",
+    ),
+    (
+        0x0015_bb10,
+        be_interface_save_state_0015bb10,
+        "BEInterface_SaveState",
+    ),
+    (
+        0x0015_bb18,
+        be_interface_load_state_0015bb18,
+        "BEInterface_LoadState",
+    ),
+    (
+        0x0015_bcc0,
+        be_mission_int_commit_0015bcc0,
+        "BEMissionInt_Commit",
+    ),
+    (
+        0x0015_bcc8,
+        be_mission_int_reset_0015bcc8,
+        "BEMissionInt_Reset",
+    ),
+    (
+        0x0015_c6c8,
+        be_char_db_int_commit_0015c6c8,
+        "BECharDBInt_Commit",
+    ),
+    (
+        0x0015_c6d0,
+        be_char_db_int_reset_0015c6d0,
+        "BECharDBInt_Reset",
+    ),
+    (0x0015_c6d8, be_save_int_commit_0015c6d8, "BESaveInt_Commit"),
+    (0x0015_c6e0, be_save_int_reset_0015c6e0, "BESaveInt_Reset"),
+    (0x0015_c7d0, be_econ_int_commit_0015c7d0, "BEEconInt_Commit"),
+    (0x0015_c7d8, be_econ_int_reset_0015c7d8, "BEEconInt_Reset"),
 ];
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -1692,8 +1738,8 @@ fn be_reward_int_get_reward_type_text_resume(c: &mut Cpu) {
                     c.g[V0][0] = 0x460000;
                     c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x5470));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-                    c.g[A0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
                     let t = c.g[A0][0] as u32;
 
                     pc = t;
@@ -1714,9 +1760,9 @@ fn be_reward_int_get_reward_type_text_resume(c: &mut Cpu) {
                 }
                 0x0015af74 => {
                     c.cycles += 3;
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let t = c.g[RA][0] as u32;
-                    c.g[V0][0] = c.lw((c.g[V1][0] as u32));
+                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
                     c.pc = t;
                     return Ok(());
                 }
@@ -1854,6 +1900,98 @@ fn be_reward_int_get_reward_type_text_resume(c: &mut Cpu) {
             }
         }
     });
+}
+
+/// `DebugPrintf_Stub_afe8` (0x0015_afe8): straight-line leaf: 11 store(s). Mechanical port of the generated body.
+pub fn debug_printf_stub_afe8(c: &mut Cpu) {
+    c.cycles += 15;
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+    c.g[V0][0] = c.g[A0][0];
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x48), c.g[A1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[A2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x58), c.g[A3][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[T0][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x68), c.g[T1][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[T2][0]);
+    c.sd((c.g[SP][0] as u32).wrapping_add(0x78), c.g[T3][0]);
+    c.swc1(12, (c.g[SP][0] as u32).wrapping_add(0x38));
+    c.swc1(14, (c.g[SP][0] as u32).wrapping_add(0x3c));
+    c.swc1(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+    c.swc1(18, (c.g[SP][0] as u32).wrapping_add(0x44));
+    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+    ret(c);
+}
+
+/// `BEInterface_Commit` (0x0015_bb00): straight-line leaf. Mechanical port of the generated body.
+pub fn be_interface_commit_0015bb00(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEInterface_Reset` (0x0015_bb08): straight-line leaf. Mechanical port of the generated body.
+pub fn be_interface_reset_0015bb08(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEInterface_SaveState` (0x0015_bb10): straight-line leaf. Mechanical port of the generated body.
+pub fn be_interface_save_state_0015bb10(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEInterface_LoadState` (0x0015_bb18): straight-line leaf. Mechanical port of the generated body.
+pub fn be_interface_load_state_0015bb18(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEMissionInt_Commit` (0x0015_bcc0): straight-line leaf. Mechanical port of the generated body.
+pub fn be_mission_int_commit_0015bcc0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEMissionInt_Reset` (0x0015_bcc8): straight-line leaf. Mechanical port of the generated body.
+pub fn be_mission_int_reset_0015bcc8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BECharDBInt_Commit` (0x0015_c6c8): straight-line leaf. Mechanical port of the generated body.
+pub fn be_char_db_int_commit_0015c6c8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BECharDBInt_Reset` (0x0015_c6d0): straight-line leaf. Mechanical port of the generated body.
+pub fn be_char_db_int_reset_0015c6d0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BESaveInt_Commit` (0x0015_c6d8): straight-line leaf. Mechanical port of the generated body.
+pub fn be_save_int_commit_0015c6d8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BESaveInt_Reset` (0x0015_c6e0): straight-line leaf. Mechanical port of the generated body.
+pub fn be_save_int_reset_0015c6e0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEEconInt_Commit` (0x0015_c7d0): straight-line leaf. Mechanical port of the generated body.
+pub fn be_econ_int_commit_0015c7d0(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `BEEconInt_Reset` (0x0015_c7d8): straight-line leaf. Mechanical port of the generated body.
+pub fn be_econ_int_reset_0015c7d8(c: &mut Cpu) {
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -2171,6 +2309,215 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (seed % 2) as u64;
                 c.pc = 0x0015af40;
+            },
+        );
+    }
+
+    /// An edge-case 64-bit register value (0, 1, -1, small, random).
+    #[allow(dead_code)]
+    pub(crate) fn leaf_val(r: &mut Rng) -> u64 {
+        match r.next_u32() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => u64::MAX,
+            3 => (r.next_u32() % 64) as u64,
+            4 => sx(r.next_u32()),
+            5 => r.next_u32() as u64,
+            6 => 0x8000_0000,
+            _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        }
+    }
+
+    /// `DebugPrintf_Stub_afe8` (0x0015_afe8) against the generated body.
+    #[test]
+    fn debug_printf_stub_afe8_matches() {
+        check(
+            ee::s01::f_0015afe8__generated,
+            debug_printf_stub_afe8,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x15afe8, 0);
+                c.g[A0][0] = leaf_val(&mut r);
+                c.g[A1][0] = leaf_val(&mut r);
+                c.g[A2][0] = leaf_val(&mut r);
+                c.g[A3][0] = leaf_val(&mut r);
+                c.g[T0][0] = leaf_val(&mut r);
+                c.g[T1][0] = leaf_val(&mut r);
+                c.g[T2][0] = leaf_val(&mut r);
+                c.g[T3][0] = leaf_val(&mut r);
+                c.f[12] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.f[16] = r.edge_f32();
+                c.f[18] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEInterface_Commit` (0x0015_bb00) against the generated body.
+    #[test]
+    fn be_interface_commit_0015bb00_matches() {
+        check(
+            ee::s01::f_0015bb00__generated,
+            be_interface_commit_0015bb00,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15bb00, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEInterface_Reset` (0x0015_bb08) against the generated body.
+    #[test]
+    fn be_interface_reset_0015bb08_matches() {
+        check(
+            ee::s01::f_0015bb08__generated,
+            be_interface_reset_0015bb08,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15bb08, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEInterface_SaveState` (0x0015_bb10) against the generated body.
+    #[test]
+    fn be_interface_save_state_0015bb10_matches() {
+        check(
+            ee::s01::f_0015bb10__generated,
+            be_interface_save_state_0015bb10,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15bb10, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEInterface_LoadState` (0x0015_bb18) against the generated body.
+    #[test]
+    fn be_interface_load_state_0015bb18_matches() {
+        check(
+            ee::s01::f_0015bb18__generated,
+            be_interface_load_state_0015bb18,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15bb18, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEMissionInt_Commit` (0x0015_bcc0) against the generated body.
+    #[test]
+    fn be_mission_int_commit_0015bcc0_matches() {
+        check(
+            ee::s01::f_0015bcc0__generated,
+            be_mission_int_commit_0015bcc0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15bcc0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEMissionInt_Reset` (0x0015_bcc8) against the generated body.
+    #[test]
+    fn be_mission_int_reset_0015bcc8_matches() {
+        check(
+            ee::s01::f_0015bcc8__generated,
+            be_mission_int_reset_0015bcc8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15bcc8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BECharDBInt_Commit` (0x0015_c6c8) against the generated body.
+    #[test]
+    fn be_char_db_int_commit_0015c6c8_matches() {
+        check(
+            ee::s01::f_0015c6c8__generated,
+            be_char_db_int_commit_0015c6c8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15c6c8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BECharDBInt_Reset` (0x0015_c6d0) against the generated body.
+    #[test]
+    fn be_char_db_int_reset_0015c6d0_matches() {
+        check(
+            ee::s01::f_0015c6d0__generated,
+            be_char_db_int_reset_0015c6d0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15c6d0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BESaveInt_Commit` (0x0015_c6d8) against the generated body.
+    #[test]
+    fn be_save_int_commit_0015c6d8_matches() {
+        check(
+            ee::s01::f_0015c6d8__generated,
+            be_save_int_commit_0015c6d8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15c6d8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BESaveInt_Reset` (0x0015_c6e0) against the generated body.
+    #[test]
+    fn be_save_int_reset_0015c6e0_matches() {
+        check(
+            ee::s01::f_0015c6e0__generated,
+            be_save_int_reset_0015c6e0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15c6e0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEEconInt_Commit` (0x0015_c7d0) against the generated body.
+    #[test]
+    fn be_econ_int_commit_0015c7d0_matches() {
+        check(
+            ee::s01::f_0015c7d0__generated,
+            be_econ_int_commit_0015c7d0,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15c7d0, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `BEEconInt_Reset` (0x0015_c7d8) against the generated body.
+    #[test]
+    fn be_econ_int_reset_0015c7d8_matches() {
+        check(
+            ee::s01::f_0015c7d8__generated,
+            be_econ_int_reset_0015c7d8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x15c7d8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
             },
         );
     }

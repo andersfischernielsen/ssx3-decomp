@@ -29,6 +29,8 @@ pub(crate) use crate::game::fe::splashmanager::stk;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
+use crate::game::lib::gcc::callee::CP_PUSH_EXCEPTION;
+use crate::game::lib::gcc::callee::THROW;
 use crate::game::lib::gcc::frame_ld;
 use crate::game::lib::gcc::frame_sd;
 use crate::game::lib::gcc::SIGNAL_SEMA;
@@ -583,6 +585,37 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         libmpeg_setup_ref_frames,
         "libmpeg_SetupRefFrames",
     ),
+    (0x0014_583c, leaf_0014583c_0014583c, "leaf_0014583c"),
+    (0x0014_5844, leaf_00145844_00145844, "leaf_00145844"),
+    (0x0014_584c, leaf_0014584c_0014584c, "leaf_0014584c"),
+    (0x0014_5854, leaf_00145854_00145854, "leaf_00145854"),
+    (0x0014_585c, leaf_0014585c_0014585c, "leaf_0014585c"),
+    (0x0014_58ec, leaf_001458ec, "leaf_001458ec"),
+    (0x0014_58f4, leaf_001458f4, "leaf_001458f4"),
+    (0x0014_58fc, leaf_001458fc, "leaf_001458fc"),
+    (0x0014_5904, leaf_00145904, "leaf_00145904"),
+    (0x0014_590c, leaf_0014590c, "leaf_0014590c"),
+    (0x0014_5914, leaf_00145914, "leaf_00145914"),
+    (0x0014_591c, leaf_0014591c, "leaf_0014591c"),
+    (0x0014_5924, leaf_00145924, "leaf_00145924"),
+    (0x001e_0014, leaf_001e0014, "leaf_001e0014"),
+    (0x0039_4a44, power_curve_one_00394a44, "PowerCurve_One"),
+    (
+        0x0039_4a54,
+        power_curve_linear_00394a54,
+        "PowerCurve_Linear",
+    ),
+    (0x0039_4a5c, power_curve_pow2_00394a5c, "PowerCurve_Pow2"),
+    (0x0039_4a64, power_curve_pow3_00394a64, "PowerCurve_Pow3"),
+    (0x0039_4a70, power_curve_pow4_00394a70, "PowerCurve_Pow4"),
+    (0x003a_39dc, store_f1_tail_003a39e0, "f_003A39DC"),
+    (0x003c_559c, store_const_4958e8, "store_const_4958e8"),
+    (0x003c_55ac, store_const_4958f0, "store_const_4958f0"),
+    (0x003c_55bc, store_const_4958f8, "store_const_4958f8"),
+    (0x003c_55cc, store_const_495910, "store_const_495910"),
+    (0x0041_2d08, f_00412d08, "f_00412d08"),
+    (0x0041_2d88, f_00412d88, "f_00412d88"),
+    (0x0042_1f08, f_00421f08, "f_00421f08"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -33729,6 +33762,277 @@ pub fn libmpeg_setup_ref_frames(c: &mut Cpu) {
     })
 }
 
+/// The 4-byte stub at 0x3a39dc: stores `f1` at `t0 + 0x64`, then falls into
+/// the code at 0x3a39e0 (a tail jump).
+pub fn store_f1_tail_003a39e0(c: &mut Cpu) {
+    c.cycles += 1;
+    c.swc1(1, (c.g[T0][0] as u32).wrapping_add(0x64));
+    c.pc = 0x003a_39e0;
+    ee::s13::f_003a39e0(c);
+}
+
+/// `leaf_0014583c` (0x0014_583c): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_0014583c_0014583c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x4;
+    ret(c);
+}
+
+/// `leaf_00145844` (0x0014_5844): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_00145844_00145844(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `leaf_0014584c` (0x0014_584c): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_0014584c_0014584c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `leaf_00145854` (0x0014_5854): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_00145854_00145854(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x2;
+    ret(c);
+}
+
+/// `leaf_0014585c` (0x0014_585c): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_0014585c_0014585c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x3;
+    ret(c);
+}
+
+/// `leaf_001458ec` (0x0014_58ec): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_001458ec(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `leaf_001458f4` (0x0014_58f4): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_001458f4(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `leaf_001458fc` (0x0014_58fc): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_001458fc(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x3;
+    ret(c);
+}
+
+/// `leaf_00145904` (0x0014_5904): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_00145904(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x2;
+    ret(c);
+}
+
+/// `leaf_0014590c` (0x0014_590c): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_0014590c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x5;
+    ret(c);
+}
+
+/// `leaf_00145914` (0x0014_5914): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_00145914(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x6;
+    ret(c);
+}
+
+/// `leaf_0014591c` (0x0014_591c): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_0014591c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0x4;
+    ret(c);
+}
+
+/// `leaf_00145924` (0x0014_5924): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_00145924(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// `leaf_001e0014` (0x001e_0014): straight-line leaf. Mechanical port of the generated body.
+pub fn leaf_001e0014(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] = 0u64;
+    c.g[V0][0] = 0x1;
+    ret(c);
+}
+
+/// `PowerCurve_One` (0x0039_4a44): straight-line leaf. Mechanical port of the generated body.
+pub fn power_curve_one_00394a44(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[AT][0] = 0x3f800000;
+    c.mtc1(1, 0);
+    ret(c);
+}
+
+/// `PowerCurve_Linear` (0x0039_4a54): straight-line leaf. Mechanical port of the generated body.
+pub fn power_curve_linear_00394a54(c: &mut Cpu) {
+    c.cycles += 2;
+    c.mov_s(0, 12);
+    ret(c);
+}
+
+/// `PowerCurve_Pow2` (0x0039_4a5c): straight-line leaf. Mechanical port of the generated body.
+pub fn power_curve_pow2_00394a5c(c: &mut Cpu) {
+    c.cycles += 2;
+    c.mul_s(0, 12, 12);
+    ret(c);
+}
+
+/// `PowerCurve_Pow3` (0x0039_4a64): straight-line leaf. Mechanical port of the generated body.
+pub fn power_curve_pow3_00394a64(c: &mut Cpu) {
+    c.cycles += 3;
+    c.mul_s(0, 12, 12);
+    c.mul_s(0, 0, 12);
+    ret(c);
+}
+
+/// `PowerCurve_Pow4` (0x0039_4a70): straight-line leaf. Mechanical port of the generated body.
+pub fn power_curve_pow4_00394a70(c: &mut Cpu) {
+    c.cycles += 4;
+    c.mul_s(0, 12, 12);
+    c.mul_s(0, 0, 12);
+    c.mul_s(0, 0, 12);
+    ret(c);
+}
+
+/// Shared body of the `__throw_bad_cast` / `__throw_bad_typeid` tails
+/// (0x412d08 / 0x412d88, resumable at `base`, `base+8`, `base+0x10`): store the
+/// vtable pointer into the new exception object, call `__throw`-prep
+/// `(*vtable)[1]()` for the type_info, `__cp_push_exception(obj, ti, handler)`,
+/// `__throw`, then tail into `tail`. The two siblings differ only in the
+/// handler offset (`a2_off`) and the tail function.
+pub(crate) fn throw_obj_tail(c: &mut Cpu, base: u32, a2_off: u32, tail: (u32, GuestFn)) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            if pc == base {
+                c.cycles += 2;
+                c.sw(c.g[S0][0] as u32, c.g[S1][0]);
+                pc = base + 0x10;
+                continue;
+            }
+            if pc == base + 8 {
+                c.cycles += 2;
+                c.g[RA][0] = sx(base + 0x10);
+                THROW.call(c, base + 0x10)?;
+                pc = base + 0x10;
+                continue;
+            }
+            if pc == base + 0x10 {
+                c.cycles += 13;
+                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x6748));
+                c.sw(c.g[SP][0] as u32, c.g[V0][0]);
+                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                let t = c.g[V0][0] as u32;
+                c.g[RA][0] = sx(base + 0x28);
+                call_ptr(c, t, base + 0x28)?;
+                c.g[A2][0] = 0x410000;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(a2_off));
+                c.g[RA][0] = sx(base + 0x3c);
+                c.g[A0][0] = c.g[S0][0];
+                CP_PUSH_EXCEPTION.call(c, base + 0x3c)?;
+                c.g[RA][0] = sx(base + 0x44);
+                THROW.call(c, base + 0x44)?;
+                c.pc = tail.0;
+                (tail.1)(c);
+                return Ok(());
+            }
+            c.jump_out(pc, base, tail.0);
+            return Ok(());
+        }
+    })
+}
+
+/// `__throw_bad_cast` tail (0x412d08): throws the allocated `bad_cast`.
+pub fn f_00412d08(c: &mut Cpu) {
+    throw_obj_tail(c, 0x0041_2d08, 0x5120, (0x0041_2d4c, ee::s15::f_00412d4c));
+}
+
+/// `__throw_bad_typeid` tail (0x412d88): throws the allocated `bad_typeid`.
+pub fn f_00412d88(c: &mut Cpu) {
+    throw_obj_tail(c, 0x0041_2d88, 0x5088, (0x0041_2dcc, ee::s15::f_00412dcc));
+}
+
+/// Epilogue `return s0` of a function (0x421f08, resumable at 0x421f0c):
+/// reload `ra` and `s0`, drop the 0x20-byte frame.
+pub fn f_00421f08(c: &mut Cpu) {
+    let mut pc: u32 = c.pc;
+    loop {
+        match pc {
+            0x0042_1f08 => {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S0][0];
+                pc = 0x0042_1f0c;
+                continue;
+            }
+            0x0042_1f0c => {
+                c.cycles += 4;
+                c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+                c.pc = t;
+                return;
+            }
+            _ => {
+                c.jump_out(pc, 0x0042_1f08, 0x0042_1f1c);
+                return;
+            }
+        }
+    }
+}
+
+/// Stores `value` at `*a1` and returns 0 through the shared tail at
+/// `0x3c55f4` (which costs 2 cycles and sets v0 = 0). The four stubs at
+/// `0x3c559c`..`0x3c55cc` differ only in the stored constant.
+pub(crate) fn stub_store_then_return_zero(c: &mut Cpu, value: u32) {
+    c.cycles += 4;
+    c.g[V0][0] = sx(value);
+    let a1 = c.g[A1][0] as u32;
+    let v = c.g[V0][0];
+    c.sw(a1, v);
+    // Tail at 0x3c55f4: v0 = 0 and return through ra.
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+/// `0x3c559c`: stores `0x4958e8` at `*a1`, returns 0.
+pub fn store_const_4958e8(c: &mut Cpu) {
+    stub_store_then_return_zero(c, 0x0049_58e8);
+}
+
+/// `0x3c55ac`: stores `0x4958f0` at `*a1`, returns 0.
+pub fn store_const_4958f0(c: &mut Cpu) {
+    stub_store_then_return_zero(c, 0x0049_58f0);
+}
+
+/// `0x3c55bc`: stores `0x4958f8` at `*a1`, returns 0.
+pub fn store_const_4958f8(c: &mut Cpu) {
+    stub_store_then_return_zero(c, 0x0049_58f8);
+}
+
+/// `0x3c55cc`: stores `0x495910` at `*a1`, returns 0.
+pub fn store_const_495910(c: &mut Cpu) {
+    stub_store_then_return_zero(c, 0x0049_5910);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -49363,6 +49667,372 @@ pub(crate) mod tests {
             512,
             setup,
         );
+    }
+
+    /// The 4-byte stub: the store of `f1` and the dispatcher's tail (the
+    /// index test fails at once, so it returns to `ra`).
+    #[test]
+    fn store_f1_tail_003a39e0_matches() {
+        check(
+            ee::s13::f_003a39dc__generated,
+            store_f1_tail_003a39e0,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_39dc, 0);
+                c.g[T0][0] = (DATA + 0x100) as u64;
+                c.f[1] = if seed % 2 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(100.0)
+                };
+                c.g[T2][0] = 5;
+                c.g[A1][0] = 3;
+            },
+        );
+    }
+
+    /// `leaf_0014583c` (0x0014_583c) against the generated body.
+    #[test]
+    fn leaf_0014583c_0014583c_matches() {
+        check(
+            ee::s01::f_0014583c__generated,
+            leaf_0014583c_0014583c,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x14583c, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_00145844` (0x0014_5844) against the generated body.
+    #[test]
+    fn leaf_00145844_00145844_matches() {
+        check(
+            ee::s01::f_00145844__generated,
+            leaf_00145844_00145844,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x145844, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_0014584c` (0x0014_584c) against the generated body.
+    #[test]
+    fn leaf_0014584c_0014584c_matches() {
+        check(
+            ee::s01::f_0014584c__generated,
+            leaf_0014584c_0014584c,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x14584c, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_00145854` (0x0014_5854) against the generated body.
+    #[test]
+    fn leaf_00145854_00145854_matches() {
+        check(
+            ee::s01::f_00145854__generated,
+            leaf_00145854_00145854,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x145854, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_0014585c` (0x0014_585c) against the generated body.
+    #[test]
+    fn leaf_0014585c_0014585c_matches() {
+        check(
+            ee::s01::f_0014585c__generated,
+            leaf_0014585c_0014585c,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x14585c, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_001458ec` (0x0014_58ec) against the generated body.
+    #[test]
+    fn leaf_001458ec_matches() {
+        check(
+            ee::s01::f_001458ec__generated,
+            leaf_001458ec,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1458ec, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_001458f4` (0x0014_58f4) against the generated body.
+    #[test]
+    fn leaf_001458f4_matches() {
+        check(
+            ee::s01::f_001458f4__generated,
+            leaf_001458f4,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1458f4, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_001458fc` (0x0014_58fc) against the generated body.
+    #[test]
+    fn leaf_001458fc_matches() {
+        check(
+            ee::s01::f_001458fc__generated,
+            leaf_001458fc,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1458fc, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_00145904` (0x0014_5904) against the generated body.
+    #[test]
+    fn leaf_00145904_matches() {
+        check(
+            ee::s01::f_00145904__generated,
+            leaf_00145904,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x145904, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_0014590c` (0x0014_590c) against the generated body.
+    #[test]
+    fn leaf_0014590c_matches() {
+        check(
+            ee::s01::f_0014590c__generated,
+            leaf_0014590c,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x14590c, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_00145914` (0x0014_5914) against the generated body.
+    #[test]
+    fn leaf_00145914_matches() {
+        check(
+            ee::s01::f_00145914__generated,
+            leaf_00145914,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x145914, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_0014591c` (0x0014_591c) against the generated body.
+    #[test]
+    fn leaf_0014591c_matches() {
+        check(
+            ee::s01::f_0014591c__generated,
+            leaf_0014591c,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x14591c, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_00145924` (0x0014_5924) against the generated body.
+    #[test]
+    fn leaf_00145924_matches() {
+        check(
+            ee::s01::f_00145924__generated,
+            leaf_00145924,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x145924, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `leaf_001e0014` (0x001e_0014) against the generated body.
+    #[test]
+    fn leaf_001e0014_matches() {
+        check(
+            ee::s04::f_001e0014__generated,
+            leaf_001e0014,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1e0014, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PowerCurve_One` (0x0039_4a44) against the generated body.
+    #[test]
+    fn power_curve_one_00394a44_matches() {
+        check(
+            ee::s13::f_00394a44__generated,
+            power_curve_one_00394a44,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x394a44, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PowerCurve_Linear` (0x0039_4a54) against the generated body.
+    #[test]
+    fn power_curve_linear_00394a54_matches() {
+        check(
+            ee::s13::f_00394a54__generated,
+            power_curve_linear_00394a54,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x394a54, 0);
+                c.f[12] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PowerCurve_Pow2` (0x0039_4a5c) against the generated body.
+    #[test]
+    fn power_curve_pow2_00394a5c_matches() {
+        check(
+            ee::s13::f_00394a5c__generated,
+            power_curve_pow2_00394a5c,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x394a5c, 0);
+                c.f[12] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PowerCurve_Pow3` (0x0039_4a64) against the generated body.
+    #[test]
+    fn power_curve_pow3_00394a64_matches() {
+        check(
+            ee::s13::f_00394a64__generated,
+            power_curve_pow3_00394a64,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x394a64, 0);
+                c.f[12] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// `PowerCurve_Pow4` (0x0039_4a70) against the generated body.
+    #[test]
+    fn power_curve_pow4_00394a70_matches() {
+        check(
+            ee::s13::f_00394a70__generated,
+            power_curve_pow4_00394a70,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x394a70, 0);
+                c.f[12] = r.edge_f32();
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Fixture for the throw tails: exception object at `DATA+0x200`, its
+    /// vtable pointer (stored from `s1`) at `DATA+0x300` with a real leaf as
+    /// the type_info getter; entry `base`, `base+8` or `base+0x10` by seed.
+    pub(crate) fn throw_tail_setup(c: &mut Cpu, seed: u32, base: u32) {
+        machine(c, seed, base as u64, 0);
+        c.bus.write32(LOG_UNWIND_AT, 1);
+        c.g[S0][0] = (DATA + 0x200) as u64;
+        c.g[S1][0] = (DATA + 0x300) as u64;
+        c.bus.write32(DATA + 0x304, 0x0014_06c0);
+        c.pc = base + [0, 8, 0x10][(seed % 3) as usize];
+    }
+
+    /// 0x412d08 against the generated tail, from all three entries.
+    #[test]
+    fn f_00412d08_matches() {
+        check(
+            ee::s15::f_00412d08__generated,
+            f_00412d08,
+            24,
+            &|c, seed| throw_tail_setup(c, seed, 0x0041_2d08),
+        );
+    }
+
+    /// 0x412d88 against the generated tail, from all three entries.
+    #[test]
+    fn f_00412d88_matches() {
+        check(
+            ee::s15::f_00412d88__generated,
+            f_00412d88,
+            24,
+            &|c, seed| throw_tail_setup(c, seed, 0x0041_2d88),
+        );
+    }
+
+    /// 0x421f08 (`return s0` epilogue) from both entries.
+    #[test]
+    fn f_00421f08_matches() {
+        check(
+            ee::s15::f_00421f08__generated,
+            f_00421f08,
+            16,
+            &|c, seed| {
+                machine(c, seed, 0x0042_1f08, 0);
+                let sp = c.g[SP][0] as u32;
+                for i in 0..8 {
+                    c.bus
+                        .write32(sp + i * 4, seed.wrapping_mul(0x9e37_79b1) ^ i);
+                }
+                c.pc = if seed % 2 == 0 {
+                    0x0042_1f08
+                } else {
+                    0x0042_1f0c
+                };
+            },
+        );
+    }
+
+    #[test]
+    fn store_const_stubs_match() {
+        let stubs: [(GuestFn, GuestFn); 4] = [
+            (ee::s13::f_003c559c__generated, store_const_4958e8),
+            (ee::s13::f_003c55ac__generated, store_const_4958f0),
+            (ee::s13::f_003c55bc__generated, store_const_4958f8),
+            (ee::s13::f_003c55cc__generated, store_const_495910),
+        ];
+        for (generated, hand) in stubs {
+            check(generated, hand, 64, &|c, seed| {
+                let mut r = Rng(0x1586_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A1][0] = sx(DATA + 0x5000 + (seed % 16) * 4);
+            });
+        }
     }
 }
 

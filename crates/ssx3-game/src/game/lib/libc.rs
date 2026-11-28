@@ -31,6 +31,7 @@ use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
@@ -159,6 +160,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_1400, ratio, "__ratio"),
     (0x0042_1f20, realloc_r, "_realloc_r"),
     (0x0042_2780, dtoa_r, "_dtoa_r"),
+    (
+        0x0042_1eb0,
+        print_then_tail_421eb0,
+        "print_then_tail_421eb0",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -20407,6 +20413,31 @@ pub fn ratio(c: &mut Cpu) {
     })
 }
 
+/// `print_f(out, ...)` with the format words of 0x421eb0, then the tail call
+/// into the epilogue at 0x421f0c (the generated `if t` is always true).
+pub fn print_then_tail_421eb0(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        c.g[T1][0] = 0x1;
+        c.g[A2][0] = c.g[A1][0];
+        if c.g[A3][0] == 0 {
+            c.g[T1][0] = c.g[T2][0];
+        }
+        c.g[A0][0] = c.g[T3][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[T2][0] = 0x3;
+        Callee {
+            addr: 0x0042_1530,
+            f: ee::s15::f_00421530,
+        }
+        .call(c, 0x0042_1ecc)?;
+        c.g[V0][0] = c.g[S0][0];
+        c.pc = 0x0042_1f0c;
+        call_indirect(c, 0x0042_1f0c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -29365,6 +29396,32 @@ pub(crate) mod tests {
             &[2],
             &|c, seed| {
                 glue_machine(c, seed, 0);
+            },
+        );
+    }
+
+    pub(crate) use crate::game::lib::gcc::tests::oc1593_arm;
+
+    pub(crate) use crate::game::lib::gcc::tests::oc1593_hook_all;
+
+    /// `print_f` returns or unwinds; the tail call reaches the 0x421f0c epilogue
+    /// with the saved return address. A3 zero and nonzero take both paths.
+    #[test]
+    fn print_then_tail_421eb0_matches() {
+        oc1593_hook_all();
+        check(
+            ee::s15::f_00421eb0__generated,
+            print_then_tail_421eb0,
+            200,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0042_1eb0, 0);
+                c.pc = 0x0042_1eb0;
+                oc1593_arm(c, seed % 4 == 0);
+                if seed % 2 == 0 {
+                    c.g[A3][0] = 0;
+                }
+                c.bus
+                    .write64(crate::difftest::SP, crate::difftest::RA as u64);
             },
         );
     }

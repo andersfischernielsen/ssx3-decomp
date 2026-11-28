@@ -180,6 +180,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         proto_aries_rpc_reply_callback,
         "ProtoAries_RpcReplyCallback",
     ),
+    (
+        0x003f_61c8,
+        usb_kb_null_callback_003f61c8,
+        "UsbKb_NullCallback",
+    ),
+    (0x0040_cef8, usbkb_copy_report, "usbkb_copy_report"),
+    (0x0040_cf88, usbkb_count_repeats, "usbkb_count_repeats"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -9896,6 +9903,134 @@ pub fn proto_aries_rpc_reply_callback(c: &mut Cpu) {
     ret(c);
 }
 
+/// `UsbKb_NullCallback` (0x003f_61c8): straight-line leaf. Mechanical port of the generated body.
+pub fn usb_kb_null_callback_003f61c8(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = 0u64;
+    ret(c);
+}
+
+/// Address of the usbkb repeat table `D_00529000`: the record count at +0, the
+/// pointer to the record array at +4.
+pub(crate) const REPEAT_TABLE: u32 = 0x0052_9000;
+
+/// `int usbkb_copy_report(void)` (0x40cef8): when byte 6 of the received 7-byte
+/// report (at 0x529140) is zero, copy the 7 bytes to the buffer whose pointer
+/// is stored at 0x529098 and return 0; otherwise return -1.
+pub fn usbkb_copy_report(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = 0x0053_0000;
+    c.g[V1][0] = 0x0053_0000;
+    c.g[A0][0] = sx(0x0053_0000u32.wrapping_sub(0x6ec0));
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x6)).lbu(c);
+    let copy = c.g[V0][0] == 0;
+    c.g[V1][0] = Addr((c.g[V1][0] as u32).wrapping_sub(0x6f68)).lw(c);
+    if !copy {
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[A1][0] = 0x6;
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).lbu(c);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x1));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+        let byte = c.g[V0][0];
+        Addr(c.g[V1][0] as u32).sb(c, byte);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+        if (c.g[A1][0] as i64) >= 0 {
+            if event_due(c) {
+                deliver_event_here(c, 0x0040_cf20);
+            }
+            continue;
+        }
+        break;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+/// `void usbkb_count_repeats(void)` (0x40cf88): for each key-repeat record of
+/// the table at [`REPEAT_TABLE`] (records 0x38 bytes apart, the first at +0x10
+/// of the array: state at +0, count at +4, delay at +8, rate at +0xc), count
+/// one more when the delay and rate are positive and the state is 1 or 2.
+/// Then re-enables interrupts and returns 0.
+pub fn usbkb_count_repeats(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A1][0] = 0x0053_0000;
+    c.g[V0][0] = Addr(REPEAT_TABLE).lw(c);
+    let none = (c.g[V0][0] as i64) <= 0;
+    c.g[A0][0] = 0;
+    if !none {
+        c.cycles += 4;
+        c.g[V0][0] = sx(REPEAT_TABLE);
+        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x4)).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+        loop {
+            'record: {
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x8)).lw(c);
+                let no_delay = (c.g[V0][0] as i64) <= 0;
+                c.g[V0][0] = Addr(REPEAT_TABLE).lw(c);
+                if no_delay {
+                    break 'record;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0xc)).lw(c);
+                let no_rate = (c.g[V0][0] as i64) <= 0;
+                c.g[V0][0] = Addr(REPEAT_TABLE).lw(c);
+                if no_rate {
+                    break 'record;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = Addr(REPEAT_TABLE).lw(c);
+                    break 'record;
+                }
+                // The state is 1 or 2 (positive, below 3): count the repeat.
+                c.cycles += 2;
+                let negative = (c.g[V0][0] as i64) < 0;
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 3) as u64;
+                if !negative {
+                    c.cycles += 2;
+                    let state_high = c.g[V0][0] == 0;
+                    c.g[V0][0] = Addr(REPEAT_TABLE).lw(c);
+                    if state_high {
+                        break 'record;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x4)).lw(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                    let count = c.g[V0][0];
+                    Addr((c.g[V1][0] as u32).wrapping_add(0x4)).sw(c, count);
+                }
+                c.cycles += 1;
+                c.g[V0][0] = Addr(REPEAT_TABLE).lw(c);
+            }
+            c.cycles += 4;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x38));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0040_cfa8);
+            }
+        }
+    }
+    c.cycles += 4;
+    c.ei();
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17375,6 +17510,77 @@ pub(crate) mod tests {
                 );
                 c.bus.write32(INTC_STATE + 0x4e00, 0x1111_1111 + seed);
                 c.bus.write32(INTC_STATE + 0x4e04, 0x2222_2222 + seed);
+            },
+        );
+    }
+
+    /// `UsbKb_NullCallback` (0x003f_61c8) against the generated body.
+    #[test]
+    fn usb_kb_null_callback_003f61c8_matches() {
+        check(
+            ee::s14::f_003f61c8__generated,
+            usb_kb_null_callback_003f61c8,
+            120,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x3f61c8, 0);
+                c.g[RA][0] = sx(0x0040_0000 + 8 * seed);
+            },
+        );
+    }
+
+    /// Both byte-copy outcomes: the flag byte set or clear, and the copy
+    /// through the destination pointer.
+    #[test]
+    fn usbkb_copy_report_matches() {
+        check(
+            ee::s15::f_0040cef8__generated,
+            usbkb_copy_report,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0040_cef8, 0);
+                c.pc = 0x0040_cef8;
+                for i in 0..7u32 {
+                    c.bus.write8(0x0052_9140 + i, r.next_u32() as u8);
+                }
+                let flag = if seed % 3 == 0 {
+                    1 + (r.next_u32() % 255) as u8
+                } else {
+                    0
+                };
+                c.bus.write8(0x0052_9146, flag);
+                c.bus
+                    .write32(0x0052_9098, DATA + 0x1000 + 0x10 * (seed % 8));
+            },
+        );
+    }
+
+    /// Empty, negative and populated tables; every state, delay and rate class.
+    #[test]
+    fn usbkb_count_repeats_matches() {
+        check(
+            ee::s15::f_0040cf88__generated,
+            usbkb_count_repeats,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0040_cf88, 0);
+                c.pc = 0x0040_cf88;
+                let n = match seed % 8 {
+                    0 => 0,
+                    1 => u32::MAX,
+                    _ => 1 + r.next_u32() % 6,
+                };
+                c.bus.write32(0x0052_9000, n);
+                c.bus.write32(0x0052_9004, DATA + 0x1000);
+                for k in 0..6u32 {
+                    let rec = DATA + 0x1010 + 0x38 * k;
+                    let state = [0, 1, 2, 3, u32::MAX, 5][(r.next_u32() % 6) as usize];
+                    let delay = [0, 1, 2, u32::MAX][(r.next_u32() % 4) as usize];
+                    let rate = [0, 1, u32::MAX][(r.next_u32() % 3) as usize];
+                    c.bus.write32(rec, state);
+                    c.bus.write32(rec + 4, r.next_u32());
+                    c.bus.write32(rec + 8, delay);
+                    c.bus.write32(rec + 0xc, rate);
+                }
             },
         );
     }
