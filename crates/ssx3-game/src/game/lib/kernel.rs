@@ -8796,6 +8796,20 @@ pub(crate) mod tests {
                 c.g[A1][0] = [0, 8][seed as usize / 5 % 2] as u64;
                 c.g[A2][0] = (DATA + 0x1000) as u64;
                 tty_state(c, [0, 0x20][seed as usize / 10 % 2]);
+                // Boundary arms the sweep left uncovered (mode 1 only,
+                // so the other modes' paths do not move): S0=8 with the
+                // state word at 0x139 sums to exactly 0x141, taking the
+                // 0x424f0c PRINTF arm (`<0x141` becomes `<=`) instead of
+                // 0x424f14; S0=0 with the ring count at 12 takes the
+                // 0x424f6c side of the `12<V0` check instead of 0x424fa8
+                // (same cycles either way; the mutant takes the other
+                // side in both cases).
+                if seed as usize % 5 == 1 && seed as usize / 5 % 2 == 1 {
+                    c.bus.write32(DATA + 0x1008, 0x139);
+                }
+                if seed as usize % 5 == 1 && seed as usize / 5 % 2 == 0 {
+                    c.bus.write16(DATA + 0x3000, 12);
+                }
                 c.bus.write32(RECV_GATE, GATE_MAGIC);
                 c.bus.write32(SEND_GATE, GATE_MAGIC);
                 c.bus
@@ -9127,7 +9141,15 @@ pub(crate) mod tests {
                     0xbeb0_0000_0000_0000, // -2^-20
                     0x400c_0000_0000_0000, // 3.5
                     0x4006_6666_6666_6666, // 2.8
-                ][seed as usize % 16];
+                    // Boundary exponents the sweep left uncovered: exp
+                    // 0x3fe (A2==-53; 0.75 computes 1, `<=` returns 0),
+                    // exp 0x440 (A2==13; 9999 vs computed 0), and a
+                    // nonzero mantissa low with A2==1 (2^53+2: shift
+                    // 1 vs 0, ret 2 vs 1/0).
+                    0x3fe8_0000_0000_0000, // 0.75
+                    0x4400_0000_0000_0000, // 2^65
+                    0x4340_0000_0000_0001, // 2^53+2
+                ][seed as usize % 19];
             },
         );
     }
@@ -9329,7 +9351,7 @@ pub(crate) mod tests {
     /// l o s u x` only; every other character in '1'..'x' takes the skip
     /// arm 0x425bd8, and anything outside it (`%`, `-`, `+`, space, `y`)
     /// the bound-fail arm 0x425bd0.
-    const VPRINTF_ROWS: [(&str, &[u64]); 10] = [
+    const VPRINTF_ROWS: [(&str, &[u64]); 13] = [
         // Zero (0x425918), negative (0x425930) and positive `%d`.
         ("%d %d %d", &[0, 0xffff_ffd6, 1234]),
         // Zero and nonzero `%o %x %u` (0x42579c, 0x425858, 0x425a08), hex
@@ -9372,6 +9394,14 @@ pub(crate) mod tests {
         ("a=%d\nb", &[7]),
         // Literal text only.
         ("lit-only-no-specs-at-all-0123456789", &[]),
+        // Boundary formats the sweep left uncovered (appended so seeds
+        // 0-9 keep their rows): `%0:` feeds ':' (0x3a) as the first width
+        // byte, taking the `<=0xa` side of the first digit check; `%05:`
+        // feeds a digit then ':' for the second; `%032d` computes width
+        // 32, taking the unclamped side of the `<32` check (31 vs 32).
+        ("%0:d", &[1]),
+        ("%05:d", &[2]),
+        ("%032d", &[3]),
     ];
 
     /// Shared vprintf setup: the game's image (spec table, `__clz_tab`,
@@ -9718,9 +9748,12 @@ pub(crate) mod tests {
                 c.bus.write32(CREATE_SEMA_GATE, GATE_MAGIC);
                 c.bus.write32(CREATE_THREAD_GATE, GATE_MAGIC);
                 // CreateSema and CreateThread succeed or fail (-1),
-                // independently.
-                c.bus
-                    .write32(CREATE_SEMA_RESULT, [5, 0xffff_ffff][seed as usize / 2 % 2]);
+                // independently; sema id 0 takes the success side of the
+                // `<0` check (the sweep left V0==0 uncovered).
+                c.bus.write32(
+                    CREATE_SEMA_RESULT,
+                    [5, 0xffff_ffff, 0][seed as usize / 2 % 3],
+                );
                 c.bus.write32(
                     CREATE_THREAD_RESULT,
                     [7, 0xffff_ffff][seed as usize / 4 % 2],

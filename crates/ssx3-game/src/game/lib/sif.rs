@@ -8669,12 +8669,15 @@ pub(crate) mod tests {
                 },
             );
             c.bus.write32(DATA + 0x67c, 0x4444_4400 + seed);
-            // Thread digit: id negative, wake word set, or a wakeup.
-            let mode = seed / 2 % 3;
+            // Thread digit: id negative, wake word set, a wakeup, or id
+            // zero (the `< 0` mutant would skip the wake word check).
+            let mode = seed / 2 % 4;
             c.bus.write32(
                 DATA + 0x500,
                 if mode == 0 {
                     0xffff_ffff
+                } else if mode == 3 {
+                    0
                 } else {
                     0x4545_4500 + seed
                 },

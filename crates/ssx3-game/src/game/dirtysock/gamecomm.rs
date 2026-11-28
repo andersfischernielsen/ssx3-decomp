@@ -7007,7 +7007,7 @@ pub(crate) mod tests {
         clear_words(c, this, 0x180);
         c.bus.write32(this + 0x4, (seed / 2 % 2) as u32);
         c.bus
-            .write32(this + 0x70, if seed / 4 % 2 == 0 { 5 } else { 20 });
+            .write32(this + 0x70, [5, 20, 15][seed as usize / 4 % 3]);
         c.bus.write32(this + 0x38, (seed / 8 % 2) as u32);
         c.g[A0][0] = this as u64;
         c.g[A1][0] = (seed % 2) as u64;
@@ -7752,7 +7752,18 @@ pub(crate) mod tests {
         c.bus.write32(FAKE_CTRL, FAKE_MAGIC1);
         let this = FIX + 0x3400;
         clear_words(c, this, 0x180);
-        if seed % 2 == 0 {
+        if seed % 8 == 0 {
+            // 32-unaligned head (33, tail 34): exercises the `>>5`
+            // rounding (kills the `<<5` mutant, which shifts the head
+            // the wrong way). Slot (33 mod 32) == 1 reuses this+0x370.
+            // (Seeds 0 and 8 both have +0x4 clear, so both stay on the
+            // connected send path.)
+            c.bus.write32(this + 0x368, 33);
+            c.bus.write32(this + 0x364, 34);
+            let pkt = alloc(c, 0x40);
+            c.bus.write16(pkt + 2, 12);
+            c.bus.write32(this + 0x370, pkt);
+        } else if seed % 2 == 0 {
             c.bus.write32(this + 0x368, 0);
             c.bus.write32(this + 0x364, 0);
         } else {
@@ -7869,6 +7880,10 @@ pub(crate) mod tests {
         c.bus.write32(this + 0x64, (seed / 16 % 2) as u32 * 5);
         c.bus.write32(this + 0x3c, (seed / 32 % 2) as u32);
         c.bus.write32(this + 0x70, (seed / 128 % 2) as u32 * 15);
+        // Word the 0x257fd4/0x25803c gates test: nonzero takes the
+        // 0x257ff8/0x258068 arms (kills their delete mutants, which
+        // would otherwise exit early).
+        c.bus.write32(this + 0x7c, 1);
         c.g[A0][0] = this as u64;
         c.g[RA][0] = SENTINEL_RA as u64;
         let mode = schedule(c, &mut r, seed, 0x0025_7f98);
@@ -8130,7 +8145,7 @@ pub(crate) mod tests {
         c.bus
             .write32(this + 0x12c, if seed % 2 == 0 { 0 } else { src });
         c.bus
-            .write32(this + 0x130, if seed / 2 % 2 == 0 { 64 } else { 300 });
+            .write32(this + 0x130, [64, 300, 237][seed as usize / 2 % 3]);
         c.bus.write32(this + 0x4, (seed / 4 % 2) as u32);
         c.bus.write32(this + 0x6c, 0);
         c.g[A0][0] = this as u64;
