@@ -410,12 +410,9 @@ pub fn install() {
     chain(QUIT_TO_LOAD_SCREEN, quit_to_load_screen, &QUIT_PREV);
 }
 
-/// Wrap the function in a slot: what it held (the hand-written port, else the
-/// generated body) is what `prev` calls.
+/// Wrap the function in a slot: what it held (the hand-written port) is what `prev` calls.
 fn chain(addr: u32, f: GuestFn, prev: &Prev) {
-    let was = ssx3_ee::get_override(addr)
-        .or_else(|| ssx3_ee::generated_body(addr))
-        .expect("plugin menu: no function to wrap");
+    let was = ssx3_ee::get_override(addr).expect("plugin menu: no function to wrap");
     prev.set_for_host(was);
     assert!(
         ssx3_ee::set_override(addr, f),

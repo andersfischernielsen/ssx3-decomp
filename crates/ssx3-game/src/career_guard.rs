@@ -91,9 +91,7 @@ pub fn install() {
 }
 
 fn chain(addr: u32, f: ssx3_ee_rt::funcs::GuestFn, prev: &Prev) {
-    let was = ssx3_ee::get_override(addr)
-        .or_else(|| ssx3_ee::generated_body(addr))
-        .expect("career guard: no function to wrap");
+    let was = ssx3_ee::get_override(addr).expect("career guard: no function to wrap");
     prev.set_for_host(was);
     assert!(
         ssx3_ee::set_override(addr, f),

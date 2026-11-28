@@ -8485,7 +8485,7 @@ pub(crate) fn sphere_children_or_leaf(c: &mut Cpu, frame: Frame) -> Flow {
                 c.g[T1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
                 let child = Callee {
                     addr: SELF_ADDR,
-                    f: ee::s11::f_0032d028__generated,
+                    f: ee::s11::f_0032d028,
                 };
                 child.call(c, RET_AFTER_CHILD)?;
                 let child_hit = c.g[V0][0] != 0;

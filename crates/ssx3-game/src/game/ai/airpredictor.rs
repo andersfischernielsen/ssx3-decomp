@@ -66,14 +66,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 /// the same way, so the rider moves every tick.
 pub fn air_predictor_update(c: &mut Cpu) {
     if crate::tick::rate(c) == 60 {
-        ee::s00::f_00113648__generated(c);
+        air_predictor_update_orig(c);
         return;
     }
     let ap = abi::r32(c, A0);
     let pos = abi::r32(c, A1);
     let vel = abi::r32(c, A2);
     let ret = c.g[RA][0] as u32;
-    ee::s00::f_00113648__generated(c);
+    air_predictor_update_orig(c);
     if c.pc != ret {
         return;
     }
@@ -96,6 +96,420 @@ pub fn air_predictor_update(c: &mut Cpu) {
         c.bus.write32(pos + 4 * i as u32, p.to_bits());
         c.bus.write32(vel + 4 * i as u32, v.to_bits());
     }
+}
+
+/// Native body of `AirPredictor_Update` (0x113648) as the original runs it, converted from the generated code (registers,
+/// cycles and calls as the original).
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn air_predictor_update_orig(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_113804: {
+            'b_113800: {
+                'b_113700: {
+                    c.cycles += 20;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xe0));
+                    c.g[AT][0] = 0x42700000;
+                    c.mtc1(1, 0);
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
+                    c.g[S3][0] = c.g[A1][0];
+                    c.swc1(22, (c.g[SP][0] as u32).wrapping_add(0xd0));
+                    c.g[S4][0] = c.g[A2][0];
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0xa0));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x90));
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
+                    c.swc1(21, (c.g[SP][0] as u32).wrapping_add(0xc8));
+                    c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+                    c.lwc1(2, (c.g[S0][0] as u32).wrapping_add(0x98));
+                    c.c_lt_s(0, 2);
+                    let t = !c.fcc();
+                    c.mov_s(22, 12);
+                    if t {
+                        break 'b_113700;
+                    } else {
+                        'b_1136ec: {
+                            c.cycles += 4;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                            c.g[S1][0] = 0x2;
+                            let t = c.g[V0][0] != c.g[S1][0];
+                            c.g[A0][0] = c.g[S0][0];
+                            if t {
+                                break 'b_1136ec;
+                            } else {
+                                c.cycles += 17;
+                                c.g[V1][0] = 0x3;
+                                c.g[V0][0] = 0x500000;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xac), c.g[V1][0]);
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xed0));
+                                c.g[V1][0] = 0x500000;
+                                c.g[A0][0] = 0x500000;
+                                c.lq(5, c.g[V0][0] as u32);
+                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xec0));
+                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0xea0));
+                                c.g[A2][0] = 0xd;
+                                c.sq(5, c.g[S0][0] as u32);
+                                c.lq(2, c.g[V1][0] as u32);
+                                c.sq(2, (c.g[S0][0] as u32).wrapping_add(0x10));
+                                c.lq(3, c.g[A0][0] as u32);
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0x90), c.g[A2][0]);
+                                let t = true;
+                                c.sq(3, (c.g[S0][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    break 'b_113800;
+                                } else {
+                                    break 'b_1136ec;
+                                }
+                            }
+                        }
+                        c.cycles += 5;
+                        c.g[A1][0] = c.g[S3][0];
+                        c.g[RA][0] = sx(0x001136f8);
+                        c.g[A2][0] = c.g[S4][0];
+                        Callee {
+                            addr: 0x00113618,
+                            f: ee::s00::AirPredictor_SetLaunchState,
+                        }
+                        .call(c, 0x001136f8)?;
+                        let t = true;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xac), c.g[S1][0]);
+                        if t {
+                            break 'b_113800;
+                        } else {
+                            break 'b_113700;
+                        }
+                    }
+                }
+                'b_11373c: {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                    c.g[V0][0] = 0x1;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                        break 'b_11373c;
+                    } else {
+                        'b_113738: {
+                            c.cycles += 7;
+                            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7c60));
+                            c.sub_s(0, 2, 0);
+                            c.c_lt_s(0, 1);
+                            let t = !c.fcc();
+                            c.g[A0][0] = c.g[S0][0];
+                            if t {
+                                break 'b_113738;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A1][0] = c.g[S3][0];
+                                c.g[RA][0] = sx(0x00113738);
+                                c.g[A2][0] = c.g[S4][0];
+                                Callee {
+                                    addr: 0x00113618,
+                                    f: ee::s00::AirPredictor_SetLaunchState,
+                                }
+                                .call(c, 0x00113738)?;
+                                break 'b_113738;
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[S1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                        break 'b_11373c;
+                    }
+                }
+                'b_1137a0: {
+                    c.cycles += 2;
+                    let t = c.g[S1][0] != 0u64;
+                    c.g[V0][0] = 0x2;
+                    if t {
+                        break 'b_1137a0;
+                    } else {
+                        c.cycles += 5;
+                        c.g[RA][0] = sx(0x0011374c);
+                        c.g[A0][0] = c.g[S0][0];
+                        Callee {
+                            addr: 0x00113200,
+                            f: ee::s00::AirPredictor_Simulate,
+                        }
+                        .call(c, 0x0011374c)?;
+                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                        let t = c.g[V0][0] != 0u64;
+                        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                        if t {
+                            break 'b_113804;
+                        } else {
+                            c.cycles += 6;
+                            c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x98));
+                            c.add_s(0, 0, 22);
+                            c.c_lt_s(1, 0);
+                            if !c.fcc() {
+                                c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                                break 'b_113804;
+                            } else {
+                                'l_113770: loop {
+                                    c.cycles += 5;
+                                    c.g[RA][0] = sx(0x00113778);
+                                    c.g[A0][0] = c.g[S0][0];
+                                    Callee {
+                                        addr: 0x00113200,
+                                        f: ee::s00::AirPredictor_Simulate,
+                                    }
+                                    .call(c, 0x00113778)?;
+                                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                                    let t = c.g[V0][0] != 0u64;
+                                    c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                                    if t {
+                                        break 'b_113804;
+                                    } else {
+                                        c.cycles += 5;
+                                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x98));
+                                        c.add_s(0, 0, 22);
+                                        c.c_lt_s(1, 0);
+                                        let t = c.fcc();
+
+                                        if t {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00113770);
+                                            }
+                                            continue 'l_113770;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+                                            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                                            if t {
+                                                break 'b_113804;
+                                            } else {
+                                                break 'b_1137a0;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                if c.g[S1][0] != c.g[V0][0] {
+                    c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                    break 'b_113804;
+                } else {
+                    c.cycles += 5;
+                    c.g[RA][0] = sx(0x001137b0);
+                    c.g[A0][0] = c.g[S0][0];
+                    Callee {
+                        addr: 0x00113200,
+                        f: ee::s00::AirPredictor_Simulate,
+                    }
+                    .call(c, 0x001137b0)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                    let t = c.g[V0][0] != c.g[S1][0];
+                    c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                    if t {
+                        break 'b_113804;
+                    } else {
+                        c.cycles += 6;
+                        c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x98));
+                        c.add_s(0, 0, 22);
+                        c.c_lt_s(1, 0);
+                        if !c.fcc() {
+                            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                            break 'b_113804;
+                        } else {
+                            c.cycles += 1;
+                            c.g[S1][0] = 0x2;
+                            'l_1137d8: loop {
+                                c.cycles += 5;
+                                c.g[RA][0] = sx(0x001137e0);
+                                c.g[A0][0] = c.g[S0][0];
+                                Callee {
+                                    addr: 0x00113200,
+                                    f: ee::s00::AirPredictor_Simulate,
+                                }
+                                .call(c, 0x001137e0)?;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xac));
+                                let t = c.g[V0][0] != c.g[S1][0];
+                                c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+                                if t {
+                                    break 'b_113804;
+                                } else {
+                                    c.cycles += 5;
+                                    c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0x98));
+                                    c.add_s(0, 0, 22);
+                                    c.c_lt_s(1, 0);
+                                    let t = c.fcc();
+
+                                    if t {
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x001137d8);
+                                        }
+                                        continue 'l_1137d8;
+                                    } else {
+                                        break 'b_113800;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+            break 'b_113804;
+        }
+        'b_113860: {
+            c.cycles += 8;
+            c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0xa4));
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x7c5c));
+            c.sub_s(0, 0, 1);
+            c.add_s(20, 0, 22);
+            c.c_le_s(2, 20);
+            let t = !c.fcc();
+            c.mov_s(21, 2);
+            if t {
+                break 'b_113860;
+            } else {
+                c.cycles += 3;
+                c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x70));
+                c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x80));
+                'l_113830: loop {
+                    c.cycles += 12;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S2][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    c.g[A3][0] = c.g[S2][0];
+                    c.g[T0][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x0011384c);
+                    c.sub_s(20, 20, 21);
+                    Callee {
+                        addr: 0x001139a0,
+                        f: ee::s00::AirPredictor_Step,
+                    }
+                    .call(c, 0x0011384c)?;
+                    c.lwc1(1, (c.g[S0][0] as u32).wrapping_add(0xa4));
+                    c.c_le_s(21, 20);
+                    c.add_s(1, 1, 21);
+                    let t = c.fcc();
+                    c.swc1(1, (c.g[S0][0] as u32).wrapping_add(0xa4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00113830);
+                        }
+                        continue 'l_113830;
+                    } else {
+                        break 'b_113860;
+                    }
+                }
+            }
+        }
+        'b_11395c: {
+            'b_11394c: {
+                c.cycles += 5;
+                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7c58));
+                c.c_lt_s(0, 20);
+                let t = !c.fcc();
+                c.g[A0][0] = c.g[S0][0];
+                if t {
+                    break 'b_11394c;
+                } else {
+                    c.cycles += 54;
+                    c.g[A1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x70));
+                    c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x80));
+                    c.g[A3][0] = c.g[SP][0];
+                    c.g[RA][0] = sx(0x00113888);
+                    c.g[T0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                    Callee {
+                        addr: 0x001139a0,
+                        f: ee::s00::AirPredictor_Step,
+                    }
+                    .call(c, 0x00113888)?;
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7c54));
+                    c.g[AT][0] = 0x3f800000;
+                    c.mtc1(1, 2);
+                    c.mul_s(1, 20, 1);
+                    c.mfc1(3, 1);
+                    c.lqc2(4, c.g[SP][0] as u32);
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sub_s(0, 2, 1);
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.mfc1(3, 0);
+                    c.lqc2(4, (c.g[S0][0] as u32).wrapping_add(0x70));
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(2, c.g[S3][0] as u32);
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.mfc1(3, 1);
+                    c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.mfc1(3, 0);
+                    c.lqc2(4, (c.g[S0][0] as u32).wrapping_add(0x80));
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.lqc2(3, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.lqc2(4, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sq(2, c.g[S4][0] as u32);
+                    let t = true;
+                    c.swc1(2, (c.g[S3][0] as u32).wrapping_add(0xc));
+                    if t {
+                        break 'b_11395c;
+                    } else {
+                        break 'b_11394c;
+                    }
+                }
+            }
+            c.cycles += 4;
+            c.lq(2, (c.g[S0][0] as u32).wrapping_add(0x70));
+            c.sq(2, c.g[S3][0] as u32);
+            c.lq(3, (c.g[S0][0] as u32).wrapping_add(0x80));
+            c.sq(3, c.g[S4][0] as u32);
+            break 'b_11395c;
+        }
+        c.cycles += 14;
+        c.lwc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0xa0));
+        c.add_s(0, 0, 22);
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.swc1(0, (c.g[S0][0] as u32).wrapping_add(0xa0));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0xb0));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lwc1(22, (c.g[SP][0] as u32).wrapping_add(0xd0));
+        c.lwc1(21, (c.g[SP][0] as u32).wrapping_add(0xc8));
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0xc0));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0xe0));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    });
 }
 
 /// `AirPredictor_Step` (0x1139a0) on host floats: one 1/60 s step of the

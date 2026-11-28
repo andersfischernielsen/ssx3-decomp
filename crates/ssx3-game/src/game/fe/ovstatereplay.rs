@@ -25627,21 +25627,23 @@ pub fn fe_tail_call_320c48(c: &mut Cpu) {
     let entry = c.pc;
     guest(c, |c| {
         match entry {
-            0x0017_fe64 => {
+            0x0017_fe64 | 0x0017_fe68 | 0x0017_fe70 => {}
+            _ => {
+                c.jump_out(entry, 0x0017_fe64, 0x0017_fe7c);
+                return Ok(());
+            }
+        }
+        if entry != 0x0017_fe70 {
+            if entry == 0x0017_fe64 {
                 c.cycles += 1;
                 c.g[A1][0] = 0x79;
             }
-            0x0017_fe68 => {}
-            _ => {
-                ee::s02::f_0017fe64__entries(c);
-                return Err(crate::call::Unwound);
-            }
+            c.cycles += 5;
+            let a2 = c.g[A2][0] as u32;
+            let a0 = c.lw(a2.wrapping_add(0x18));
+            c.g[A0][0] = a0;
+            call_ptr(c, 0x0032_0c48, 0x0017_fe70)?;
         }
-        c.cycles += 5;
-        let a2 = c.g[A2][0] as u32;
-        let a0 = c.lw(a2.wrapping_add(0x18));
-        c.g[A0][0] = a0;
-        call_ptr(c, 0x0032_0c48, 0x0017_fe70)?;
         c.g[RA][0] = c.ld(c.g[SP][0] as u32);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));

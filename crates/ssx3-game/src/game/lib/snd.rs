@@ -26243,7 +26243,7 @@ pub(crate) mod oc694_callee {
     #[allow(dead_code)]
     pub(crate) const SIF_SET_DMA: Callee = Callee {
         addr: 0x003c_43c0,
-        f: ee::s13::f_003c43c0__generated,
+        f: ee::s13::f_003c43c0,
     };
 
     pub(crate) const SIF_DMA_START_NEXT: Callee = Callee {
@@ -26254,7 +26254,7 @@ pub(crate) mod oc694_callee {
     #[allow(dead_code)]
     pub(crate) const SIF_DMA_KICK: Callee = Callee {
         addr: 0x003c_45e8,
-        f: ee::s13::f_003c45e8__generated,
+        f: ee::s13::f_003c45e8,
     };
 
     #[allow(dead_code)]

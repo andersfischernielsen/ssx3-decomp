@@ -3070,8 +3070,91 @@ pub fn oc436_section_man_advance_event_switch_sync(c: &mut Cpu) {
     c.pc = t;
 }
 
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
 pub(crate) fn oc436_section_man_advance_resume_2(c: &mut Cpu) {
-    ee::s05::f_0022d668__entries(c)
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0022d668 => {
+                    c.cycles += 2;
+                    let t = c.g[A1][0] == 0u64;
+                    c.g[A2][0] = c.g[A0][0];
+                    if t {
+                        pc = 0x0022d6bc;
+                        continue;
+                    }
+                    pc = 0x0022d670;
+                    continue;
+                }
+                0x0022d670 => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x1b4));
+                    c.g[V0][0] = (c.g[V1][0] < 0x5u64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x480000;
+                    if t {
+                        pc = 0x0022d6bc;
+                        continue;
+                    }
+                    pc = 0x0022d680;
+                    continue;
+                }
+                0x0022d680 => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4bd0));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+                    let t = c.g[A0][0] as u32;
+
+                    pc = t;
+                    continue;
+                }
+                0x0022d698 => {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0x3;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x1b8), c.g[A1][0]);
+                    let t = c.g[RA][0] as u32;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x1b4), c.g[V0][0]);
+                    c.pc = t;
+                    return Ok(());
+                }
+                0x0022d6a8 => {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x3;
+                    let t = c.g[RA][0] as u32;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x1b4), c.g[V0][0]);
+                    c.pc = t;
+                    return Ok(());
+                }
+                0x0022d6b4 => {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x4;
+                    c.sw((c.g[A2][0] as u32).wrapping_add(0x1b4), c.g[V0][0]);
+                    pc = 0x0022d6bc;
+                    continue;
+                }
+                0x0022d6bc => {
+                    c.cycles += 2;
+                    let t = c.g[RA][0] as u32;
+
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0022d668, 0x0022d6c4);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 // At install the orchestrator switches this to the generated twin.

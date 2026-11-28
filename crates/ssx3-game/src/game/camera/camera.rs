@@ -10574,8 +10574,49 @@ pub fn oc436_camera_wobble_init(c: &mut Cpu) {
     c.pc = t;
 }
 
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
 pub(crate) fn oc436_camera_wobble_init_resume_2(c: &mut Cpu) {
-    ee::s01::f_0015fff0__entries(c)
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x0015fff0 => {
+                    c.cycles += 10;
+                    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x6c2c));
+                    c.g[V0][0] = c.g[A0][0];
+                    c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x6c28));
+                    c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x2c));
+                    c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x24));
+                    c.swc1(0, (c.g[A0][0] as u32).wrapping_add(0x28));
+                    c.sw(c.g[A0][0] as u32, 0u64);
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x4), 0u64);
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x8), 0u64);
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0xc), 0u64);
+                    pc = 0x00160018;
+                    continue;
+                }
+                0x00160018 => {
+                    c.cycles += 4;
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x10), 0u64);
+                    c.sw((c.g[A0][0] as u32).wrapping_add(0x14), 0u64);
+                    let t = c.g[RA][0] as u32;
+                    c.swc1(1, (c.g[A0][0] as u32).wrapping_add(0x20));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0015fff0, 0x00160028);
+                    return Ok(());
+                }
+            }
+        }
+    });
 }
 
 // At install the orchestrator switches this to the generated twin; until

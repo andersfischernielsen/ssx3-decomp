@@ -6998,17 +6998,12 @@ pub fn libkernl_intr_helper_thread(c: &mut Cpu) {
             c.cycles += 4;
             c.g[RA][0] = sx(0x00424b70);
             PRINTF.call(c, 0x00424b70)?;
-            let t = true;
-            if t {
-                if event_due(c) {
-                    deliver_event_here(c, 0x00424ae0);
-                }
-                continue 'l_424ae0;
-            } else {
-                c.pc = 0x0042_4b78;
-                (ee::s15::f_00424b78__generated)(c);
-                return Ok(());
+            // The original's fall-through to 0x424b78 is dead here (the branch
+            // condition is constant), so only the loop back edge remains.
+            if event_due(c) {
+                deliver_event_here(c, 0x00424ae0);
             }
+            continue 'l_424ae0;
         }
     })
 }

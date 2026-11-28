@@ -2146,7 +2146,196 @@ pub fn game_state_countdown_update(c: &mut Cpu) {
             return;
         }
     }
-    ee::s06::f_00234c68__generated(c);
+    game_state_countdown_update_orig(c);
+}
+
+/// Native body of `GameStateCountdown_Update` (0x234c68) as the original runs it, converted from the generated code (registers,
+/// cycles and calls as the original).
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn game_state_countdown_update_orig(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_234dcc: {
+            c.cycles += 11;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S1][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[RA][0] = sx(0x00234c8c);
+            c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x28));
+            call_ptr(c, 0x00270280, 0x00234c8c)?;
+            let t = c.g[V0][0] != 0u64;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            if t {
+                break 'b_234dcc;
+            } else {
+                'b_234dc8: {
+                    c.cycles += 10;
+                    c.g[RA][0] = sx(0x00234c9c);
+                    call_ptr(c, 0x0014dc80, 0x00234c9c)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[RA][0] = sx(0x00234ca8);
+                    c.g[A1][0] = 0u64;
+                    call_ptr(c, 0x0014dd58, 0x00234ca8)?;
+                    c.g[V1][0] = 0x530000;
+                    c.g[A0][0] = 0x4;
+                    c.g[V0][0] = c.lb((c.g[V1][0] as u32).wrapping_add(0x5c10));
+                    let t = c.g[V0][0] == c.g[A0][0];
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+                    if t {
+                        break 'b_234dc8;
+                    } else {
+                        'b_234d60: {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                            c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+                            let t = (c.g[A0][0] as i64) > 0;
+                            c.g[V1][0] = 0x3c;
+                            if t {
+                                break 'b_234d60;
+                            } else {
+                                'b_234d2c: {
+                                    c.cycles += 18;
+                                    c.g[A0][0] = 0x480000;
+                                    c.g[RA][0] = sx(0x00234cd8);
+                                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x3fb8));
+                                    call_ptr(c, 0x00317670, 0x00234cd8)?;
+                                    c.g[A1][0] = c.g[V0][0];
+                                    c.g[RA][0] = sx(0x00234ce4);
+                                    c.g[A0][0] = c.g[S1][0];
+                                    Callee {
+                                        addr: 0x00234be8,
+                                        f: ee::s06::GameState_PlayScriptEvent,
+                                    }
+                                    .call(c, 0x00234ce4)?;
+                                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+                                    c.g[A0][0] = 0x4a0000;
+                                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x2ab0));
+                                    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x48));
+                                    c.g[RA][0] = sx(0x00234cfc);
+                                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x18));
+                                    call_ptr(c, 0x00317670, 0x00234cfc)?;
+                                    c.g[A0][0] = c.g[S0][0];
+                                    c.g[RA][0] = sx(0x00234d08);
+                                    c.g[A1][0] = c.g[V0][0];
+                                    call_ptr(c, 0x0039f9d8, 0x00234d08)?;
+                                    c.g[A3][0] = c.g[V0][0];
+                                    let t = c.g[A3][0] == 0u64;
+                                    c.g[A1][0] = 0x6;
+                                    if t {
+                                        break 'b_234d2c;
+                                    } else {
+                                        c.cycles += 6;
+                                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_add(0x8));
+                                        c.g[A2][0] = 0u64;
+                                        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xc0));
+                                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc4));
+                                        let t = c.g[V0][0] as u32;
+                                        c.g[RA][0] = sx(0x00234d2c);
+                                        c.g[A0][0] =
+                                            sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                        call_ptr(c, t, 0x00234d2c)?;
+                                        break 'b_234d2c;
+                                    }
+                                }
+                                c.cycles += 13;
+                                c.g[RA][0] = sx(0x00234d34);
+                                call_ptr(c, 0x0028b180, 0x00234d34)?;
+                                c.g[RA][0] = sx(0x00234d3c);
+                                c.g[A0][0] = c.g[V0][0];
+                                call_ptr(c, 0x0029c7b0, 0x00234d3c)?;
+                                c.g[RA][0] = sx(0x00234d44);
+                                call_ptr(c, 0x0028b180, 0x00234d44)?;
+                                c.g[A0][0] = c.g[V0][0];
+                                c.g[RA][0] = sx(0x00234d50);
+                                c.g[A1][0] = 0x78;
+                                call_ptr(c, 0x0028c8c0, 0x00234d50)?;
+                                c.g[RA][0] = sx(0x00234d58);
+                                c.g[A0][0] = c.g[S1][0];
+                                Callee {
+                                    addr: 0x00233aa0,
+                                    f: ee::s06::GameState_GotoNext,
+                                }
+                                .call(c, 0x00234d58)?;
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x488));
+                                c.g[V1][0] = 0x3c;
+                                break 'b_234d60;
+                            }
+                        }
+                        'b_234d68: {
+                            c.cycles += 2;
+                            if c.g[V1][0] == 0u64 {
+                                break 'b_234d68;
+                            } else {
+                                break 'b_234d68;
+                            }
+                        }
+                        c.cycles += 10;
+                        c.g[A0][0] = 0x3c;
+                        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x1c));
+                        c.div(0, 2, 3);
+                        c.g[V0][0] = c.lo[0];
+                        c.g[A0][0] = c.hi[0];
+                        c.mtc1(2, 20);
+                        c.cvt_s_w(20, 20);
+                        let t = c.g[A0][0] != 0u64;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        if t {
+                            break 'b_234dcc;
+                        } else {
+                            'b_234db8: {
+                                c.cycles += 7;
+                                c.g[RA][0] = sx(0x00234d98);
+                                call_ptr(c, 0x0028b180, 0x00234d98)?;
+                                c.cvt_w_s(1, 20);
+                                c.cvt_s_w(1, 1);
+                                c.c_lt_s(20, 1);
+                                let t = !c.fcc();
+
+                                if t {
+                                    break 'b_234db8;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[AT][0] = 0x3f800000;
+                                    c.mtc1(1, 0);
+                                    c.sub_s(1, 1, 0);
+                                    break 'b_234db8;
+                                }
+                            }
+                            c.cycles += 4;
+                            c.cvt_w_s(0, 1);
+                            c.mfc1(5, 0);
+                            c.g[RA][0] = sx(0x00234dc8);
+                            c.g[A0][0] = c.g[V0][0];
+                            call_ptr(c, 0x0029c420, 0x00234dc8)?;
+                            break 'b_234dc8;
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                break 'b_234dcc;
+            }
+        }
+        c.cycles += 5;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x30));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    });
 }
 
 /// `void GameState_PlayScriptEvent(GameState* g, UStr* name)`

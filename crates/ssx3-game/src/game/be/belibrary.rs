@@ -420,7 +420,7 @@ pub fn be_bolt_int_get_bolt_states(c: &mut Cpu) {
 pub fn be_library_get_instance(c: &mut Cpu) {
     let slot = (c.g[GP][0] as u32).wrapping_sub(0x1f04);
     if c.lw(slot) == 0 {
-        return ee::s01::f_0014dc80__generated(c);
+        return be_library_get_instance_build(c);
     }
     c.cycles += 12;
     let frame = (c.g[SP][0] as u32).wrapping_sub(0x30);
@@ -429,6 +429,107 @@ pub fn be_library_get_instance(c: &mut Cpu) {
     c.sd(frame, c.g[RA][0]);
     c.g[V0][0] = c.lw(slot);
     c.pc = c.g[RA][0] as u32;
+}
+
+/// Native body of `BELibrary_GetInstance` (0x14dc80), whole body (the construction path), converted from the generated code (registers,
+/// cycles and calls as the original).
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn be_library_get_instance_build(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_14dd30: {
+            c.cycles += 6;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1f04));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            let t = c.g[V0][0] != 0u64;
+            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+            if t {
+                break 'b_14dd30;
+            } else {
+                c.cycles += 38;
+                c.g[A1][0] = 0x4a0000;
+                c.g[A0][0] = 0x4;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1200));
+                c.g[A2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[RA][0] = sx(0x0014dcb4);
+                c.g[S0][0] = 0x530000;
+                call_ptr(c, 0x00317d70, 0x0014dcb4)?;
+                c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x8a8));
+                c.g[A1][0] = 0x460000;
+                c.g[A2][0] = 0u64;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x59c8));
+                c.g[A3][0] = 0u64;
+                c.g[A0][0] = 0x1;
+                c.g[RA][0] = sx(0x0014dcd4);
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1f04), c.g[V0][0]);
+                call_ptr(c, 0x00317d70, 0x0014dcd4)?;
+                c.g[RA][0] = sx(0x0014dcdc);
+                c.g[A0][0] = c.g[V0][0];
+                Callee {
+                    addr: 0x00149860,
+                    f: ee::s01::BELibrary_ctor,
+                }
+                .call(c, 0x0014dcdc)?;
+                c.g[A0][0] = 0u64;
+                c.g[RA][0] = sx(0x0014dce8);
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1ef8), c.g[V0][0]);
+                Callee {
+                    addr: 0x00156570,
+                    f: ee::s01::BEPreRace_GetInstance,
+                }
+                .call(c, 0x0014dce8)?;
+                c.g[A0][0] = 0x1;
+                c.g[RA][0] = sx(0x0014dcf4);
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x8a8), c.g[V0][0]);
+                Callee {
+                    addr: 0x00153088,
+                    f: ee::s01::BERace_GetInstance,
+                }
+                .call(c, 0x0014dcf4)?;
+                c.g[A0][0] = 0x2;
+                c.g[RA][0] = sx(0x0014dd00);
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                Callee {
+                    addr: 0x00156338,
+                    f: ee::s01::BEPostRace_GetInstance,
+                }
+                .call(c, 0x0014dd00)?;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x8), c.g[V0][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1efc), 0u64);
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8a8));
+                c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x4));
+                c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x20));
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x24));
+                let t = c.g[V1][0] as u32;
+                c.g[RA][0] = sx(0x0014dd20);
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x0014dd20)?;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1f04));
+                c.g[V0][0] = 0x1;
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1f00), c.g[V0][0]);
+                c.sw((c.g[GP][0] as u32).wrapping_sub(0x1ea0), c.g[A0][0]);
+                break 'b_14dd30;
+            }
+        }
+        c.cycles += 6;
+        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x1f04));
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.pc = t;
+        return Ok(());
+        Ok(())
+    });
 }
 
 // ---------------------------------------------------------------------------

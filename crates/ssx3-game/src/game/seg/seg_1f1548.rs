@@ -112,7 +112,7 @@ pub fn c_attached_dynamic_emitter_create(c: &mut Cpu) {
                 c.g[A0][0] = c.g[V0][0];
                 Callee {
                     addr: 0x002f_1768,
-                    f: ee::s09::f_002f1768__generated,
+                    f: ee::s09::f_002f1768,
                 }
                 .call(c, 0x002f_2188)?;
                 c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0xac0)).lw(c);

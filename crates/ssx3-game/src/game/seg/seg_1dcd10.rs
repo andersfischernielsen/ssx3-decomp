@@ -287,11 +287,11 @@ pub fn fx_loader_ctor(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use ssx3_ee as ee;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
+    use ssx3_ee as ee;
 
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
