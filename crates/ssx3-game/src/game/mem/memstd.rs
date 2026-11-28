@@ -6541,9 +6541,15 @@ pub(crate) mod tests {
         let this = DATA + 0x400;
         let st = DATA + 0x800;
         let variant = seed % 6;
-        // States: 0, 1, 2, 3, 4 and out-of-range (early exit).
-        c.bus
-            .write32(this + 0xc, [0, 1, 2, 3, 4, 9][variant as usize]);
+        // States: 0, 1, 2, 3, 4 and out-of-range (early exit). Seed 72
+        // pins the `< 5` guard's boundary: state 5 takes the early
+        // return where `<=` would read the dispatch table.
+        let state = if seed == 72 {
+            5
+        } else {
+            [0, 1, 2, 3, 4, 9][variant as usize]
+        };
+        c.bus.write32(this + 0xc, state);
         c.bus.write32(this + 0x1c, DATA + 0x900);
         c.bus.write32(this + 0x8, DATA + 0x600);
         c.bus.write32(DATA + 0x600 + 0x10, 0x20);
@@ -6583,7 +6589,7 @@ pub(crate) mod tests {
         check_paths(
             ee::s06::f_00256a00__generated,
             c_dsock_channel_update,
-            72,
+            73,
             PATHS,
             &update_fixture,
         );
@@ -6781,12 +6787,12 @@ pub(crate) mod tests {
     fn c_dsock_channel_update_connected_matches() {
         // status/idle/flag arms (the stalled, idle, smoothing and
         // vtable paths; combos sharing a total are split by the RAM
-        // comparison).
-        const PATHS: &[u64] = &[19, 22, 28, 50, 53, 99];
+        // comparison; 51 is the negative-quality integer-aging arm).
+        const PATHS: &[u64] = &[19, 22, 28, 50, 51, 53, 99];
         check_paths(
             ee::s06::f_00256aa8__generated,
             c_dsock_channel_update_connected,
-            96,
+            99,
             PATHS,
             &|c, seed| {
                 install_channel_fakes();
@@ -6798,18 +6804,36 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0x4, [0, 1][seed as usize / 4 % 2]);
                 c.bus.write32(this + 0x14, [0, 7][seed as usize / 8 % 2]);
                 c.bus.write32(CHANNEL_STATUS_GATE, CHANNEL_FAKE_MAGIC);
-                c.bus
-                    .write32(CHANNEL_STATUS_RESULT, [0, st, st, 0][variant as usize]);
-                // Status block: counter words (small or big spread),
-                // flag byte, quality word.
-                let big = variant == 2;
-                c.bus.write32(
-                    st,
-                    0x0000_1000 + if big { 0x1_0000 } else { 1000 * (seed % 5) },
-                );
-                c.bus.write32(st + 0x20, 0x0000_1000);
-                c.bus.write32(st + 0xc, 0x0000_00c0 + seed);
-                c.bus.write8(st + 0x45, [0, 1][seed as usize / 16 % 2]);
+                if seed >= 96 {
+                    // Boundary pins the sweep missed, all on a live
+                    // status block with the flag byte set: the exact
+                    // 30001 spread (seed 96), a zero quality word (seed
+                    // 97), and a negative quality word (seed 98, which
+                    // reaches the integer-aging arm).
+                    let (w0, qual) = match seed {
+                        96 => (0x0000_1000 + 30001, 0x0000_00c0),
+                        97 => (0x0000_1000 + 1000, 0),
+                        _ => (0x0000_1000 + 1000, 0xffff_ffff),
+                    };
+                    c.bus.write32(CHANNEL_STATUS_RESULT, st);
+                    c.bus.write32(st, w0);
+                    c.bus.write32(st + 0x20, 0x0000_1000);
+                    c.bus.write32(st + 0xc, qual);
+                    c.bus.write8(st + 0x45, 1);
+                } else {
+                    c.bus
+                        .write32(CHANNEL_STATUS_RESULT, [0, st, st, 0][variant as usize]);
+                    // Status block: counter words (small or big spread),
+                    // flag byte, quality word.
+                    let big = variant == 2;
+                    c.bus.write32(
+                        st,
+                        0x0000_1000 + if big { 0x1_0000 } else { 1000 * (seed % 5) },
+                    );
+                    c.bus.write32(st + 0x20, 0x0000_1000);
+                    c.bus.write32(st + 0xc, 0x0000_00c0 + seed);
+                    c.bus.write8(st + 0x45, [0, 1][seed as usize / 16 % 2]);
+                }
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = (DATA + 0x700) as u64;
                 c.g[A2][0] = 8;
@@ -6836,13 +6860,20 @@ pub(crate) mod tests {
         }
         // Call 0: steer the first datagram; call 1 always ends the
         // loop so the loop-back arm is covered exactly once per seed.
-        let (v0, b2, b3, ml) = match seed / 2 % 6 {
-            0 => (0, 0, 0, 4),
-            1 => (3, 4, 0, 4),
-            2 => (3, 5, 0, 4),
-            3 => (3, 5, 6, 4),
-            4 => (3, 5, 6, 8),
-            _ => (3, 5, 2, 8),
+        // Seed 73 pins the maxlen == tag boundary: `<` is false (copy
+        // arm) where `<=` would re-enter the recv loop. (Odd, so the
+        // channel is connected.)
+        let (v0, b2, b3, ml) = if seed == 73 {
+            (3, 5, 8, 8)
+        } else {
+            match seed / 2 % 6 {
+                0 => (0, 0, 0, 4),
+                1 => (3, 4, 0, 4),
+                2 => (3, 5, 0, 4),
+                3 => (3, 5, 6, 4),
+                4 => (3, 5, 6, 8),
+                _ => (3, 5, 2, 8),
+            }
         };
         c.bus.write32(CHANNEL_RECV_SEQ, v0);
         c.bus.write32(CHANNEL_RECV_SEQ + 4, b2);
@@ -6871,7 +6902,7 @@ pub(crate) mod tests {
         check_paths(
             ee::s06::f_00256730__generated,
             c_dsock_channel_recv,
-            72,
+            74,
             PATHS,
             &channel_recv_fixture,
         );
@@ -6969,11 +7000,11 @@ pub(crate) mod tests {
     #[test]
     fn c_dsock_channel_send_matches() {
         // not-connected/busy/empty/sent arms.
-        const PATHS: &[u64] = &[16, 17, 50, 99];
+        const PATHS: &[u64] = &[16, 17, 21, 50, 99];
         check_paths(
             ee::s06::f_002567e0__generated,
             c_dsock_channel_send,
-            72,
+            73,
             PATHS,
             &|c, seed| {
                 install_channel_fakes();
@@ -6983,15 +7014,27 @@ pub(crate) mod tests {
                 for i in 0..4u32 {
                     c.bus.write32(src + 4 * i, 0x5152_5354 + i + seed);
                 }
-                let variant = seed % 4;
-                c.bus.write32(this + 0xc, [9, 2, 2, 2][variant as usize]);
-                c.bus.write32(this + 0x4, [0, 0, 7, 0][variant as usize]);
+                // Seed 72 pins the empty-send boundary on a connected
+                // idle channel: `len > 0` is false (early return) where
+                // `>=` would walk the copy+send tail.
+                let (st, busy, len) = if seed == 72 {
+                    (2, 0, 0)
+                } else {
+                    let variant = seed % 4;
+                    (
+                        [9, 2, 2, 2][variant as usize],
+                        [0, 0, 7, 0][variant as usize],
+                        [0, 1, 8, 8][variant as usize],
+                    )
+                };
+                c.bus.write32(this + 0xc, st);
+                c.bus.write32(this + 0x4, busy);
                 c.bus.write32(CHANNEL_LINKSEND_GATE, CHANNEL_FAKE_MAGIC);
                 c.bus
                     .write32(CHANNEL_LINKSEND_RESULT, [0, 1][seed as usize / 4 % 2]);
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = src as u64;
-                c.g[A2][0] = [0, 1, 8, 8][variant as usize] as u64;
+                c.g[A2][0] = len as u64;
                 c.g[RA][0] = SENTINEL_RA as u64;
                 c.pc = 0x0025_67e0;
             },
