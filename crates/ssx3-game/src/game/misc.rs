@@ -20462,7 +20462,7 @@ mod rcv_tests {
     /// bound 0x19) sends 2 to the two-buffer copy (0x427658), 11 to the
     /// 0x144-byte copy (0x427700), 12 to the 0x40-byte copy (0x4277cc), 23,
     /// 25 and 26 to the `memcpy` arm (0x427868) and the rest to the tail.
-    const RCV_ROWS: [(u32, [u32; 4]); 11] = [
+    const RCV_ROWS: [(u32, [u32; 4]); 12] = [
         // Out of the table's range, and in range with no arm.
         (0, [0, 0, 0, 0]),
         (3, [0, 0, 0, 0]),
@@ -20481,14 +20481,19 @@ mod rcv_tests {
         // `memcpy` of 0x20 bytes, and of 0x401 clamped to 0x400.
         (23, [DATA + 0x7d00, 0x20, 0, 0]),
         (26, [DATA + 0x8000, 0x401, 0, 0]),
+        // Out-of-range command: the `A0 < 0x19` dispatch test misses
+        // (kills the `<= 0x19` mutant, which would continue into the
+        // table dispatch instead of exiting).
+        (27, [0, 0, 0, 0]),
     ];
 
     /// Fixture for [`rcv_intr_handler_matches`]: the game's image (the
     /// command table, the fd words at `0x455188`, all -1), command row
-    /// `seed % 11`, the sign word from the next digit (2: the payload
-    /// `memcpy` and `iSignalSema`; -1, -3: the fd word at index 0 or 5
-    /// matches and is cleared; -7: no fd word matches), and the receive
-    /// slot from the last (slot 0 with nothing pending, or slot 1).
+    /// `seed % 12`, the sign word from the next digit (2: the payload
+    /// `memcpy` and `iSignalSema`; 0: the dispatch path with a zero sign;
+    /// -1, -3: the fd word at index 0 or 5 matches and is cleared; -7: no
+    /// fd word matches), and the receive slot from the last (slot 0 with
+    /// nothing pending, or slot 1).
     ///
     /// The packet sits at `S0 = (0x52e380 + slot * 0x440) | 0x20000000`
     /// (the prologue folds the pending slot in with a `mult`), filled with
@@ -20498,8 +20503,8 @@ mod rcv_tests {
         crate::difftest::elf_image(c);
         c.pc = 0x0042_7590;
         let (cmd, words) = RCV_ROWS[seed as usize % RCV_ROWS.len()];
-        let tail = seed as usize / RCV_ROWS.len() % 4;
-        let slot = (seed as usize / RCV_ROWS.len() / 4 % 2) as u32;
+        let tail = seed as usize / RCV_ROWS.len() % 5;
+        let slot = (seed as usize / RCV_ROWS.len() / 5 % 2) as u32;
         c.bus.write32(0x0045_5210, slot);
         c.g[A0][0] = (DATA + 0x7200) as u64;
         c.bus.write32(DATA + 0x7200 + 0xc, slot);
@@ -20507,7 +20512,7 @@ mod rcv_tests {
         for i in 0..0x420u32 {
             c.bus.write8(s0 + i, 0x41 + (i % 0x3b) as u8);
         }
-        let sign = [2, 0xffff_ffff, 0xffff_fffd, 0xffff_fff9][tail];
+        let sign = [2, 0xffff_ffff, 0xffff_fffd, 0xffff_fff9, 0][tail];
         c.bus.write32(s0, sign);
         c.bus.write32(s0 + 0x4, cmd);
         c.bus.write32(s0 + 0x8, DATA + 0x7000);
@@ -20570,8 +20575,8 @@ mod rcv_tests {
             _ => (5, 0),
         };
         let slot = seed / RCV_RESUME_HEADS.len() as u32 % 2;
-        rcv_fixture(c, row + RCV_ROWS.len() as u32 * (tail + 4 * slot));
-        let sign = [2u32, 0xffff_ffff, 0xffff_fffd, 0xffff_fff9][tail as usize];
+        rcv_fixture(c, row + RCV_ROWS.len() as u32 * (tail + 5 * slot));
+        let sign = [2u32, 0xffff_ffff, 0xffff_fffd, 0xffff_fff9, 0][tail as usize];
         let (cmd, words) = RCV_ROWS[row as usize];
         let dst = words[0];
         let s0 = 0x2052_e380 + slot * 0x440;
@@ -42711,12 +42716,20 @@ pub(crate) mod tests {
                 c.g[A0][0] = [3, 0x20, 3][mode as usize] as u64;
                 fd_slot(c, 3, mode != 2);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
-                // Dance-table digit: first word in use (skip the scan) or
-                // free (scan the 32-slot table).
-                c.bus.write32(
-                    0x0045_5188,
-                    [0x1234_0000, 0xffff_ffff][seed as usize / 30 % 2],
-                );
+                // Dance-table digit: first word in use (skip the scan),
+                // free (scan the 32-slot table and stop at the first
+                // claimed word), or all-free (the scan runs to `A0 == 32`,
+                // killing the `< 32` mutant, which takes one more step).
+                if seed as usize / 30 % 3 == 2 {
+                    for w in 0..32u32 {
+                        c.bus.write32(0x0045_5188 + 4 * w, 0xffff_ffff);
+                    }
+                } else {
+                    c.bus.write32(
+                        0x0045_5188,
+                        [0x1234_0000, 0xffff_ffff][seed as usize / 30 % 2],
+                    );
+                }
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
                 // Reply-flag digit: set takes the wait arm, clear the
@@ -42805,9 +42818,10 @@ pub(crate) mod tests {
                 c.g[A1][0] = 0x1111_1100 + seed as u64;
                 c.g[T0][0] = 0x3333_3300 + seed as u64;
                 // Length digits: in range runs the copy and the RPC,
-                // out of range reports -22 before any copy.
-                c.g[A3][0] = [0x10, 0x500][seed as usize % 2] as u64;
-                c.g[T1][0] = [0x10, 0x500][seed as usize / 2 % 2] as u64;
+                // out of range reports -22 before any copy; 0x401 is the
+                // `<0x401` boundary the sweep left uncovered.
+                c.g[A3][0] = [0x10, 0x500, 0x401][seed as usize % 3] as u64;
+                c.g[T1][0] = [0x10, 0x500, 0x401][seed as usize / 3 % 3] as u64;
                 // Buffer digit: null writes a zero word, otherwise the
                 // length is copied from here into the packet.
                 c.g[A2][0] = [0, (DATA + 0x1000) as u64][seed as usize / 4 % 2];
@@ -43786,8 +43800,9 @@ pub(crate) mod tests {
                 c.g[A3][0] = (DATA + 0x1000) as u64;
                 c.g[A2][0] = [0, 1][seed as usize % 2] as u64;
                 // Data-length digit: empty (skip the copy), short (copy
-                // it), over-long (report -7).
-                c.g[T0][0] = [0, 5, 2000][seed as usize / 2 % 3] as u64;
+                // it), over-long (report -7); 1025 is the `<1025`
+                // boundary the sweep left uncovered.
+                c.g[T0][0] = [0, 5, 2000, 1025][seed as usize / 2 % 4] as u64;
                 path_bytes(c, [0, 5, 1024][seed as usize / 6 % 3]);
                 path_bytes_at(c, DATA + 0xa00, [0, 7, 1024][seed as usize / 18 % 3]);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
@@ -43890,8 +43905,9 @@ pub(crate) mod tests {
                 path_bytes(c, [0, 5, 1024][seed as usize / 3 % 3]);
                 path_bytes_at(c, DATA + 0xa00, [0, 7, 1024][smode as usize]);
                 // Data-length digit: empty (skip the copy), short (copy
-                // it), over-long (report -7).
-                c.g[A3][0] = [0, 5, 2000][seed as usize / 9 % 3] as u64;
+                // it), over-long (report -7); 1025 is the `<1025`
+                // boundary the sweep left uncovered.
+                c.g[A3][0] = [0, 5, 2000, 1025][seed as usize / 9 % 4] as u64;
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
                 c.bus.write32(RPC_RESULT, 0);
@@ -44082,9 +44098,10 @@ pub(crate) mod tests {
                 c.g[A2][0] = (DATA + 0x1000) as u64;
                 c.g[T0][0] = 0x2222_2200 + seed as u64;
                 // Length digits: empty (skip the copy), short (copy
-                // it), over-long (report -22).
-                c.g[A3][0] = [0, 5, 0x500][seed as usize % 3] as u64;
-                c.g[T1][0] = [0, 5, 0x500][seed as usize / 3 % 3] as u64;
+                // it), over-long (report -22); 0x401 is the `<0x401`
+                // boundary the sweep left uncovered.
+                c.g[A3][0] = [0, 5, 0x500, 0x401][seed as usize % 4] as u64;
+                c.g[T1][0] = [0, 5, 0x500, 0x401][seed as usize / 4 % 4] as u64;
                 path_bytes(c, [0, 5, 1024][seed as usize / 9 % 3]);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
@@ -44271,8 +44288,9 @@ pub(crate) mod tests {
                 c.g[A0][0] = (DATA + 0x500) as u64;
                 c.g[A1][0] = (DATA + 0x1000) as u64;
                 // Length digit: short (staged as-is), over-long
-                // (capped at 0x3ff).
-                c.g[A2][0] = [5, 0x500][seed as usize % 2] as u64;
+                // (capped at 0x3ff); 0x400 is the `<0x400` boundary the
+                // sweep left uncovered.
+                c.g[A2][0] = [5, 0x500, 0x400][seed as usize % 3] as u64;
                 path_bytes(c, [0, 5, 1024][seed as usize / 2 % 3]);
                 c.bus.write32(0x0045_520c, 0x0101_0100 + seed);
                 c.bus.write32(RPC_GATE, GATE_MAGIC);
@@ -44845,7 +44863,7 @@ pub(crate) mod tests {
 
     /// Chains for `DmaChain_PatchRefTags`, with `A1`, `A2`, `A3` (the three
     /// addresses a ref tag is checked against).
-    const PATCH_ROWS: [(&[(u32, u64)], [u64; 3]); 6] = [
+    const PATCH_ROWS: [(&[(u32, u64)], [u64; 3]); 7] = [
         // cnt (2 qwords) then ret; the exit clears the head's upper word.
         (
             &[(0, 0x0000_1234_1000_0002), (0x30, 0x6000_0000)],
@@ -44891,9 +44909,15 @@ pub(crate) mod tests {
             ],
             [0x4242, 0x2222, 0x3333],
         ),
+        // Ret with nonzero low word (index 1): reaches the completion
+        // copy with S3==1 (a new copy length on that path).
+        // (A zero tag would take the 0x3722f0 skip arm, but that arm
+        // never advances S2, so reaching it hangs; no terminating
+        // fixture distinguishes it.)
+        (&[(0, 0x1000_0000), (0x10, 0x6000_0001)], [0, 0, 0]),
     ];
 
-    /// One of [`PATCH_ROWS`] (`seed % 6`) for `DmaChain_PatchRefTags`.
+    /// One of [`PATCH_ROWS`] for `DmaChain_PatchRefTags`.
     fn patch_chain(c: &mut Cpu, seed: u32) {
         let (tags, args) = PATCH_ROWS[seed as usize % PATCH_ROWS.len()];
         dma_chain(c, tags);
@@ -45429,10 +45453,20 @@ pub(crate) mod tests {
 
     /// Fixture for [`mc_init_matches`].
     pub(crate) fn mc_init_fixture(c: &mut Cpu, seed: u32) {
+        use ssx3_ee_rt::cpu::reg::*;
         machine(c, seed, 1_368_007, 1);
         c.pc = 0x0040_9940;
-        // Initialized word: skip vs. create the semas.
-        c.bus.write32(0x0045_33c4, [5, 0][seed as usize % 2]);
+        // S2 seeds the bind-retry countdown gate: the MC work area
+        // (word 0 → the 1M countdown runs) on a sparse subset; other
+        // seeds keep the scrambled S2 (nonzero word, countdown skipped).
+        // The countdown costs ~7M cycles, so only 1 in 8 seeds pays it.
+        if seed % 8 == 7 {
+            c.g[S2][0] = 0x0052_0000;
+        }
+        // Initialized word: set skips the sema creation, -1 (the ELF
+        // first-boot value) creates them.
+        c.bus
+            .write32(0x0045_33c4, [5, 0xffff_ffff][seed as usize % 2]);
         c.bus.write32(BIND_GATE, GATE_MAGIC);
         c.bus.write32(BIND_RESULT, 0);
         c.bus.write32(MCSYNC_GATE, GATE_MAGIC);
@@ -45454,6 +45488,14 @@ pub(crate) mod tests {
         c.bus.write32(0x0052_8788, w8);
         c.bus.write32(0x0052_71e4, 1);
         c.bus.write32(0x0052_8780, 0x77);
+        // Boundary words for the `<522`/`<526` checks, which read
+        // S1+4/S1+8 (0x52a884/0x52a888), not the w4/w8 pair above
+        // (those addresses are never read): 522 and 526 take the other
+        // side. Gated sparse so the existing sub-arm digits keep theirs.
+        if seed % 5 == 4 {
+            c.bus.write32(0x0052_a884, 522);
+            c.bus.write32(0x0052_a888, 526);
+        }
         c.bus
             .write32(crate::game::lib::kernel::tests::KPUTS_GATE, GATE_MAGIC);
     }
