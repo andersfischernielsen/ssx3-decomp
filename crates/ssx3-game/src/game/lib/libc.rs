@@ -22139,10 +22139,26 @@ pub(crate) mod tests {
 
     #[test]
     fn setlocale_r_matches() {
-        check(
+        check_paths(
             ee::s15::f_0041ea38__generated,
             setlocale_r,
             200,
+            // (category, locale, query): the query arm splits on cat 2,
+            // cat 0 splits "C"/"" off the default, cat 2 has its own table.
+            &[
+                23,  // query (A2 == 0), cat != 2
+                25,  // query, cat == 2
+                79,  // "C", cat 1/3/6
+                109, // "", cat 1/3/6
+                112, // POSIX/xx, cat 0/1/3/6
+                122, // C.UTF-8, cat 0/1/3/6
+                183, // "C", cat 0
+                206, // "", cat 0
+                279, // "C", cat 2
+                281, // POSIX/xx, cat 2
+                285, // "", cat 2
+                331, // C.UTF-8, cat 2
+            ],
             &|c, seed| {
                 let mut r = Rng(0xea38 ^ seed as u64);
                 wire_reent(c, &mut r);
@@ -23399,32 +23415,51 @@ pub(crate) mod tests {
 
     #[test]
     fn print_e_matches() {
-        check(ee::s15::f_004216e8__generated, print_e, 120, &|c, seed| {
-            let mut r = Rng(0x16e8 ^ seed as u64);
-            heap_init(c, &mut r);
-            for i in 0..0x200 {
-                c.bus.write8(DST + i as u32, 0xcc);
-            }
-            c.g[A0][0] = REENT_3 as u64;
-            c.g[A1][0] = DST as u64;
-            c.g[A2][0] = dbl(seed, &mut r);
-            c.g[A3][0] = [0, 1, 2, 3, 6, 10, 17, 30][seed as usize % 8] as u64;
-            if seed % 8 == 6 {
-                // Three-digit exponents engage the exponent-digit path.
-                c.g[A2][0] = 1e100f64.to_bits();
-            } else if seed % 8 == 7 {
-                c.g[A2][0] = 1e-100f64.to_bits();
-            }
-            if seed % 8 == 2 {
-                // More digits than precision: the copy loop re-checks
-                // with `S1 == 0` and digits remaining.
-                c.g[A2][0] = 123.456f64.to_bits();
-                c.g[A3][0] = 3;
-            }
-            c.g[T0][0] = [0, 1][seed as usize % 2] as u64;
-            c.g[T1][0] = [0, 1][seed as usize % 2] as u64;
-            c.g[T2][0] = [0, 2, 3][seed as usize % 3] as u64;
-        });
+        // Per precision class (T0/T1 ride seed % 2, T2 only splits prec 3):
+        // the five totals in each class are the five random doubles.
+        check_paths(
+            ee::s15::f_004216e8__generated,
+            print_e,
+            120,
+            &[
+                194, 6652, 7157, 7163, 7304, // prec 0
+                6685, 7491, 7823, 8381, 8673, // prec 1
+                9933, // prec 2, 123.456/prec 3: the S1 == 0 re-check arm
+                7652, 8268, 8674, 9253, 9274, // prec 3, T2 = 0
+                8156, 8165, 8648, 9236, 9248, // prec 3, T2 = 1
+                8649, 8662, 8667, 8674, 8724, // prec 3, T2 = 2
+                241, 8237, 9016, 9022, 13516, // prec 6
+                9479, 10284, 11467, 15702, 17062, // prec 10
+                13275, // prec 17, 1e100: three-digit exponent path
+                20846, // prec 30, 1e-100
+            ],
+            &|c, seed| {
+                let mut r = Rng(0x16e8 ^ seed as u64);
+                heap_init(c, &mut r);
+                for i in 0..0x200 {
+                    c.bus.write8(DST + i as u32, 0xcc);
+                }
+                c.g[A0][0] = REENT_3 as u64;
+                c.g[A1][0] = DST as u64;
+                c.g[A2][0] = dbl(seed, &mut r);
+                c.g[A3][0] = [0, 1, 2, 3, 6, 10, 17, 30][seed as usize % 8] as u64;
+                if seed % 8 == 6 {
+                    // Three-digit exponents engage the exponent-digit path.
+                    c.g[A2][0] = 1e100f64.to_bits();
+                } else if seed % 8 == 7 {
+                    c.g[A2][0] = 1e-100f64.to_bits();
+                }
+                if seed % 8 == 2 {
+                    // More digits than precision: the copy loop re-checks
+                    // with `S1 == 0` and digits remaining.
+                    c.g[A2][0] = 123.456f64.to_bits();
+                    c.g[A3][0] = 3;
+                }
+                c.g[T0][0] = [0, 1][seed as usize % 2] as u64;
+                c.g[T1][0] = [0, 1][seed as usize % 2] as u64;
+                c.g[T2][0] = [0, 2, 3][seed as usize % 3] as u64;
+            },
+        );
     }
 
     #[test]

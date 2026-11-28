@@ -9188,6 +9188,27 @@ pub(crate) mod tests {
         );
     }
 
+    /// Every arm total of the wait popup refresh over the matches seeds:
+    /// the no-UI and no-state exits, then the mode/peer/grace tails.
+    #[test]
+    fn c_game_comm_update_wait_popup_paths() {
+        crate::difftest::require_paths(
+            ee::s06::f_00258cb0__generated,
+            300,
+            &[
+                22, // no UI manager (every seed % 8 == 0)
+                46, // mode/peer early tail (seeds 25, 27, 29, ...)
+                52, // state mail missing (35 of 38 seed % 8 == 1)
+                83, 87, 89, // peer/peer-paused variants
+                94, 102, 108, 109, 110, 111, // show/hide tails
+                114, 115, 116, 117, 118, 120, // mode 1/0 tails
+                123, 124, 125, 126, 127, // countdown/live tails
+                131, 132, 133, 135, 142, // grace/peer-quiet tails
+            ],
+            &wait_popup_setup,
+        );
+    }
+
     /// Each tail writes the mode the popup ends in (hide 0, show-waiting 1,
     /// show-countdown 2, untouched 9).
     #[test]

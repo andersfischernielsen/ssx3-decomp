@@ -19047,10 +19047,32 @@ pub(crate) mod tests {
         // deep calls. Both sides run the same walk identically. The S0 == 0
         // next-base arm is not reached: the fakes never return 0 (in the
         // game a null virtual return takes it).
-        check(
+        crate::difftest::check_paths(
             ee::s15::f_00414d08__generated,
             class_type_info_dcast,
             SEEDS_4 + 2,
+            // Steering (count, flags, A2, S5; B-seeds fix count 2 and ride
+            // the LOG_RESULTS lattice): every observed walk cost. The S0 == 0
+            // next-base arm is not hit (the fakes never return 0).
+            &[
+                89,  // dst == src names (seed 61, early exit)
+                91,  // count 0 (all 16)
+                106, // count 1, A2 set, plain flags (seeds 4, 22, 40)
+                119, // count 2, A2 set, plain flags (seeds 5, 23, 41)
+                137, // count 1, A2 clear
+                139, // count 1, mask+next flags, A2 clear (seeds 13, 31)
+                141, // count 1, mask flags, A2 set (seeds 10, 28, 46)
+                146, // count 1, mask+next flags, A2 set (seeds 16, 34)
+                178, // count 2, A2 clear, S5 clear (seeds 2, 8, 26, 32)
+                187, // count 2, A2 set, S5 clear (seeds 11, 29 + B lat 0/1)
+                195, // count 2, mask+next flags, A2 set, S5 clear (seed 35)
+                220, // count 2, A2 clear, S5 set (seeds 14, 20, 38, 44)
+                222, // B, S5 set, lattice 0/1 (seeds 63, 64)
+                228, // count 2, S5 set (seeds 47, 62)
+                231, // B, lattice 2, S5 set (seed 60)
+                239, // count 2, mask+next flags, A2 set, S5 set (seed 17)
+                314, // count 3 (seed 65)
+            ],
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0041_4d08, 0);
                 fill(c, &mut r, DB + 0x400, 32);

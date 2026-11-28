@@ -6276,10 +6276,26 @@ pub(crate) mod tests {
 
     #[test]
     fn sce_sif_stop_module_matches() {
-        check(
+        check_paths(
             ee::s15::f_0042b438__generated,
             sce_sif_stop_module,
             SEEDS,
+            // Steering as in load_module_buffer (same fixture shape):
+            // the init-fail and S0 == 0 arms take every arg shape.
+            &[
+                107,      // loader init fails
+                123,      // A1 ptr (sibling spins here: seeds 143, 179)
+                138,      // NEEDS_REBIND nonzero (seed % 7 == 6, init ok)
+                201,      // S0 == 0 (A2 zero)
+                330,      // A0 16, A1 small, A2 nonzero (seed 144)
+                344,      // A0 50, A1 small, A2 nonzero (seed 114)
+                358,      // A0 20, A1 small, A2 nonzero (seed 84)
+                378,      // main path, rebind clear
+                386,      // A0 24, A1 small, A2 nonzero (seed 24)
+                447,      // A1/A2 ptr mix (seeds 44, 152, 98, 134)
+                619,      // A1 ptr (seeds 8, 80, 26, 116, 170)
+                29361375, // RPC wait spins (seeds 71, 53, 107, 143, 179)
+            ],
             &|c, seed| {
                 let r = machine(c, seed, 121319, 1);
                 c.pc = 0x0042_b438;
@@ -6346,10 +6362,27 @@ pub(crate) mod tests {
 
     #[test]
     fn sce_sif_load_module_buffer_matches() {
-        check(
+        check_paths(
             ee::s15::f_0042b230__generated,
             sce_sif_load_module_buffer,
             SEEDS,
+            // Steering (A1: 253/small/ptr; A2: nonzero/zero/ptr):
+            // the init-fail and S0 == 0 arms take every arg shape, the
+            // rest split on small args; seeds noted where n == 1.
+            &[
+                107,      // loader init fails
+                123,      // A1 ptr (sibling spins here: seeds 143, 179)
+                138,      // NEEDS_REBIND nonzero (seed % 7 == 6, init ok)
+                201,      // S0 == 0 (A2 zero)
+                330,      // A0 16, A1 small, A2 nonzero (seed 144)
+                344,      // A0 50, A1 small, A2 nonzero (seed 114)
+                358,      // A0 20, A1 small, A2 nonzero (seed 84)
+                378,      // main path, rebind clear
+                386,      // A0 24, A1 small, A2 nonzero (seed 24)
+                447,      // A2 ptr (seeds 26, 98)
+                619,      // A1 ptr
+                29361375, // RPC wait spins (seeds 71, 17, 35, 53, 107, 125, 161, 197)
+            ],
             &|c, seed| {
                 let r = machine(c, seed, 121320, 1);
                 c.pc = 0x0042_b230;
