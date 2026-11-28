@@ -12727,7 +12727,18 @@ pub(crate) mod tests {
             dlheap_fix_fill(c, ptrs[i], n, seed * 8 + i as u32 + 1);
         }
         let [p0, p1, pa, pb, pq, pc] = ptrs;
-        let (old, bytes): (u32, u64) = if seed < 3 * DLHEAP_REALLOC_CLASSES {
+        // Fixed gap cases for the mutation sweep (seeds 75-77); the class
+        // match (seeds < 45) and the random branch below are unchanged.
+        let (old, bytes): (u32, u64) = if seed == 75 {
+            // 0x31f060 boundary: A1 == MAX (0xFFFF...FFDF) is not
+            // "too large"; malloc of it fails into 'fail, while `<=`
+            // would take 'enomem (errno write).
+            (pa, 0xffff_ffff_ffff_ffdf)
+        } else if seed == 76 {
+            // request2size boundary: bytes+0x13 == 0x10 takes the
+            // MINSIZE arm in both, but `<` spends 3 more cycles.
+            (pa, 0x0000_0000_ffff_fffd)
+        } else if seed < 3 * DLHEAP_REALLOC_CLASSES {
             match seed % DLHEAP_REALLOC_CLASSES {
                 // realloc(0, n) is malloc (returns to 0x31f058).
                 0 => (0, 0x100),
@@ -12806,15 +12817,22 @@ pub(crate) mod tests {
     /// free next chunk, to move (memcpy, 3- and 7-word copies, malloc
     /// failure, merge with the returned next chunk).
     /// Paths: 37 class 1, 50 class 2, 61 class 3, 65 class 5 (derived);
-    /// every class total is pinned, in class order.
+    /// every class total is pinned, in class order. Seeds 75-76 are the
+    /// sweep's gap arms: the MAX boundary and the tiny boundary. (The
+    /// exact-fit grow, `A1 == S3 + 16`, is unreachable: every chunk size
+    /// is a multiple of 16 while the arena's top stays 8-mod-16, so the
+    /// two sides differ by 8 mod 16 in every heap this layout produces.)
     #[test]
     fn dlheap_realloc_matches() {
         check_paths(
             ee::s10::f_0031f018__generated,
             dlheap_realloc,
-            75,
+            78,
             &[
                 86, 37, 50, 61, 118, 65, 210, 292, 174, 186, 137, 80, 465, 171, 115,
+                // Seeds 75-76 (gap cases): 102 fail-after-huge-malloc,
+                // 118 tiny-boundary (+3 cycles).
+                102, 118,
             ],
             &|c, seed| dlheap_realloc_fixture(c, seed),
         );
@@ -12828,13 +12846,45 @@ pub(crate) mod tests {
 
     pub(crate) const DLHEAP_IALLOC_CLASSES: u32 = 11;
 
+    /// Gate and stash cell of the recording `DLHeap_Malloc` fake for the
+    /// wrapped-size class: with the gate on, the requested size lands in
+    /// `DLHEAP_IALLOC_SEEN`, then the real allocator runs (it fails the
+    /// huge request fast, returning 0 on both sides).
+    pub(crate) const DLHEAP_IALLOC_CTRL: u32 = DATA + 0x7e04;
+
+    pub(crate) const DLHEAP_IALLOC_MAGIC: u32 = 0x31f8_51a1;
+
+    pub(crate) const DLHEAP_IALLOC_SEEN: u32 = DATA + 0x7e08;
+
+    pub(crate) static DLHEAP_IALLOC_PREV_MALLOC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn dlheap_ialloc_big_fake_malloc(c: &mut Cpu) {
+        if c.bus.read32(DLHEAP_IALLOC_CTRL) != DLHEAP_IALLOC_MAGIC {
+            return fakes::fall_back(
+                c,
+                &DLHEAP_IALLOC_PREV_MALLOC,
+                ee::s10::f_0031e818__generated,
+            );
+        }
+        // Stash the request size (the word the sweep's mutant changes),
+        // log the call, and fail fast: the wrapped request can never
+        // succeed, and the real allocator spins on it instead.
+        c.bus.write32(DLHEAP_IALLOC_SEEN, c.g[A1][0] as u32);
+        fakes::fake_call(c, 0x0031_e818);
+        c.g[V0][0] = 0;
+    }
+
     /// `ialloc(heap, n, sizes, opts, chunks)` on a real arena: fresh (the
     /// Consolidate arm) or with traffic; the caller's array prefilled.
     /// Class `seed % 11` (seeds < 33) picks the arm, later seeds random.
     pub(crate) fn dlheap_ialloc_fixture(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x0031_f858, 0);
         let heap = dlheap_fix_arena(c);
-        let class = if seed < 3 * DLHEAP_IALLOC_CLASSES {
+        // Seed 66 is the sweep's wrapped-size gap arm; the class match
+        // (seeds < 33) and the random branch are unchanged.
+        let class = if seed == 66 {
+            11
+        } else if seed < 3 * DLHEAP_IALLOC_CLASSES {
             seed % DLHEAP_IALLOC_CLASSES
         } else {
             99
@@ -12887,6 +12937,17 @@ pub(crate) mod tests {
             9 => (2, 3, chunks),
             // One element: the carve loop ends at once.
             10 => (1, 0, 0),
+            // A wrapped array-chunk request (0x31f8cc tiny arm): n low
+            // 30 bits set, so S7 is 0x10 in the original but 0 under
+            // `==`. The malloc of the wrapped size fails either way;
+            // the recording fake stashes the request size, which is
+            // the word the mutant changes.
+            11 => {
+                c.bus.write32(DLHEAP_IALLOC_SIZES, 8);
+                c.bus.write32(DLHEAP_IALLOC_CTRL, DLHEAP_IALLOC_MAGIC);
+                c.bus.write32(DLHEAP_IALLOC_SEEN, seed);
+                (0xffff_fffc, 1, 0)
+            }
             _ => {
                 for i in 0..8 {
                     let s = r.next_u32() % 0x300;
@@ -12912,14 +12973,25 @@ pub(crate) mod tests {
     /// a real arena (LO/HI compared: the one-size product is a `mult`).
     /// Not reachable: 0x31f948's `n == 0` exit (n == 0 returns earlier), and
     /// the array-size wrap 0x31f908 (unbounded, see class 9).
-    /// Paths: every class total, in class order.
+    /// Paths: every class total, in class order. Seed 66 is the sweep's
+    /// wrapped-size gap arm (0x31f8cc tiny arm, request size stashed by
+    /// the recording fake).
     #[test]
     fn dlheap_ialloc_matches() {
+        fakes::hook(
+            addr_of_mut!(ee::s10::OVERRIDE_0031E818),
+            dlheap_ialloc_big_fake_malloc,
+            &DLHEAP_IALLOC_PREV_MALLOC,
+        );
         check_paths_lohi(
             ee::s10::f_0031f858__generated,
             dlheap_ialloc,
-            66,
-            &[1122, 37, 165, 240, 672, 351, 279, 230, 483, 303, 226],
+            67,
+            &[
+                1122, 37, 165, 240, 672, 351, 279, 230, 483, 303, 226,
+                // Seed 66 (gap arm): 68 wrapped-size malloc failure.
+                68,
+            ],
             &|c, seed| dlheap_ialloc_fixture(c, seed),
         );
     }
@@ -12971,6 +13043,43 @@ pub(crate) mod tests {
                 hit.contains(&head),
                 "dispatcher head {head:#x} never unwound: {hit:#x?}"
             );
+        }
+    }
+
+    /// `IAlloc` resumed at a loop head after an unwind: the entry guard
+    /// delegates a non-entry `pc` to the generated body, which picks the
+    /// loop up from the registers (a `==` guard would re-run the body
+    /// from the top instead). The first leg runs the hand body to the
+    /// unwind with the events test's `k` grid; seeds that unwind
+    /// elsewhere restart clean at the entry so the seed still passes.
+    #[test]
+    fn dlheap_ialloc_resume_matches() {
+        use crate::difftest::events::UNWIND;
+        use std::cell::Cell;
+        let (gen, hand) = (
+            ee::s10::f_0031f858__generated as fn(&mut Cpu),
+            dlheap_ialloc as fn(&mut Cpu),
+        );
+        for (head, base, step) in [(0x0031_f968, 750u64, 15u64), (0x0031_fa10, 900u64, 10u64)] {
+            let hit = Cell::new(false);
+            let setup = |c: &mut Cpu, seed: u32| {
+                dlheap_ialloc_fixture(c, seed);
+                unwind_at(c, 0x0031_f858, base + (seed % 33) as u64 * step);
+                dlheap_ialloc(c);
+                if c.pc & !UNWIND == head {
+                    hit.set(true);
+                    c.pc &= !UNWIND;
+                } else {
+                    // Unwind missed the head: compare the plain entry
+                    // path instead. Reset the consumed schedule far into
+                    // the future (no event can fire), then a pristine
+                    // fixture.
+                    unwind_at(c, 0x0031_f858, 1 << 30);
+                    dlheap_ialloc_fixture(c, seed);
+                }
+            };
+            crate::difftest::check_lohi(gen, hand, 33, &setup);
+            assert!(hit.get(), "dispatcher head {head:#x} never resumed");
         }
     }
 
@@ -13039,7 +13148,11 @@ pub(crate) mod tests {
     pub(crate) fn dlheap_memoff_fixture(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x0031_f4e8, 0);
         let heap = dlheap_memoff_layout(c, seed);
-        let class = if seed < 3 * DLHEAP_MEMOFF_CLASSES {
+        // Seeds 78-82 are the sweep's gap arms; the class match (seeds <
+        // 39) and the random branch (seeds 39-77 and 83+) are unchanged.
+        let class = if seed >= 78 && seed < 83 {
+            13 + (seed - 78)
+        } else if seed < 3 * DLHEAP_MEMOFF_CLASSES {
             seed % DLHEAP_MEMOFF_CLASSES
         } else {
             99
@@ -13088,6 +13201,29 @@ pub(crate) mod tests {
             11 => (0x40, 0x10_0000, 0x10),
             // Power of two 0x20, misaligned by 0x10.
             12 => real(0x20, 0x20, 0x180, 0x10),
+            // align 17 (the 0x31f524 boundary): rounds to 0x20, while
+            // `<=` takes the plain-malloc arm.
+            13 => real(0x11, 0x20, 0x200, 0x10),
+            // bytes + offset of exactly 0xFFFFFFDF: not too large, the
+            // request wraps small and the malloc succeeds, while `<=`
+            // takes ENOMEM.
+            14 => (0x40, 0xffff_ffdf, 0),
+            // Lead of exactly 15 (the 0x31f648 boundary): brk + align,
+            // while `<=` takes brk.
+            15 => real(0x20, 0x20, 0x180, 0x11),
+            // Fake mmapped chunk with an odd offset (the `| 2` header
+            // bit): the offset leaves rem % 4 in {2, 3} so bit 1 of the
+            // moved size word is set, which `^` would clear.
+            16 => {
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK, 0x40);
+                c.bus.write32(DLHEAP_MEMOFF_CHUNK + 4, 0x1000 | 2);
+                let rem0 = (DLHEAP_MEMOFF_CHUNK + 8) % 0x40;
+                let off = if rem0 % 4 == 0 || rem0 % 4 == 3 { 3 } else { 1 };
+                (0x40, 0x100, off)
+            }
+            // Real chunk with an odd offset (the `| 1` free-lead header
+            // bit): lead 0x3f is odd, which `^` would clear.
+            17 => real(0x40, 0x40, 0x200, 0x01),
             _ => {
                 let align = match r.next_u32() % 3 {
                     0 => 1 << (5 + r.next_u32() % 5),
@@ -13101,7 +13237,7 @@ pub(crate) mod tests {
                 )
             }
         };
-        if (7..=9).contains(&class) {
+        if (7..=9).contains(&class) || class == 16 {
             c.bus.write32(LOG_RESULTS, DLHEAP_MEMOFF_CHUNK + 8);
             c.bus.write32(DLHEAP_MEMOFF_CTRL, DLHEAP_MEMOFF_MAGIC);
         }
@@ -13120,7 +13256,9 @@ pub(crate) mod tests {
     /// large first) and, with real chunks, the no-split tail (the request
     /// leaves at least align + 16 over).
     /// Paths (4-cycle fake): 83 class 7, 61 class 8, 69 class 9, 43 class
-    /// 10 (derived); every class total, in class order.
+    /// 10 (derived); every class total, in class order. Seeds 78-82 are
+    /// the sweep's gap arms: align 17, the wrapped total, lead 15, and
+    /// the two odd-offset header bits.
     #[test]
     fn dlheap_memalign_offset_matches() {
         fakes::hook(
@@ -13132,8 +13270,14 @@ pub(crate) mod tests {
         check_paths_lohi(
             ee::s10::f_0031f4e8__generated,
             dlheap_memalign_offset,
-            78,
-            &[83, 361, 240, 431, 175, 465, 260, 61, 69, 43, 320, 227],
+            83,
+            &[
+                83, 361, 240, 431, 175, 465, 260, 61, 69, 43, 320, 227,
+                // Seeds 78-82 (gap arms): 231 align-17 rounding, 374
+                // wrapped-total malloc, 187 lead-15 brk+align. Seeds 81
+                // and 82 take the class-7 and class-12 paths (83, 227).
+                231, 374, 187,
+            ],
             &|c, seed| dlheap_memoff_fixture(c, seed),
         );
     }
@@ -13229,7 +13373,11 @@ pub(crate) mod tests {
             4
         };
         dlheap_mallinfo_layout(c, &mut r, class);
-        for i in 0..12 {
+        // 48 words: the epilogue writes ten words at OUT..OUT+0x28, and
+        // a mutated `sdl` address would scribble low bytes at OUT+0x38,
+        // OUT+0x70 and OUT+0xA8, which must hold nonzero bytes to catch
+        // it (the prefill used to end at OUT+0x30, meeting zero).
+        for i in 0..48 {
             c.bus
                 .write32(DLHEAP_MALLINFO_OUT + 4 * i, 0xdddd_0000 + i + seed);
         }
