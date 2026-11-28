@@ -10345,181 +10345,115 @@ pub fn fread(c: &mut Cpu) {
 /// stream cannot take it.
 pub fn ungetc(c: &mut Cpu) {
     guest(c, |c| {
-        'b_4204f8: {
-            c.cycles += 8;
-            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
-            c.g[V0][0] = 0xffffffffffffffff;
-            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-            c.g[S0][0] = c.g[A1][0];
-            c.g[S1][0] = c.g[A0][0];
-            let t = c.g[S1][0] == c.g[V0][0];
-            c.sd(c.g[SP][0] as u32, c.g[RA][0]);
-            if t {
-                break 'b_4204f8;
-            } else {
-                'b_4203b8: {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
-                    if c.g[V0][0] != 0u64 {
-                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
-                        break 'b_4203b8;
-                    } else {
-                        c.cycles += 5;
-                        c.g[V0][0] = 0x450000;
-                        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4944));
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x54), c.g[V1][0]);
-                        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
-                        break 'b_4203b8;
-                    }
-                }
-                'b_4203d0: {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x38));
-                    if c.g[V0][0] != 0u64 {
+        // 0x4204f8: push `S1` back onto the stream `S0`; a flush
+        // failure reports -1 below and skips the store-back.
+        let mut ok = true;
+        c.cycles += 8;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+        c.g[V0][0] = 0xffffffffffffffff;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        let t = c.g[S1][0] == c.g[V0][0];
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        if !t {
+            // 0x4203b8: fetch the stream's buffer pointer.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
+            if c.g[V0][0] == 0u64 {
+                c.cycles += 5;
+                c.g[V0][0] = 0x450000;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4944));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x54), c.g[V1][0]);
+            }
+            c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x54));
+            // 0x4203d0: initialise the stream if it has no buffer.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x38));
+            if c.g[V0][0] == 0u64 {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x004203cc);
+                callee::SINIT.call(c, 0x0042_03cc)?;
+            }
+            c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+            // 0x420480 / 0x420460 / 0x420458 / 0x420424: when the
+            // stream is readable, flush a dirty buffer so the pushback
+            // below lands in a clean one.
+            c.cycles += 4;
+            c.g[V1][0] = c.g[V0][0] & 0xffdf;
+            c.g[V0][0] = c.g[V1][0] & 0x4;
+            let t = c.g[V0][0] != 0u64;
+            c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+            if !t {
+                c.cycles += 3;
+                c.g[V0][0] = c.g[V1][0] & 0x10;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.g[V1][0] & 0x8;
+                if t {
+                    // No slot check below: report -1.
+                    c.cycles += 2;
+                    c.g[V0][0] = 0xffffffffffffffff;
+                    ok = false;
+                } else {
+                    // 0x42041c: flush a dirty buffer; a flush failure
+                    // reports -1 below and skips the store-back.
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0u64 {
                         c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
-                        break 'b_4203d0;
                     } else {
-                        c.cycles += 3;
-                        c.g[RA][0] = sx(0x004203cc);
-                        callee::SINIT.call(c, 0x0042_03cc)?;
-                        c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
-                        break 'b_4203d0;
-                    }
-                }
-                'b_420480: {
-                    'b_420460: {
-                        'b_420458: {
-                            'b_420424: {
-                                c.cycles += 4;
-                                c.g[V1][0] = c.g[V0][0] & 0xffdf;
-                                c.g[V0][0] = c.g[V1][0] & 0x4;
-                                let t = c.g[V0][0] != 0u64;
-                                c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V1][0]);
-                                if t {
-                                    break 'b_420424;
-                                } else {
-                                    c.cycles += 3;
-                                    c.g[V0][0] = c.g[V1][0] & 0x10;
-                                    let t = c.g[V0][0] == 0u64;
-                                    c.g[V0][0] = c.g[V1][0] & 0x8;
-                                    if t {
-                                        break 'b_420458;
-                                    } else {
-                                        'b_42041c: {
-                                            c.cycles += 2;
-                                            if c.g[V0][0] == 0u64 {
-                                                c.g[V0][0] =
-                                                    c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
-                                                break 'b_42041c;
-                                            } else {
-                                                c.cycles += 4;
-                                                c.g[RA][0] = sx(0x004203fc);
-                                                c.g[A0][0] = c.g[S0][0];
-                                                callee::FFLUSH.call(c, 0x0042_03fc)?;
-                                                let t = c.g[V0][0] != 0u64;
-                                                c.g[V0][0] = 0xffffffffffffffff;
-                                                if t {
-                                                    break 'b_4204f8;
-                                                } else {
-                                                    c.cycles += 6;
-                                                    c.g[V0][0] = c
-                                                        .lhu((c.g[S0][0] as u32).wrapping_add(0xc));
-                                                    c.sw(
-                                                        (c.g[S0][0] as u32).wrapping_add(0x8),
-                                                        0u64,
-                                                    );
-                                                    c.g[V0][0] = c.g[V0][0] & 0xfff7;
-                                                    c.sw(
-                                                        (c.g[S0][0] as u32).wrapping_add(0x18),
-                                                        0u64,
-                                                    );
-                                                    c.sh(
-                                                        (c.g[S0][0] as u32).wrapping_add(0xc),
-                                                        c.g[V0][0],
-                                                    );
-                                                    c.g[V0][0] = c
-                                                        .lhu((c.g[S0][0] as u32).wrapping_add(0xc));
-                                                    break 'b_42041c;
-                                                }
-                                            }
-                                        }
-                                        c.cycles += 2;
-                                        c.g[V0][0] = c.g[V0][0] | 0x4;
-                                        c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
-                                        break 'b_420424;
-                                    }
-                                }
-                            }
-                            c.cycles += 3;
-                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
-                            let t = c.g[V0][0] == 0u64;
-                            c.g[S1][0] = c.g[S1][0] & 0xff;
-                            if t {
-                                break 'b_420480;
-                            } else {
-                                c.cycles += 5;
-                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x34));
-                                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
-                                if c.g[V0][0] != 0u64 {
-                                    c.g[A0][0] = c.lw(c.g[S0][0] as u32);
-                                    break 'b_420460;
-                                } else {
-                                    c.cycles += 5;
-                                    c.g[A1][0] = 0x4a0000;
-                                    c.g[A0][0] = 0x1;
-                                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x5760));
-                                    c.g[RA][0] = sx(0x00420458);
-                                    c.g[A2][0] = 0x44;
-                                    callee::WRITE.call(c, 0x0042_0458)?;
-                                    break 'b_420458;
-                                }
-                            }
-                        }
-                        c.cycles += 2;
-                        let t = true;
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x004203fc);
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::FFLUSH.call(c, 0x0042_03fc)?;
+                        let t = c.g[V0][0] != 0u64;
                         c.g[V0][0] = 0xffffffffffffffff;
                         if t {
-                            break 'b_4204f8;
+                            ok = false;
                         } else {
-                            break 'b_420460;
+                            c.cycles += 6;
+                            c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), 0u64);
+                            c.g[V0][0] = c.g[V0][0] & 0xfff7;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+                            c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                            c.g[V0][0] = c.lhu((c.g[S0][0] as u32).wrapping_add(0xc));
                         }
                     }
-                    c.cycles += 8;
-                    c.g[V0][0] = c.g[S1][0];
-                    c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
-                    c.sw(c.g[S0][0] as u32, c.g[V1][0]);
-                    c.sb((c.g[A0][0] as u32).wrapping_sub(0x1), c.g[S1][0]);
-                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-                    let t = true;
-                    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
-                    if t {
-                        break 'b_4204f8;
-                    } else {
-                        break 'b_420480;
+                    if ok {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.g[V0][0] | 0x4;
+                        c.sh((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
                     }
                 }
-                'b_4204c4: {
+            }
+            // 0x420460: when the buffer has no slot, spill it and
+            // report -1 below; otherwise store the byte back below.
+            if ok {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
+                let t = c.g[V0][0] == 0u64;
+                c.g[S1][0] = c.g[S1][0] & 0xff;
+                if t {
+                    // 0x4204c4: the slow path rescans the buffer for
+                    // the byte; finding it reports it below, missing
+                    // it initialises the buffer below that.
+                    let mut need_init = true;
                     c.cycles += 3;
                     c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
                     if c.g[V0][0] == 0u64 {
                         c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                        break 'b_4204c4;
                     } else {
                         c.cycles += 4;
                         c.g[A0][0] = c.lw(c.g[S0][0] as u32);
                         c.g[V0][0] = (c.g[V0][0] < c.g[A0][0]) as u64;
                         if c.g[V0][0] == 0u64 {
                             c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                            break 'b_4204c4;
                         } else {
                             c.cycles += 3;
                             c.g[V0][0] = c.lbu((c.g[A0][0] as u32).wrapping_sub(0x1));
                             if c.g[V0][0] != c.g[S1][0] {
                                 c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                                break 'b_4204c4;
                             } else {
                                 c.cycles += 7;
                                 c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
@@ -10527,32 +10461,54 @@ pub fn ungetc(c: &mut Cpu) {
                                 c.sw(c.g[S0][0] as u32, c.g[V0][0]);
                                 c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
                                 c.g[V0][0] = c.g[S1][0];
-                                let t = true;
                                 c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
-                                if t {
-                                    break 'b_4204f8;
-                                } else {
-                                    break 'b_4204c4;
-                                }
+                                need_init = false;
                             }
                         }
                     }
+                    if need_init {
+                        c.cycles += 13;
+                        c.g[V0][0] = 0x1;
+                        c.g[V1][0] = c.lw(c.g[S0][0] as u32);
+                        c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+                        c.g[A1][0] = 0x3;
+                        c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x42));
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x3c), c.g[A0][0]);
+                        c.g[V0][0] = c.g[S1][0];
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x38), c.g[V1][0]);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[A3][0]);
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[A1][0]);
+                        c.sw(c.g[S0][0] as u32, c.g[A2][0]);
+                        c.sb((c.g[S0][0] as u32).wrapping_add(0x42), c.g[S1][0]);
+                    }
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x34));
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(c.g[S0][0] as u32);
+                        c.cycles += 8;
+                        c.g[V0][0] = c.g[S1][0];
+                        c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+                        c.sw(c.g[S0][0] as u32, c.g[V1][0]);
+                        c.sb((c.g[A0][0] as u32).wrapping_sub(0x1), c.g[S1][0]);
+                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V1][0]);
+                    } else {
+                        c.cycles += 5;
+                        c.g[A1][0] = 0x4a0000;
+                        c.g[A0][0] = 0x1;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x5760));
+                        c.g[RA][0] = sx(0x00420458);
+                        c.g[A2][0] = 0x44;
+                        callee::WRITE.call(c, 0x0042_0458)?;
+                        c.cycles += 2;
+                        c.g[V0][0] = 0xffffffffffffffff;
+                    }
                 }
-                c.cycles += 13;
-                c.g[V0][0] = 0x1;
-                c.g[V1][0] = c.lw(c.g[S0][0] as u32);
-                c.g[A3][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
-                c.g[A1][0] = 0x3;
-                c.g[A2][0] = sx((c.g[S0][0] as u32).wrapping_add(0x42));
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x3c), c.g[A0][0]);
-                c.g[V0][0] = c.g[S1][0];
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x38), c.g[V1][0]);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x30), c.g[A3][0]);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x34), c.g[A1][0]);
-                c.sw(c.g[S0][0] as u32, c.g[A2][0]);
-                c.sb((c.g[S0][0] as u32).wrapping_add(0x42), c.g[S1][0]);
-                break 'b_4204f8;
             }
         }
         c.cycles += 5;
@@ -11316,139 +11272,132 @@ pub fn fcvtbuf(c: &mut Cpu) {
 /// reent buffer when NULL) with the decimal point and sign out.
 pub fn ecvtbuf(c: &mut Cpu) {
     guest(c, |c| {
-        'b_421b6c: {
-            'b_421adc: {
-                c.cycles += 18;
-                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
-                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
-                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
-                c.g[S0][0] = c.g[T0][0];
-                c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
-                c.g[S1][0] = 0u64;
-                c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
-                c.g[S3][0] = c.g[A1][0];
-                c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
-                c.g[S4][0] = 0x450000;
-                c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
-                c.g[S5][0] = c.g[A2][0];
-                c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
-                c.g[S6][0] = c.g[A3][0];
-                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
-                c.g[S7][0] = c.g[A0][0];
-                let t = c.g[S0][0] != 0u64;
-                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        // 0x421b6c / 0x421adc / 0x421ad8: size the conversion buffer;
+        // a failed reallocation reports below and skips the convert,
+        // copy and pad below.
+        let mut ok = true;
+        c.cycles += 18;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xa0));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S0][0] = c.g[T0][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S1][0] = 0u64;
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S3][0] = c.g[A1][0];
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S4][0] = 0x450000;
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S5][0] = c.g[A2][0];
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S6][0] = c.g[A3][0];
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.g[S7][0] = c.g[A0][0];
+        let t = c.g[S0][0] != 0u64;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        if !t {
+            c.cycles += 5;
+            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x50));
+            c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] == 0u64 {
+                c.cycles += 7;
+                c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x54));
+                c.g[RA][0] = sx(0x00421abc);
+                c.g[A2][0] = c.g[S2][0];
+                callee::REALLOC_R.call(c, 0x0042_1abc)?;
+                c.g[S0][0] = c.g[V0][0];
+                let t = c.g[S0][0] == 0u64;
+                c.g[V0][0] = 0u64;
                 if t {
-                    break 'b_421adc;
+                    ok = false;
                 } else {
-                    'b_421ad8: {
-                        c.cycles += 5;
-                        c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
-                        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x50));
-                        c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                        if c.g[V0][0] != 0u64 {
-                            c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
-                            break 'b_421ad8;
-                        } else {
-                            c.cycles += 7;
-                            c.g[S2][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
-                            c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x54));
-                            c.g[RA][0] = sx(0x00421abc);
-                            c.g[A2][0] = c.g[S2][0];
-                            callee::REALLOC_R.call(c, 0x0042_1abc)?;
-                            c.g[S0][0] = c.g[V0][0];
-                            let t = c.g[S0][0] == 0u64;
-                            c.g[V0][0] = 0u64;
-                            if t {
-                                break 'b_421b6c;
-                            } else {
-                                c.cycles += 4;
-                                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
-                                c.sw((c.g[V0][0] as u32).wrapping_add(0x54), c.g[S0][0]);
-                                c.sw((c.g[V0][0] as u32).wrapping_add(0x50), c.g[S2][0]);
-                                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
-                                break 'b_421ad8;
-                            }
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x54), c.g[S0][0]);
+                    c.sw((c.g[V0][0] as u32).wrapping_add(0x50), c.g[S2][0]);
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
+                }
+            } else {
+                c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
+            }
+            if ok {
+                c.cycles += 1;
+                c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x54));
+            }
+        }
+        // 0x421b3c: convert the value, then copy the digits while
+        // the destination has room.
+        if ok {
+            c.cycles += 14;
+            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
+            c.g[A1][0] = c.g[S7][0];
+            c.g[T0][0] = c.g[S5][0];
+            c.g[T1][0] = c.g[S6][0];
+            c.g[A2][0] = 0x2;
+            c.g[A3][0] = c.g[S3][0];
+            c.g[T2][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x00421b00);
+            c.g[S2][0] = c.g[S0][0];
+            callee::DTOA_R.call(c, 0x0042_1b00)?;
+            c.g[V1][0] = c.lw(c.g[SP][0] as u32);
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V1][0] = (c.g[A0][0] < c.g[V1][0]) as u64;
+            let t = c.g[V1][0] == 0u64;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S3][0] as i64)) as u64;
+            if !t {
+                c.cycles += 1;
+                loop {
+                    c.cycles += 8;
+                    c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
+                    c.g[V0][0] = c.lw(c.g[SP][0] as u32);
+                    c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0042_1b18);
                         }
+                        continue;
                     }
                     c.cycles += 1;
-                    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x54));
-                    break 'b_421adc;
+                    c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                    break;
                 }
             }
-            'b_421b3c: {
-                c.cycles += 14;
-                c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4944));
-                c.g[A1][0] = c.g[S7][0];
-                c.g[T0][0] = c.g[S5][0];
-                c.g[T1][0] = c.g[S6][0];
-                c.g[A2][0] = 0x2;
-                c.g[A3][0] = c.g[S3][0];
-                c.g[T2][0] = c.g[SP][0];
-                c.g[RA][0] = sx(0x00421b00);
-                c.g[S2][0] = c.g[S0][0];
-                callee::DTOA_R.call(c, 0x0042_1b00)?;
-                c.g[V1][0] = c.lw(c.g[SP][0] as u32);
-                c.g[A0][0] = c.g[V0][0];
-                c.g[V1][0] = (c.g[A0][0] < c.g[V1][0]) as u64;
-                let t = c.g[V1][0] == 0u64;
-                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S3][0] as i64)) as u64;
-                if t {
-                    break 'b_421b3c;
-                } else {
-                    c.cycles += 1;
-                    'l_421b18: loop {
-                        c.cycles += 8;
-                        c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
-                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
-                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
-                        c.sb(c.g[S0][0] as u32, c.g[V0][0]);
-                        c.g[V0][0] = c.lw(c.g[SP][0] as u32);
-                        c.g[V0][0] = (c.g[A0][0] < c.g[V0][0]) as u64;
-                        let t = c.g[V0][0] != 0u64;
-                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                        if t {
-                            if event_due(c) {
-                                deliver_event_here(c, 0x0042_1b18);
-                            }
-                            continue 'l_421b18;
-                        } else {
-                            c.cycles += 1;
-                            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S3][0] as i64)) as u64;
-                            break 'b_421b3c;
+        }
+        // 0x421b64: pad the field with spaces.
+        if ok {
+            c.cycles += 2;
+            let t = c.g[V0][0] == 0u64;
+            c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+            if !t {
+                c.cycles += 1;
+                c.g[V0][0] = 0x30;
+                loop {
+                    c.cycles += 7;
+                    c.sb(c.g[S0][0] as u32, c.g[V0][0]);
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S1][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0042_1b48);
                         }
+                        continue;
                     }
+                    break;
                 }
             }
-            'b_421b64: {
-                c.cycles += 2;
-                let t = c.g[V0][0] == 0u64;
-                c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[S1][0] as u32));
-                if t {
-                    break 'b_421b64;
-                } else {
-                    c.cycles += 1;
-                    c.g[V0][0] = 0x30;
-                    'l_421b48: loop {
-                        c.cycles += 7;
-                        c.sb(c.g[S0][0] as u32, c.g[V0][0]);
-                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
-                        let t = c.g[S1][0] != 0u64;
-                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                        if t {
-                            if event_due(c) {
-                                deliver_event_here(c, 0x0042_1b48);
-                            }
-                            continue 'l_421b48;
-                        } else {
-                            break 'b_421b64;
-                        }
-                    }
-                }
-            }
+        }
+        if ok {
             c.cycles += 2;
             c.sb(c.g[S0][0] as u32, 0u64);
             c.g[V0][0] = c.g[S2][0];
-            break 'b_421b6c;
         }
         c.cycles += 11;
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x90));
@@ -22422,20 +22371,32 @@ pub(crate) mod tests {
 
     #[test]
     fn ecvtbuf_matches() {
-        check(ee::s15::f_00421a50__generated, ecvtbuf, 200, &|c, seed| {
-            let mut r = Rng(0x1a50 ^ seed as u64);
-            heap_init(c, &mut r);
-            c.g[A0][0] = dbl_2(seed, &mut r);
-            c.g[A1][0] = [0, 1, 3, 6, 10, 17][seed as usize % 6] as u64;
-            c.g[A2][0] = SCR as u64;
-            c.g[A3][0] = (SCR + 4) as u64;
-            c.g[T0][0] = if seed % 3 == 0 { 0 } else { DST as u64 };
-            c.bus.write32(SCR, 0);
-            c.bus.write32(SCR + 4, 0);
-            for i in 0..0x200 {
-                c.bus.write8(DST + i as u32, 0xcc);
-            }
-        });
+        check_paths(
+            ee::s15::f_00421a50__generated,
+            ecvtbuf,
+            200,
+            &[
+                191, 240, 604, 4870, 6589, 6624, 6632, 6644, 6649, 6654, 6662, 6664, 6669, 6672,
+                6710, 6726, 6913, 7207, 7270, 7283, 7293, 7304, 7312, 7317, 7318, 7521, 7526, 7565,
+                7589, 7601, 7626, 7649, 7741, 7766, 8094, 8177, 8247, 8273, 8289, 8292, 8312, 8324,
+                8329, 8760, 8933, 9918, 9921, 10938, 11072, 11769, 11773, 11778, 11789, 11791,
+                11803, 11836, 12123, 12133, 12252, 12265, 12371, 12562, 12603, 12653, 12657, 12678,
+            ],
+            &|c, seed| {
+                let mut r = Rng(0x1a50 ^ seed as u64);
+                heap_init(c, &mut r);
+                c.g[A0][0] = dbl_2(seed, &mut r);
+                c.g[A1][0] = [0, 1, 3, 6, 10, 17][seed as usize % 6] as u64;
+                c.g[A2][0] = SCR as u64;
+                c.g[A3][0] = (SCR + 4) as u64;
+                c.g[T0][0] = if seed % 3 == 0 { 0 } else { DST as u64 };
+                c.bus.write32(SCR, 0);
+                c.bus.write32(SCR + 4, 0);
+                for i in 0..0x200 {
+                    c.bus.write8(DST + i as u32, 0xcc);
+                }
+            },
+        );
     }
 
     #[test]
@@ -24017,102 +23978,109 @@ pub(crate) mod tests {
 
     #[test]
     fn ungetc_matches() {
-        check(ee::s15::f_00420378__generated, ungetc, 200, &|c, seed| {
-            let mut r = file_fixture_3(c, seed, 0x0378, 3);
-            match seed % 11 {
-                0 => {
-                    // `EOF`: nothing pushed back.
-                    c.g[A0][0] = 0xffffffffffffffff;
-                    c.g[A1][0] = FILE_3 as u64;
+        check_paths(
+            ee::s15::f_00420378__generated,
+            ungetc,
+            200,
+            &[13, 28, 49, 53, 56, 81, 111, 119],
+            &|c, seed| {
+                let mut r = file_fixture_3(c, seed, 0x0378, 3);
+                match seed % 11 {
+                    0 => {
+                        // `EOF`: nothing pushed back.
+                        c.g[A0][0] = 0xffffffffffffffff;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    1 => {
+                        // Push back onto a buffered read stream.
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.g[A0][0] = b'A' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    2 => {
+                        // Empty read buffer: the `_ubuf` path.
+                        c.bus.write32(FILE_3 + 0x4, 0);
+                        c.g[A0][0] = b'B' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    3 => {
+                        // Write mode: flush first.
+                        c.bus.write16(FILE_3 + 0xc, 0x208);
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 4);
+                        c.g[A0][0] = b'C' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    4 => {
+                        // Unfiltered character (>255 masked to a byte).
+                        c.bus.write32(FILE_3 + 0x4, 3);
+                        c.g[A0][0] = 0x141;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    5 => {
+                        // Write mode with the 0x10 bit: the flush path runs.
+                        c.bus.write16(FILE_3 + 0xc, 0x218);
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 4);
+                        c.g[A0][0] = b'D' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    6 => {
+                        // Read count at the `_ubuf` limit.
+                        c.bus.write32(FILE_3 + 0x4, 5);
+                        c.bus.write32(FILE_3 + 0x34, 5);
+                        c.bus.write32(FILE_3 + 0x30, DST);
+                        c.g[A0][0] = b'E' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    7 => {
+                        // Read count past it.
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.bus.write32(FILE_3 + 0x34, 3);
+                        c.bus.write32(FILE_3 + 0x30, DST);
+                        c.g[A0][0] = b'F' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    8 => {
+                        // No buffer base: the null-base path.
+                        c.bus.write32(FILE_3 + 0x10, 0);
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.g[A0][0] = b'G' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    9 => {
+                        // Write mode with a FAKE cookie the flush can call:
+                        // the flush succeeds, reaching the `& ~0x8` clear
+                        // (covers the flag-clear store).
+                        use crate::difftest::fakes::{
+                            fake_call, fake_jump_out, fake_syscall, FAKE, LOG_RESULTS,
+                            LOG_UNWIND_AT,
+                        };
+                        c.hooks.miss = fake_call;
+                        c.hooks.jump_out = fake_jump_out;
+                        c.hooks.syscall = fake_syscall;
+                        c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                        c.bus.write16(FILE_3 + 0xc, 0x218);
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 4);
+                        c.bus.write32(FILE_3 + 0x1c, 3);
+                        c.bus.write32(FILE_3 + 0x24, FAKE);
+                        c.bus.write32(LOG_RESULTS, 4);
+                        c.g[A0][0] = b'G' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
+                    _ => {
+                        // Advanced position: `_p` past the buffer base.
+                        c.bus.write32(FILE_3 + 0x10, SRC);
+                        c.bus.write32(FILE_3, SRC + 10);
+                        c.bus.write32(FILE_3 + 0x4, 8);
+                        c.g[A0][0] = b'H' as u64;
+                        c.g[A1][0] = FILE_3 as u64;
+                    }
                 }
-                1 => {
-                    // Push back onto a buffered read stream.
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.g[A0][0] = b'A' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                2 => {
-                    // Empty read buffer: the `_ubuf` path.
-                    c.bus.write32(FILE_3 + 0x4, 0);
-                    c.g[A0][0] = b'B' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                3 => {
-                    // Write mode: flush first.
-                    c.bus.write16(FILE_3 + 0xc, 0x208);
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 4);
-                    c.g[A0][0] = b'C' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                4 => {
-                    // Unfiltered character (>255 masked to a byte).
-                    c.bus.write32(FILE_3 + 0x4, 3);
-                    c.g[A0][0] = 0x141;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                5 => {
-                    // Write mode with the 0x10 bit: the flush path runs.
-                    c.bus.write16(FILE_3 + 0xc, 0x218);
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 4);
-                    c.g[A0][0] = b'D' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                6 => {
-                    // Read count at the `_ubuf` limit.
-                    c.bus.write32(FILE_3 + 0x4, 5);
-                    c.bus.write32(FILE_3 + 0x34, 5);
-                    c.bus.write32(FILE_3 + 0x30, DST);
-                    c.g[A0][0] = b'E' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                7 => {
-                    // Read count past it.
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.bus.write32(FILE_3 + 0x34, 3);
-                    c.bus.write32(FILE_3 + 0x30, DST);
-                    c.g[A0][0] = b'F' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                8 => {
-                    // No buffer base: the null-base path.
-                    c.bus.write32(FILE_3 + 0x10, 0);
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.g[A0][0] = b'G' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                9 => {
-                    // Write mode with a FAKE cookie the flush can call:
-                    // the flush succeeds, reaching the `& ~0x8` clear
-                    // (covers the flag-clear store).
-                    use crate::difftest::fakes::{
-                        fake_call, fake_jump_out, fake_syscall, FAKE, LOG_RESULTS, LOG_UNWIND_AT,
-                    };
-                    c.hooks.miss = fake_call;
-                    c.hooks.jump_out = fake_jump_out;
-                    c.hooks.syscall = fake_syscall;
-                    c.bus.write32(LOG_UNWIND_AT, u32::MAX);
-                    c.bus.write16(FILE_3 + 0xc, 0x218);
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 4);
-                    c.bus.write32(FILE_3 + 0x1c, 3);
-                    c.bus.write32(FILE_3 + 0x24, FAKE);
-                    c.bus.write32(LOG_RESULTS, 4);
-                    c.g[A0][0] = b'G' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-                _ => {
-                    // Advanced position: `_p` past the buffer base.
-                    c.bus.write32(FILE_3 + 0x10, SRC);
-                    c.bus.write32(FILE_3, SRC + 10);
-                    c.bus.write32(FILE_3 + 0x4, 8);
-                    c.g[A0][0] = b'H' as u64;
-                    c.g[A1][0] = FILE_3 as u64;
-                }
-            }
-            let _ = &mut r;
-        });
+                let _ = &mut r;
+            },
+        );
     }
 
     #[test]

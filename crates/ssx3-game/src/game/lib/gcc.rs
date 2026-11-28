@@ -9269,42 +9269,44 @@ pub fn deregister_frame_info(c: &mut Cpu) {
 pub fn frame_state_for(c: &mut Cpu) {
     call::guest(c, |c| {
         let frame = Frame::open(c, 0x3c0);
-        'b_4149c4: {
-            c.cycles += 16;
-            c.sd(frame.at(c, 0x390), c.g[S6][0]);
-            c.sd(frame.at(c, 0x3a0), c.g[S7][0]);
-            c.g[S6][0] = c.g[A0][0];
-            c.sd(frame.at(c, 0x350), c.g[S2][0]);
-            c.g[S7][0] = c.g[A1][0];
-            frame.save_ra(c, 0x3b0);
-            c.sd(frame.at(c, 0x380), c.g[S5][0]);
-            c.sd(frame.at(c, 0x370), c.g[S4][0]);
-            c.sd(frame.at(c, 0x360), c.g[S3][0]);
-            c.sd(frame.at(c, 0x340), c.g[S1][0]);
-            c.g[RA][0] = sx(0x0041_484c);
-            c.sd(frame.at(c, 0x330), c.g[S0][0]);
-            callee::FIND_FDE.call(c, 0x0041_484c)?;
-            c.g[S2][0] = c.g[V0][0];
-            let t = c.g[S2][0] == 0u64;
-            c.g[A0][0] = c.g[S2][0];
-            if t {
+        // 0x4149c4: without debug info below there is no frame state.
+        let mut ok = true;
+        c.cycles += 16;
+        c.sd(frame.at(c, 0x390), c.g[S6][0]);
+        c.sd(frame.at(c, 0x3a0), c.g[S7][0]);
+        c.g[S6][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0x350), c.g[S2][0]);
+        c.g[S7][0] = c.g[A1][0];
+        frame.save_ra(c, 0x3b0);
+        c.sd(frame.at(c, 0x380), c.g[S5][0]);
+        c.sd(frame.at(c, 0x370), c.g[S4][0]);
+        c.sd(frame.at(c, 0x360), c.g[S3][0]);
+        c.sd(frame.at(c, 0x340), c.g[S1][0]);
+        c.g[RA][0] = sx(0x0041_484c);
+        c.sd(frame.at(c, 0x330), c.g[S0][0]);
+        callee::FIND_FDE.call(c, 0x0041_484c)?;
+        c.g[S2][0] = c.g[V0][0];
+        let t = c.g[S2][0] == 0u64;
+        c.g[A0][0] = c.g[S2][0];
+        if t {
+            c.cycles += 2;
+            c.g[V0][0] = 0u64;
+            ok = false;
+        } else {
+            c.cycles += 5;
+            c.g[RA][0] = sx(0x0041_4860);
+            c.g[A1][0] = c.g[SP][0];
+            callee::EXTRACT_CIE_INFO.call(c, 0x0041_4860)?;
+            c.g[S0][0] = c.g[V0][0];
+            let t = c.g[S0][0] != 0u64;
+            c.g[S4][0] = sx(frame.at(c, 0x20));
+            if !t {
                 c.cycles += 2;
                 c.g[V0][0] = 0u64;
-                break 'b_4149c4;
-            } else {
-                c.cycles += 5;
-                c.g[RA][0] = sx(0x0041_4860);
-                c.g[A1][0] = c.g[SP][0];
-                callee::EXTRACT_CIE_INFO.call(c, 0x0041_4860)?;
-                c.g[S0][0] = c.g[V0][0];
-                let t = c.g[S0][0] != 0u64;
-                c.g[S4][0] = sx(frame.at(c, 0x20));
-                if !t {
-                    c.cycles += 2;
-                    c.g[V0][0] = 0u64;
-                    break 'b_4149c4;
-                }
+                ok = false;
             }
+        }
+        if ok {
             c.cycles += 16;
             c.g[A1][0] = 0u64;
             c.g[A0][0] = c.g[S4][0];
@@ -9333,7 +9335,7 @@ pub fn frame_state_for(c: &mut Cpu) {
                 c.g[S3][0] = sx((c.g[S2][0] as u32).wrapping_add(0x10));
                 c.g[S5][0] = sx(frame.at(c, 0x300));
                 c.g[A0][0] = c.g[S0][0];
-                'l_4148c0: loop {
+                loop {
                     c.cycles += 8;
                     c.g[A1][0] = c.g[S4][0];
                     c.g[A2][0] = c.g[SP][0];
@@ -9348,7 +9350,7 @@ pub fn frame_state_for(c: &mut Cpu) {
                         if event_due(c) {
                             deliver_event_here(c, 0x0041_48c0);
                         }
-                        continue 'l_4148c0;
+                        continue;
                     } else {
                         c.cycles += 2;
                         c.g[A0][0] = c.lw(frame.at(c, 0));
@@ -9390,7 +9392,7 @@ pub fn frame_state_for(c: &mut Cpu) {
                     c.cycles += 2;
                     c.g[S2][0] = sx(frame.at(c, 0x324));
                     c.g[A0][0] = c.g[S0][0];
-                    'l_414948: loop {
+                    loop {
                         c.cycles += 8;
                         c.g[A1][0] = c.g[S4][0];
                         c.g[A2][0] = c.g[SP][0];
@@ -9414,7 +9416,7 @@ pub fn frame_state_for(c: &mut Cpu) {
                                 if event_due(c) {
                                     deliver_event_here(c, 0x0041_4948);
                                 }
-                                continue 'l_414948;
+                                continue;
                             } else {
                                 c.cycles += 1;
                                 c.g[A0][0] = c.g[S4][0];
@@ -9426,7 +9428,8 @@ pub fn frame_state_for(c: &mut Cpu) {
             }
             c.cycles += 1;
             c.g[V0][0] = c.g[S7][0];
-            'l_41497c: loop {
+            // 0x41497c: copy the register save words into the frame.
+            loop {
                 c.cycles += 13;
                 c.g[V1][0] = c.ld(c.g[A0][0] as u32);
                 c.g[A1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
@@ -9443,16 +9446,15 @@ pub fn frame_state_for(c: &mut Cpu) {
                     if event_due(c) {
                         deliver_event_here(c, 0x0041_497c);
                     }
-                    continue 'l_41497c;
-                } else {
-                    c.cycles += 5;
-                    c.g[V1][0] = c.ld(c.g[A0][0] as u32);
-                    c.g[A1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
-                    c.sd(c.g[V0][0] as u32, c.g[V1][0]);
-                    c.sd((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
-                    c.g[V0][0] = c.g[S7][0];
-                    break 'b_4149c4;
+                    continue;
                 }
+                c.cycles += 5;
+                c.g[V1][0] = c.ld(c.g[A0][0] as u32);
+                c.g[A1][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x8));
+                c.sd(c.g[V0][0] as u32, c.g[V1][0]);
+                c.sd((c.g[V0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+                c.g[V0][0] = c.g[S7][0];
+                break;
             }
         }
         c.cycles += 11;
@@ -19197,10 +19199,11 @@ pub(crate) mod tests {
         // S1 window is steered small so the CFA loop stays bounded; the
         // tail copy loop runs a fixed 9 iterations. Both sides run the same
         // walk identically.
-        check(
+        check_paths(
             ee::s15::f_00414818__generated,
             frame_state_for,
             SEEDS_4 + 10,
+            &[76, 732, 899, 7174, 7190, 7320, 191019, 191101],
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0041_4818, 0);
                 fill(c, &mut r, DB + 0x400, 32);
