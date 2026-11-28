@@ -2233,155 +2233,138 @@ pub fn suspend_thread(c: &mut Cpu) {
 pub fn libkernl_tty_write(c: &mut Cpu) {
     use callee::*;
     guest(c, |c| {
-        'b_42516c: {
-            c.cycles += 17;
-            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
-            c.g[S5][0] = 0x530000;
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
-            c.g[S4][0] = 0u64;
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
-            c.g[S3][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4730));
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
-            c.g[S2][0] = c.g[A1][0];
-            c.sd(c.g[SP][0] as u32, c.g[S0][0]);
-            c.g[S1][0] = 0u64;
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
-            c.g[S0][0] = c.g[A0][0];
-            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
-            let t = c.g[V0][0] != 0u64;
-            c.g[V0][0] = 0xffffffffffffffff;
-            if t {
-                break 'b_42516c;
-            } else {
-                c.cycles += 13;
-                c.g[RA][0] = sx(0x0042508c);
-                DINTR.call(c, 0x0042508c)?;
-                c.g[V0][0] = 0x530000;
-                c.g[V1][0] = 0x20000000;
-                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4700));
-                c.g[A0][0] = 0x1;
-                c.g[A2][0] = c.g[V0][0] | c.g[V1][0];
-                c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[A0][0]);
-                c.sw((c.g[S3][0] as u32).wrapping_add(0x10), c.g[A2][0]);
-                c.g[T0][0] = 0xffffffffffffffff;
-                c.g[A3][0] = 0xa;
-                c.g[A1][0] = 0xd;
-                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(0xc));
-                'l_4250b8: loop {
-                    'b_425108: {
-                        c.cycles += 3;
-                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
-                        if c.g[S2][0] == c.g[T0][0] {
-                            c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4730));
-                            break 'b_425108;
-                        } else {
-                            'b_425104: {
-                                'b_4250e8: {
-                                    c.cycles += 3;
-                                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
-                                    let t = c.g[V0][0] != c.g[A3][0];
-                                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
-                                    if t {
-                                        break 'b_4250e8;
-                                    } else {
-                                        c.cycles += 5;
-                                        c.sb(c.g[A0][0] as u32, c.g[A1][0]);
-                                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
-                                        c.g[V0][0] = ((c.g[S1][0] as i64) < 256i64) as u64;
-                                        let t = c.g[V0][0] == 0u64;
-                                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
-                                        if t {
-                                            break 'b_425104;
-                                        } else {
-                                            c.cycles += 1;
-                                            c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
-                                            break 'b_4250e8;
-                                        }
-                                    }
-                                }
-                                c.cycles += 7;
-                                c.sb(c.g[A0][0] as u32, c.g[V1][0]);
-                                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
-                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
-                                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
-                                c.g[V0][0] = ((c.g[S1][0] as i64) < 256i64) as u64;
-                                let t = c.g[V0][0] != 0u64;
-                                c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
-                                if t {
-                                    if event_due(c) {
-                                        deliver_event_here(c, 0x004250b8);
-                                    }
-                                    continue 'l_4250b8;
-                                } else {
-                                    break 'b_425104;
-                                }
-                            }
+        // 0x42516c: unless the console is already locked, stage the
+        // bytes below and send them; a failed send reports -1.
+        c.cycles += 17;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+        c.g[S5][0] = 0x530000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+        c.g[S4][0] = 0u64;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.g[S3][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4730));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.g[S2][0] = c.g[A1][0];
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        c.g[S1][0] = 0u64;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] != 0u64;
+        c.g[V0][0] = 0xffffffffffffffff;
+        if !t {
+            c.cycles += 13;
+            c.g[RA][0] = sx(0x0042508c);
+            DINTR.call(c, 0x0042508c)?;
+            c.g[V0][0] = 0x530000;
+            c.g[V1][0] = 0x20000000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4700));
+            c.g[A0][0] = 0x1;
+            c.g[A2][0] = c.g[V0][0] | c.g[V1][0];
+            c.sw((c.g[S3][0] as u32).wrapping_add(0xc), c.g[A0][0]);
+            c.sw((c.g[S3][0] as u32).wrapping_add(0x10), c.g[A2][0]);
+            c.g[T0][0] = 0xffffffffffffffff;
+            c.g[A3][0] = 0xa;
+            c.g[A1][0] = 0xd;
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(0xc));
+            // 0x4250b8 / 0x425108 / 0x425104 / 0x4250e8: stage one
+            // byte, prefixing a newline with a carriage return; a
+            // full stage or the last byte sends below.
+            loop {
+                c.cycles += 3;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x1));
+                if c.g[S2][0] == c.g[T0][0] {
+                    c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4730));
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lb(c.g[S0][0] as u32);
+                    let t = c.g[V0][0] != c.g[A3][0];
+                    c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
+                    let mut stage_tail = t;
+                    if !t {
+                        c.cycles += 5;
+                        c.sb(c.g[A0][0] as u32, c.g[A1][0]);
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < 256i64) as u64;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        if t {
                             c.cycles += 1;
                             c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4730));
-                            break 'b_425108;
+                        } else {
+                            c.cycles += 1;
+                            c.g[V1][0] = c.lbu(c.g[S0][0] as u32);
+                            stage_tail = true;
                         }
                     }
-                    'b_42513c: {
-                        c.cycles += 9;
-                        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
-                        c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                        c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-                        c.g[A1][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x7));
-                        c.g[A0][0] = c.lw((c.g[S5][0] as u32).wrapping_sub(0x4730));
-                        c.g[RA][0] = sx(0x00425124);
-                        c.sh(c.g[A2][0] as u32, c.g[V1][0]);
-                        DECI2_REQ_SEND.call(c, 0x00425124)?;
-                        let t = (c.g[V0][0] as i64) >= 0;
+                    if stage_tail {
+                        c.cycles += 7;
+                        c.sb(c.g[A0][0] as u32, c.g[V1][0]);
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x1));
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1));
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < 256i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(0x1));
                         if t {
-                            break 'b_42513c;
-                        } else {
-                            c.cycles += 4;
-                            c.g[RA][0] = sx(0x00425134);
-                            c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
-                            callee::EINTR.call(c, 0x00425134)?;
-                            let t = true;
-                            c.g[V0][0] = 0xffffffffffffffff;
+                            if event_due(c) {
+                                deliver_event_here(c, 0x004250b8);
+                            }
+                            continue;
+                        }
+                        c.cycles += 1;
+                        c.g[S0][0] = sx((c.g[S5][0] as u32).wrapping_sub(0x4730));
+                    }
+                }
+                // 0x42513c: send the staged bytes; a failed send
+                // reports -1 below.
+                c.cycles += 9;
+                c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(0xc));
+                c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                c.g[A1][0] = c.lb((c.g[A2][0] as u32).wrapping_add(0x7));
+                c.g[A0][0] = c.lw((c.g[S5][0] as u32).wrapping_sub(0x4730));
+                c.g[RA][0] = sx(0x00425124);
+                c.sh(c.g[A2][0] as u32, c.g[V1][0]);
+                DECI2_REQ_SEND.call(c, 0x00425124)?;
+                let t = (c.g[V0][0] as i64) >= 0;
+                if t {
+                    // 0x425160 / 0x425148: wait for the send to
+                    // complete, then report the byte count below.
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[S1][0] = c.g[S5][0];
+                    if !t {
+                        loop {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x4730));
+                            c.g[RA][0] = sx(0x00425154);
+                            DECI2_POLL.call(c, 0x00425154)?;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                            let t = c.g[V0][0] != 0u64;
                             if t {
-                                break 'b_42516c;
-                            } else {
-                                break 'b_42513c;
-                            }
-                        }
-                    }
-                    'b_425160: {
-                        c.cycles += 3;
-                        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-                        let t = c.g[V0][0] == 0u64;
-                        c.g[S1][0] = c.g[S5][0];
-                        if t {
-                            break 'b_425160;
-                        } else {
-                            'l_425148: loop {
-                                c.cycles += 6;
-                                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x4730));
-                                c.g[RA][0] = sx(0x00425154);
-                                DECI2_POLL.call(c, 0x00425154)?;
-                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-                                let t = c.g[V0][0] != 0u64;
-                                if t {
-                                    if event_due(c) {
-                                        deliver_event_here(c, 0x00425148);
-                                    }
-                                    continue 'l_425148;
-                                } else {
-                                    break 'b_425160;
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x00425148);
                                 }
+                                continue;
                             }
+                            break;
                         }
                     }
                     c.cycles += 3;
                     c.g[RA][0] = sx(0x00425168);
                     callee::EINTR.call(c, 0x00425168)?;
                     c.g[V0][0] = c.g[S4][0];
-                    break 'b_42516c;
+                } else {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x00425134);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), 0u64);
+                    callee::EINTR.call(c, 0x00425134)?;
+                    c.g[V0][0] = 0xffffffffffffffff;
                 }
+                break;
             }
         }
         c.cycles += 9;

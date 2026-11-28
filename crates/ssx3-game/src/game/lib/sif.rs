@@ -5021,136 +5021,112 @@ pub fn sce_sif_get_next_request(c: &mut Cpu) {
 pub fn sce_sif_exec_request(c: &mut Cpu) {
     use callee::*;
     guest(c, |c| {
-        'b_427274: {
-            c.cycles += 17;
-            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
-            c.g[S4][0] = 0u64;
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
-            c.g[S1][0] = c.g[A0][0];
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
-            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
-            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-            c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
-            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-            let t = c.g[V0][0] as u32;
-            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-            call_ptr(c, t, 0x00427268)?;
-            c.g[S2][0] = c.g[V0][0];
-            if c.g[S2][0] != 0u64 {
-                c.g[S4][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
-                break 'b_427274;
-            } else {
-                break 'b_427274;
-            }
+        // 0x427274: run the queued request's handler below.
+        c.cycles += 17;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+        c.g[S4][0] = 0u64;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+        c.g[S1][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x24));
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+        let t = c.g[V0][0] as u32;
+        c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+        call_ptr(c, t, 0x00427268)?;
+        c.g[S2][0] = c.g[V0][0];
+        if c.g[S2][0] != 0u64 {
+            c.g[S4][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x2c));
         }
-        'b_427288: {
-            c.cycles += 3;
-            c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
-            let t = (c.g[A1][0] as i64) <= 0;
-            if t {
-                break 'b_427288;
-            }
+        // 0x427288: flush a pending writeback below.
+        c.cycles += 3;
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+        if (c.g[A1][0] as i64) > 0 {
             c.cycles += 2;
             c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
             WRITEBACK.call(c, 0x00427288)?;
-            break 'b_427288;
         }
-        'b_427298: {
-            c.cycles += 2;
-            let t = (c.g[S4][0] as i64) <= 0;
-            c.g[A0][0] = c.g[S2][0];
-            if t {
-                break 'b_427298;
-            }
+        // 0x427298: flush a pending second writeback below.
+        c.cycles += 2;
+        let t = (c.g[S4][0] as i64) <= 0;
+        c.g[A0][0] = c.g[S2][0];
+        if !t {
             c.cycles += 2;
             c.g[A1][0] = c.g[S4][0];
             WRITEBACK.call(c, 0x00427298)?;
-            break 'b_427298;
         }
-        'b_4272d4: {
-            'b_4272c4: {
-                c.cycles += 6;
-                DINTR.call(c, 0x004272a0)?;
-                c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
-                c.g[V0][0] = c.g[A1][0] & 0x4;
-                let t = c.g[V0][0] == 0u64;
-                c.g[A1][0] = sx(c.g[A1][0] as u32 >> 16);
-                if t {
-                    break 'b_4272c4;
-                }
-                c.cycles += 5;
-                c.g[A0][0] = 0x530000;
-                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
-                GET_FPACKET2.call(c, 0x004272bc)?;
-                let t = true;
-                c.g[S0][0] = c.g[V0][0];
-                if t {
-                    break 'b_4272d4;
-                } else {
-                    break 'b_4272c4;
-                }
-            }
+        // 0x4272d4 / 0x4272c4: take a free packet; a fragment pickup
+        // uses the second-slot call below.
+        c.cycles += 6;
+        DINTR.call(c, 0x004272a0)?;
+        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x34));
+        c.g[V0][0] = c.g[A1][0] & 0x4;
+        let t = c.g[V0][0] == 0u64;
+        c.g[A1][0] = sx(c.g[A1][0] as u32 >> 16);
+        if t {
             c.cycles += 4;
             c.g[A0][0] = 0x530000;
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
             GET_FPACKET.call(c, 0x004272d0)?;
             c.g[S0][0] = c.g[V0][0];
-            break 'b_4272d4;
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = 0x530000;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x2980));
+            GET_FPACKET2.call(c, 0x004272bc)?;
+            c.g[S0][0] = c.g[V0][0];
         }
-        'b_4273dc: {
-            'b_427330: {
+        // 0x4273dc / 0x427330 / 0x427300: send the command; a reply
+        // already present runs the receive below, otherwise the send
+        // loops above and rejoins at the tail below.
+        let mut receive = false;
+        c.cycles += 10;
+        EINTR.call(c, 0x004272dc)?;
+        c.g[V1][0] = 0xffffffff80000000;
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+        c.g[V1][0] = c.g[V1][0] | 0xa;
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V1][0]);
+        c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
+        if c.g[V0][0] == 0u64 {
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
+            receive = true;
+        } else {
+            c.cycles += 1;
+            loop {
                 c.cycles += 10;
-                EINTR.call(c, 0x004272dc)?;
-                c.g[V1][0] = 0xffffffff80000000;
-                c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
-                c.g[V1][0] = c.g[V1][0] | 0xa;
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x20), c.g[V1][0]);
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x1c), c.g[A0][0]);
-                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x30));
-                if c.g[V0][0] == 0u64 {
-                    c.sw((c.g[S0][0] as u32).wrapping_add(0x18), 0u64);
-                    break 'b_427330;
-                }
-                c.cycles += 1;
-                'l_427300: loop {
-                    c.cycles += 10;
-                    c.g[A0][0] = 0xffffffff80000000;
-                    c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
-                    c.g[A0][0] = c.g[A0][0] | 0x8;
-                    c.g[A1][0] = c.g[S0][0];
-                    c.g[A2][0] = 0x40;
-                    c.g[A3][0] = c.g[S2][0];
-                    c.g[T1][0] = c.g[S4][0];
-                    SEND_CMD.call(c, 0x00427320)?;
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
-                    if t {
-                        if event_due(c) {
-                            deliver_event_here(c, 0x00427300);
-                        }
-                        continue 'l_427300;
-                    }
-                    c.cycles += 2;
-                    let t = true;
-                    c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
-                    if t {
-                        break 'b_4273dc;
-                    } else {
-                        break 'b_427330;
-                    }
-                }
-            }
-            'b_427354: {
-                c.cycles += 3;
-                c.g[S3][0] = 0u64;
-                let t = (c.g[S4][0] as i64) <= 0;
-                c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+                c.g[A0][0] = 0xffffffff80000000;
+                c.g[T0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
+                c.g[A0][0] = c.g[A0][0] | 0x8;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 0x40;
+                c.g[A3][0] = c.g[S2][0];
+                c.g[T1][0] = c.g[S4][0];
+                SEND_CMD.call(c, 0x00427320)?;
+                let t = c.g[V0][0] == 0u64;
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
                 if t {
-                    break 'b_427354;
+                    if event_due(c) {
+                        deliver_event_here(c, 0x00427300);
+                    }
+                    continue;
                 }
+                c.cycles += 2;
+                c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                break;
+            }
+        }
+        // 0x427354: stage the receive buffer below.
+        if receive {
+            c.cycles += 3;
+            c.g[S3][0] = 0u64;
+            let t = (c.g[S4][0] as i64) <= 0;
+            c.sw((c.g[S0][0] as u32).wrapping_add(0x10), 0u64);
+            if !t {
                 c.cycles += 6;
                 c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x28));
                 c.g[S3][0] = 0x1;
@@ -5158,7 +5134,6 @@ pub fn sce_sif_exec_request(c: &mut Cpu) {
                 c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
                 c.sw((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S4][0]);
                 c.sw((c.g[SP][0] as u32).wrapping_add(0xc), 0u64);
-                break 'b_427354;
             }
             c.cycles += 17;
             c.g[A1][0] = sx((c.g[S3][0] as u32) << 4);
@@ -5177,20 +5152,20 @@ pub fn sce_sif_exec_request(c: &mut Cpu) {
             c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
             c.sw(c.g[V0][0] as u32, 0u64);
             c.g[A0][0] = c.g[SP][0];
-            'l_427398: loop {
-                'b_4273d8: {
-                    c.cycles += 4;
-                    c.g[A1][0] = c.g[S3][0];
-                    SET_DMA.call(c, 0x004273a0)?;
-                    let t = c.g[V0][0] != 0u64;
-                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
-                    if t {
-                        break 'b_4273d8;
-                    }
+            // 0x427398 / 0x4273d8 / 0x4273b0: poll for the DMA reply;
+            // an incomplete reply rearms the DMA above.
+            loop {
+                let mut retry_dma = false;
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S3][0];
+                SET_DMA.call(c, 0x004273a0)?;
+                let t = c.g[V0][0] != 0u64;
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                if !t {
                     c.cycles += 2;
                     c.g[V1][0] = 0x100000;
                     c.g[A0][0] = 0xffffffffffffffff;
-                    'l_4273b0: loop {
+                    loop {
                         c.cycles += 7;
                         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
                         let t = c.g[V1][0] != c.g[A0][0];
@@ -5198,7 +5173,7 @@ pub fn sce_sif_exec_request(c: &mut Cpu) {
                             if event_due(c) {
                                 deliver_event_here(c, 0x004273b0);
                             }
-                            continue 'l_4273b0;
+                            continue;
                         }
                         c.cycles += 2;
                         if c.g[V0][0] == 0u64 {
@@ -5206,16 +5181,20 @@ pub fn sce_sif_exec_request(c: &mut Cpu) {
                             if event_due(c) {
                                 deliver_event_here(c, 0x00427398);
                             }
-                            continue 'l_427398;
+                            retry_dma = true;
+                            break;
                         }
                         c.cycles += 1;
                         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
-                        break 'b_4273d8;
+                        break;
+                    }
+                    if retry_dma {
+                        continue;
                     }
                 }
                 c.cycles += 1;
                 c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
-                break 'b_4273dc;
+                break;
             }
         }
         c.cycles += 6;
@@ -5523,7 +5502,7 @@ pub fn sce_sif_init_cmd(c: &mut Cpu) {
             c.sw((c.g[V0][0] as u32).wrapping_add(0xc), c.g[T0][0]);
             c.sw((c.g[V0][0] as u32).wrapping_add(0x14), 0u64);
             c.sw((c.g[V0][0] as u32).wrapping_add(0x18), 0u64);
-            'l_425df0: loop {
+            loop {
                 c.cycles += 7;
                 c.sw(c.g[V1][0] as u32, 0u64);
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
@@ -5534,16 +5513,16 @@ pub fn sce_sif_init_cmd(c: &mut Cpu) {
                     if event_due(c) {
                         deliver_event_here(c, 0x00425df0);
                     }
-                    continue 'l_425df0;
+                    continue;
                 }
-                break 'l_425df0;
+                break;
             }
             c.cycles += 5;
             c.g[V0][0] = 0x530000;
             c.g[S0][0] = 0x1f;
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4200));
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7c));
-            'l_425e20: loop {
+            loop {
                 c.cycles += 7;
                 c.sw(c.g[V0][0] as u32, 0u64);
                 c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
@@ -5553,55 +5532,50 @@ pub fn sce_sif_init_cmd(c: &mut Cpu) {
                     if event_due(c) {
                         deliver_event_here(c, 0x00425e20);
                     }
-                    continue 'l_425e20;
+                    continue;
                 }
-                break 'l_425e20;
+                break;
             }
-            'b_425e98: {
-                c.cycles += 20;
-                c.g[V0][0] = 0x420000;
-                c.g[V1][0] = 0x420000;
-                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5ce0));
-                c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x4300));
-                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5cc0));
-                c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x4328));
-                c.sw((c.g[T1][0] as u32).wrapping_sub(0x4300), c.g[V0][0]);
-                c.g[S0][0] = 0x20;
-                c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
-                c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[S1][0]);
-                c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
-                EINTR.call(c, 0x00425e6c)?;
-                c.g[A0][0] = 0u64;
-                FLUSH_CACHE.call(c, 0x00425e74)?;
-                c.g[V0][0] = 0x10000000;
-                c.g[V0][0] = c.g[V0][0] | 0xe010;
-                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
-                c.g[V1][0] = c.g[V1][0] & 0x20;
-                let t = c.g[V1][0] == 0u64;
-                c.g[V0][0] = 0x10000000;
-                if t {
-                    break 'b_425e98;
-                }
+            // 0x425e98: unless the DMA channel is already running, park
+            // it below.
+            c.cycles += 20;
+            c.g[V0][0] = 0x420000;
+            c.g[V1][0] = 0x420000;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5ce0));
+            c.g[A0][0] = sx((c.g[T1][0] as u32).wrapping_sub(0x4300));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x5cc0));
+            c.g[S1][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x4328));
+            c.sw((c.g[T1][0] as u32).wrapping_sub(0x4300), c.g[V0][0]);
+            c.g[S0][0] = 0x20;
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+            c.sw((c.g[A0][0] as u32).wrapping_add(0xc), c.g[S1][0]);
+            c.sw((c.g[A0][0] as u32).wrapping_add(0x4), c.g[S1][0]);
+            EINTR.call(c, 0x00425e6c)?;
+            c.g[A0][0] = 0u64;
+            FLUSH_CACHE.call(c, 0x00425e74)?;
+            c.g[V0][0] = 0x10000000;
+            c.g[V0][0] = c.g[V0][0] | 0xe010;
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            c.g[V1][0] = c.g[V1][0] & 0x20;
+            let t = c.g[V1][0] == 0u64;
+            c.g[V0][0] = 0x10000000;
+            if !t {
                 c.cycles += 3;
                 c.g[AT][0] = 0x10010000;
                 c.sw((c.g[AT][0] as u32).wrapping_sub(0x1ff0), c.g[S0][0]);
                 c.g[V0][0] = 0x10000000;
-                break 'b_425e98;
             }
-            'b_425eb8: {
-                c.cycles += 5;
-                c.g[V0][0] = c.g[V0][0] | 0xc000;
-                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
-                c.g[V1][0] = c.g[V1][0] & 0x100;
-                let t = c.g[V1][0] != 0u64;
-                c.g[A1][0] = 0x420000;
-                if t {
-                    break 'b_425eb8;
-                }
+            // 0x425eb8: unless the chain is already set, set it below.
+            c.cycles += 5;
+            c.g[V0][0] = c.g[V0][0] | 0xc000;
+            c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+            c.g[V1][0] = c.g[V1][0] & 0x100;
+            let t = c.g[V1][0] != 0u64;
+            c.g[A1][0] = 0x420000;
+            if !t {
                 c.cycles += 3;
                 SCE_SET_DCHAIN.call(c, 0x00425eb4)?;
                 c.g[A1][0] = 0x420000;
-                break 'b_425eb8;
             }
             c.cycles += 13;
             c.g[A0][0] = 0x5;
@@ -5619,7 +5593,7 @@ pub fn sce_sif_init_cmd(c: &mut Cpu) {
             if t {
                 c.cycles += 1;
                 c.g[S0][0] = 0x20000;
-                'l_425f30: loop {
+                loop {
                     c.cycles += 5;
                     c.g[A0][0] = 0x4;
                     GET_REG.call(c, 0x00425f38)?;
@@ -5630,9 +5604,9 @@ pub fn sce_sif_init_cmd(c: &mut Cpu) {
                         if event_due(c) {
                             deliver_event_here(c, 0x00425f30);
                         }
-                        continue 'l_425f30;
+                        continue;
                     }
-                    break 'l_425f30;
+                    break;
                 }
                 c.cycles += 29;
                 c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x4328));

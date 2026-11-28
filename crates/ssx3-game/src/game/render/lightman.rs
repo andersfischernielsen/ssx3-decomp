@@ -3471,152 +3471,146 @@ pub fn render2d_draw_line(c: &mut Cpu) {
 /// turning the corners through the rot90 path when bit 2 is set.
 pub fn render2d_draw_sprite(c: &mut Cpu) {
     guest(c, |c| {
-        'b_3a2218: {
-            'b_3a2214: {
-                c.cycles += 23;
-                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
-                c.g[T0][0] = c.g[A0][0];
-                c.sd((c.g[SP][0] as u32).wrapping_add(0xe0), c.g[RA][0]);
-                c.g[T2][0] = c.g[SP][0];
-                c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
-                c.ldr(2, c.g[A1][0] as u32);
-                c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
-                c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
-                c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
-                c.sdr(2, c.g[SP][0] as u32);
-                c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
-                c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
-                c.g[A1][0] = c.lw(c.g[T0][0] as u32);
-                c.ldl(11, (c.g[A2][0] as u32).wrapping_add(0x7));
-                c.ldr(11, c.g[A2][0] as u32);
-                c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0xf));
-                c.ldr(2, (c.g[A2][0] as u32).wrapping_add(0x8));
-                c.sdl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
-                c.sdr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
-                c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
-                c.sdr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
-                let t = (c.g[A1][0] as i64) < 0;
-                c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        // 0x3a2218 / 0x3a2214: draw the sprite unless its width is
+        // negative; a rotated quad reports below without the plain
+        // path's tail.
+        let mut rotated = false;
+        c.cycles += 23;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0xf0));
+        c.g[T0][0] = c.g[A0][0];
+        c.sd((c.g[SP][0] as u32).wrapping_add(0xe0), c.g[RA][0]);
+        c.g[T2][0] = c.g[SP][0];
+        c.ldl(2, (c.g[A1][0] as u32).wrapping_add(0x7));
+        c.ldr(2, c.g[A1][0] as u32);
+        c.ldl(3, (c.g[A1][0] as u32).wrapping_add(0xf));
+        c.ldr(3, (c.g[A1][0] as u32).wrapping_add(0x8));
+        c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x7));
+        c.sdr(2, c.g[SP][0] as u32);
+        c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0xf));
+        c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x8));
+        c.g[A1][0] = c.lw(c.g[T0][0] as u32);
+        c.ldl(11, (c.g[A2][0] as u32).wrapping_add(0x7));
+        c.ldr(11, c.g[A2][0] as u32);
+        c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0xf));
+        c.ldr(2, (c.g[A2][0] as u32).wrapping_add(0x8));
+        c.sdl(11, (c.g[SP][0] as u32).wrapping_add(0x17));
+        c.sdr(11, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sdl(2, (c.g[SP][0] as u32).wrapping_add(0x1f));
+        c.sdr(2, (c.g[SP][0] as u32).wrapping_add(0x18));
+        let t = (c.g[A1][0] as i64) < 0;
+        c.g[T1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        if !t {
+            // 0x3a2128: stage the blend for the sprite's edge.
+            c.cycles += 9;
+            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+            c.g[A0][0] = c.g[A3][0] & 0x1;
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
+            c.sh((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A1][0]);
+            c.lwc1(6, (c.g[T0][0] as u32).wrapping_add(0xc));
+            c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0x18));
+            c.lwc1(5, (c.g[T0][0] as u32).wrapping_add(0x10));
+            let t = c.g[A0][0] == 0u64;
+            c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x14));
+            if !t {
+                c.cycles += 2;
+                c.mov_s(5, 3);
+                c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x10));
+            }
+            // 0x3a213c: stage the blend for the sprite's corner.
+            c.cycles += 3;
+            c.g[V0][0] = c.g[A3][0] & 0x2;
+            let t = c.g[V0][0] == 0u64;
+            c.g[A0][0] = c.g[A3][0] & 0x4;
+            if !t {
+                c.cycles += 2;
+                c.mov_s(6, 4);
+                c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0xc));
+            }
+            // 0x3a2148: index the four corners, then draw the
+            // quad below.
+            c.cycles += 3;
+            c.g[V0][0] = 0x3;
+            c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[V1][0] = 0xffffffffffffffff;
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
+                let t = c.g[V0][0] != c.g[V1][0];
+                c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
                 if t {
-                    break 'b_3a2214;
-                }
-                'b_3a2128: {
-                    c.cycles += 9;
-                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
-                    c.g[A0][0] = c.g[A3][0] & 0x1;
-                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xe84));
-                    c.sh((c.g[V1][0] as u32).wrapping_add(0x10), c.g[A1][0]);
-                    c.lwc1(6, (c.g[T0][0] as u32).wrapping_add(0xc));
-                    c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0x18));
-                    c.lwc1(5, (c.g[T0][0] as u32).wrapping_add(0x10));
-                    let t = c.g[A0][0] == 0u64;
-                    c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x14));
-                    if t {
-                        break 'b_3a2128;
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_2148);
                     }
-                    c.cycles += 2;
-                    c.mov_s(5, 3);
-                    c.lwc1(3, (c.g[T0][0] as u32).wrapping_add(0x10));
-                    break 'b_3a2128;
+                    continue;
                 }
-                'b_3a213c: {
-                    c.cycles += 3;
-                    c.g[V0][0] = c.g[A3][0] & 0x2;
-                    let t = c.g[V0][0] == 0u64;
-                    c.g[A0][0] = c.g[A3][0] & 0x4;
-                    if t {
-                        break 'b_3a213c;
-                    }
-                    c.cycles += 2;
-                    c.mov_s(6, 4);
-                    c.lwc1(4, (c.g[T0][0] as u32).wrapping_add(0xc));
-                    break 'b_3a213c;
-                }
-                c.cycles += 3;
-                c.g[V0][0] = 0x3;
-                c.g[A1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-                c.g[V1][0] = 0xffffffffffffffff;
-                'l_3a2148: loop {
-                    c.cycles += 7;
-                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
-                    let t = c.g[V0][0] != c.g[V1][0];
-                    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
-                    if t {
+                c.cycles += 7;
+                c.g[AT][0] = 0x43000000;
+                c.mtc1(1, 2);
+                c.g[V1][0] = c.g[A1][0];
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 7);
+                c.lwc1(0, c.g[T1][0] as u32);
+                // 0x3a2180: transform one corner per pass.
+                loop {
+                    c.cycles += 20;
+                    c.mul_s(0, 0, 2);
+                    c.cvt_w_s(1, 0);
+                    c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x1c));
+                    c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0x4));
+                    c.mul_s(1, 1, 2);
+                    c.cvt_w_s(0, 1);
+                    c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x10));
+                    c.lwc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
+                    c.mul_s(0, 0, 2);
+                    c.cvt_w_s(1, 0);
+                    c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x14));
+                    c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
+                    c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.mul_s(1, 1, 2);
+                    c.cvt_w_s(0, 1);
+                    c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                    if c.g[V0][0] != 0u64 {
+                        c.lwc1(0, c.g[T1][0] as u32);
                         if event_due(c) {
-                            deliver_event_here(c, 0x003a_2148);
+                            deliver_event_here(c, 0x003a_2180);
                         }
-                        continue 'l_3a2148;
+                        continue;
                     }
-                    c.cycles += 7;
-                    c.g[AT][0] = 0x43000000;
-                    c.mtc1(1, 2);
-                    c.g[V1][0] = c.g[A1][0];
-                    c.g[AT][0] = 0x3f800000;
-                    c.mtc1(1, 7);
-                    c.lwc1(0, c.g[T1][0] as u32);
-                    'l_3a2180: loop {
-                        c.cycles += 20;
-                        c.mul_s(0, 0, 2);
-                        c.cvt_w_s(1, 0);
-                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x1c));
-                        c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0x4));
-                        c.mul_s(1, 1, 2);
-                        c.cvt_w_s(0, 1);
-                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x10));
-                        c.lwc1(0, (c.g[T1][0] as u32).wrapping_add(0x8));
-                        c.mul_s(0, 0, 2);
-                        c.cvt_w_s(1, 0);
-                        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x14));
-                        c.lwc1(1, (c.g[T1][0] as u32).wrapping_add(0xc));
-                        c.swc1(7, (c.g[V1][0] as u32).wrapping_add(0x8));
-                        c.mul_s(1, 1, 2);
-                        c.cvt_w_s(0, 1);
-                        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x18));
-                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x30));
-                        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
-                        if c.g[V0][0] != 0u64 {
-                            c.lwc1(0, c.g[T1][0] as u32);
-                            if event_due(c) {
-                                deliver_event_here(c, 0x003a_2180);
-                            }
-                            continue 'l_3a2180;
-                        }
-                        'b_3a2208: {
-                            c.cycles += 9;
-                            c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x54));
-                            c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x80));
-                            c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xb0));
-                            c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0xb4));
-                            c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x20));
-                            c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x24));
-                            c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x50));
-                            let t = c.g[A0][0] == 0u64;
-                            c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x84));
-                            if t {
-                                break 'b_3a2208;
-                            }
-                            c.cycles += 5;
-                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
-                            c.g[A2][0] = c.g[T2][0];
-                            callee::RENDER2D_DRAW_QUAD_ROT90.call(c, 0x003a_2200)?;
-                            let t = true;
-                            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
-                            if t {
-                                break 'b_3a2218;
-                            }
-                            break 'b_3a2208;
-                        }
+                    // 0x3a2208: draw the quad rotated when the
+                    // sprite flags ask for it.
+                    c.cycles += 9;
+                    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x54));
+                    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0xb0));
+                    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0xb4));
+                    c.swc1(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.swc1(6, (c.g[SP][0] as u32).wrapping_add(0x24));
+                    c.swc1(3, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    let t = c.g[A0][0] == 0u64;
+                    c.swc1(4, (c.g[SP][0] as u32).wrapping_add(0x84));
+                    if t {
                         c.cycles += 3;
                         c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
                         c.g[A2][0] = c.g[T2][0];
                         callee::RENDER2D_DRAW_QUAD.call(c, 0x003a_2214)?;
-                        break 'b_3a2214;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x844));
+                        c.g[A2][0] = c.g[T2][0];
+                        callee::RENDER2D_DRAW_QUAD_ROT90.call(c, 0x003a_2200)?;
+                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
+                        rotated = true;
                     }
+                    break;
                 }
+                break;
             }
+        }
+        if !rotated {
             c.cycles += 1;
             c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0xe0));
-            break 'b_3a2218;
         }
         c.cycles += 2;
         let t = c.g[RA][0] as u32;
