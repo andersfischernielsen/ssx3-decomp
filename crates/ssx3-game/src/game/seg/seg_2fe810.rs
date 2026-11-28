@@ -251,6 +251,87 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         libmpeg_clear_frame_flags,
         "libmpeg_ClearFrameFlags",
     ),
+    (
+        0x0040_3240,
+        libmpeg_flush_pending_picture,
+        "libmpeg_FlushPendingPicture",
+    ),
+    (
+        0x0040_39f0,
+        libmpeg_setup_frame_buffers,
+        "libmpeg_SetupFrameBuffers",
+    ),
+    (0x0040_3ad0, libmpeg_load_iq_matrix, "libmpeg_LoadIqMatrix"),
+    (0x0040_6df0, libmpeg_ipu_command, "libmpeg_IpuCommand"),
+    (0x0040_6e20, libmpeg_ipu_wait_busy, "libmpeg_IpuWaitBusy"),
+    (0x0040_6f78, libmpeg_ipu_vdec, "libmpeg_IpuVdec"),
+    (0x0040_70f0, libmpeg_show_bits, "libmpeg_ShowBits"),
+    (0x0040_71f8, libmpeg_flush_bits, "libmpeg_FlushBits"),
+    (0x0040_72e8, libmpeg_get_bits, "libmpeg_GetBits"),
+    (0x0040_7520, libmpeg_get_header, "libmpeg_GetHeader"),
+    (
+        0x0040_76f8,
+        libmpeg_extension_and_user_data,
+        "libmpeg_ExtensionAndUserData",
+    ),
+    (
+        0x0040_7dc0,
+        libmpeg_decode_picture_slices,
+        "libmpeg_DecodePictureSlices",
+    ),
+    (0x0040_7e90, libmpeg_output_picture, "libmpeg_OutputPicture"),
+    (0x0040_86c0, libmpeg_output_frame, "libmpeg_OutputFrame"),
+    (
+        0x0040_87d0,
+        libmpeg_output_field_pair,
+        "libmpeg_OutputFieldPair",
+    ),
+    (
+        0x0040_8988,
+        libmpeg_fetch_ref_blocks,
+        "libmpeg_FetchRefBlocks",
+    ),
+    (0x0040_61e8, libmpeg_slice_header, "libmpeg_SliceHeader"),
+    (
+        0x0040_3d70,
+        libmpeg_sequence_scalable_extension,
+        "libmpeg_SequenceScalableExtension",
+    ),
+    (
+        0x0040_3d80,
+        libmpeg_unknown_extension,
+        "libmpeg_UnknownExtension",
+    ),
+    (
+        0x0040_3d90,
+        libmpeg_picture_spatial_scalable_extension,
+        "libmpeg_PictureSpatialScalableExtension",
+    ),
+    (
+        0x0040_3da0,
+        libmpeg_picture_temporal_scalable_extension,
+        "libmpeg_PictureTemporalScalableExtension",
+    ),
+    (
+        0x0040_3db0,
+        libmpeg_stop_dma_callback,
+        "libmpeg_StopDmaCallback",
+    ),
+    (
+        0x0040_8ca8,
+        libmpeg_ipu_from_dma_handler,
+        "libmpeg_IpuFromDmaHandler",
+    ),
+    (
+        0x0040_8fb0,
+        libmpeg_ipu_to_dma_handler,
+        "libmpeg_IpuToDmaHandler",
+    ),
+    (
+        0x0040_8508,
+        libmpeg_set_output_done,
+        "libmpeg_SetOutputDone",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -590,6 +671,169 @@ pub(crate) mod callee {
     pub(crate) const FLOORF: Callee = Callee {
         addr: 0x0040_f8e8,
         f: ee::s15::floorf,
+    };
+
+    /// `DIntr` (`0x0042_c078`).
+    pub(crate) const DINTR: Callee = Callee {
+        addr: 0x0042_c078,
+        f: ee::s15::DIntr,
+    };
+
+    /// `libmpeg_DispatchCallback` (`0x0040_2c30`).
+    pub(crate) const DISPATCH_CALLBACK: Callee = Callee {
+        addr: 0x0040_2c30,
+        f: ee::s15::libmpeg_DispatchCallback,
+    };
+
+    /// `EIntr` (`0x0042_c0c0`).
+    pub(crate) const EINTR: Callee = Callee {
+        addr: 0x0042_c0c0,
+        f: ee::s15::EIntr,
+    };
+
+    /// `libmpeg_Errorf` (`0x0040_3470`).
+    pub(crate) const ERRORF: Callee = Callee {
+        addr: 0x0040_3470,
+        f: ee::s15::libmpeg_Errorf,
+    };
+
+    /// `libmpeg_CallbackNodata` (`0x0040_2c80`): the no-data callback slot.
+    pub(crate) const LIBMPEG_CALLBACK_NODATA: Callee = Callee {
+        addr: 0x0040_2c80,
+        f: ee::s15::libmpeg_CallbackNodata,
+    };
+
+    /// `libmpeg_CheckOutputBuffer` (`0x0040_81d8`).
+    pub(crate) const LIBMPEG_CHECK_OUTPUT_BUFFER: Callee = Callee {
+        addr: 0x0040_81d8,
+        f: ee::s15::libmpeg_CheckOutputBuffer,
+    };
+
+    /// `libmpeg_ComputePts` (`0x0040_8530`).
+    pub(crate) const LIBMPEG_COMPUTE_PTS: Callee = Callee {
+        addr: 0x0040_8530,
+        f: ee::s15::libmpeg_ComputePts,
+    };
+
+    /// `libmpeg_ConvertPictureCsc` (`0x0040_9088`).
+    pub(crate) const LIBMPEG_CONVERT_PICTURE_CSC: Callee = Callee {
+        addr: 0x0040_9088,
+        f: ee::s15::libmpeg_ConvertPictureCsc,
+    };
+
+    /// `libmpeg_CopyOutputRaw` (`0x0040_8278`).
+    pub(crate) const LIBMPEG_COPY_OUTPUT_RAW: Callee = Callee {
+        addr: 0x0040_8278,
+        f: ee::s15::libmpeg_CopyOutputRaw,
+    };
+
+    /// `libmpeg_DecodeSlices` (`0x0040_60c8`).
+    pub(crate) const LIBMPEG_DECODE_SLICES: Callee = Callee {
+        addr: 0x0040_60c8,
+        f: ee::s15::libmpeg_DecodeSlices,
+    };
+
+    /// `libmpeg_Error` (`0x0040_34a8`).
+    pub(crate) const LIBMPEG_ERROR: Callee = Callee {
+        addr: 0x0040_34a8,
+        f: ee::s15::libmpeg_Error,
+    };
+
+    /// `libmpeg_FlushBits` (`0x0040_71f8`).
+    pub(crate) const LIBMPEG_FLUSH_BITS: Callee = Callee {
+        addr: 0x0040_71f8,
+        f: ee::s15::libmpeg_FlushBits,
+    };
+
+    /// `libmpeg_GetBits` (`0x0040_72e8`).
+    pub(crate) const LIBMPEG_GETBITS: Callee = Callee {
+        addr: 0x0040_72e8,
+        f: ee::s15::libmpeg_GetBits,
+    };
+
+    /// `libmpeg_GroupOfPicturesHeader` (`0x0040_7ad0`): parse the GOP header.
+    pub(crate) const LIBMPEG_GROUP_OF_PICTURES_HEADER: Callee = Callee {
+        addr: 0x0040_7ad0,
+        f: ee::s15::libmpeg_GroupOfPicturesHeader,
+    };
+
+    /// `libmpeg_IpuCommand` (`0x0040_6df0`).
+    pub(crate) const LIBMPEG_IPU_COMMAND: Callee = Callee {
+        addr: 0x0040_6df0,
+        f: ee::s15::libmpeg_IpuCommand,
+    };
+
+    /// `libmpeg_IpuWaitBusy` (`0x0040_6e20`).
+    pub(crate) const LIBMPEG_IPU_WAIT_BUSY: Callee = Callee {
+        addr: 0x0040_6e20,
+        f: ee::s15::libmpeg_IpuWaitBusy,
+    };
+
+    /// `libmpeg_IpuWaitCmd` (`0x0040_6ec8`): wait for an IPU command slot.
+    pub(crate) const LIBMPEG_IPU_WAIT_CMD: Callee = Callee {
+        addr: 0x0040_6ec8,
+        f: ee::s15::libmpeg_IpuWaitCmd,
+    };
+
+    /// `libmpeg_MacroblockAddressIncrement` (`0x0040_5fb8`): parse the
+    /// macroblock address increment.
+    pub(crate) const LIBMPEG_MACROBLOCK_ADDRESS_INCREMENT: Callee = Callee {
+        addr: 0x0040_5fb8,
+        f: ee::s15::libmpeg_MacroblockAddressIncrement,
+    };
+
+    /// `libmpeg_NextStartCode` (`0x0040_7438`): scan for the next start code.
+    pub(crate) const LIBMPEG_NEXT_START_CODE: Callee = Callee {
+        addr: 0x0040_7438,
+        f: ee::s15::libmpeg_NextStartCode,
+    };
+
+    /// `libmpeg_OutputFieldPair` (`0x0040_87d0`): output one field pair.
+    pub(crate) const LIBMPEG_OUTPUT_FIELD_PAIR: Callee = Callee {
+        addr: 0x0040_87d0,
+        f: ee::s15::libmpeg_OutputFieldPair,
+    };
+
+    /// `libmpeg_OutputFrame` (`0x0040_86c0`): output one frame.
+    pub(crate) const LIBMPEG_OUTPUT_FRAME: Callee = Callee {
+        addr: 0x0040_86c0,
+        f: ee::s15::libmpeg_OutputFrame,
+    };
+
+    /// `libmpeg_OutputLastPicture` (`0x0040_32b8`): output the last picture.
+    pub(crate) const LIBMPEG_OUTPUT_LAST_PICTURE: Callee = Callee {
+        addr: 0x0040_32b8,
+        f: ee::s15::libmpeg_OutputLastPicture,
+    };
+
+    /// `libmpeg_PictureHeader` (`0x0040_7630`): parse the picture header.
+    pub(crate) const LIBMPEG_PICTURE_HEADER: Callee = Callee {
+        addr: 0x0040_7630,
+        f: ee::s15::libmpeg_PictureHeader,
+    };
+
+    /// `libmpeg_SequenceHeader` (`0x0040_3620`): parse the sequence header.
+    pub(crate) const LIBMPEG_SEQUENCE_HEADER: Callee = Callee {
+        addr: 0x0040_3620,
+        f: ee::s15::libmpeg_SequenceHeader,
+    };
+
+    /// `libmpeg_ShowBits` (`0x0040_70f0`): peek at stream bits.
+    pub(crate) const LIBMPEG_SHOW_BITS: Callee = Callee {
+        addr: 0x0040_70f0,
+        f: ee::s15::libmpeg_ShowBits,
+    };
+
+    /// `libmpeg_SliceHeaderTail` (`0x0040_74b8`): the slice header tail.
+    pub(crate) const LIBMPEG_SLICE_HEADER_TAIL: Callee = Callee {
+        addr: 0x0040_74b8,
+        f: ee::s15::libmpeg_SliceHeaderTail,
+    };
+
+    /// `sceIpuStopDMA` (`0x0040_9400`): stop an IPU DMA channel.
+    pub(crate) const SCE_IPU_STOP_DMA: Callee = Callee {
+        addr: 0x0040_9400,
+        f: ee::s15::sceIpuStopDMA,
     };
 }
 
@@ -5062,64 +5306,6 @@ pub fn libmpeg_decode_field_pic(c: &mut Cpu) {
     })
 }
 
-/// `int libmpeg_FlushPendingPicture(Mpeg *m)` (0x00403240): when the decoder
-/// `d = m->dec` (+0x40) has a picture pending (`d[1]` and `d[2]` set), output it
-/// with `libmpeg_OutputLastPicture`, set `m[2] = d[70] - d[43]` and clear
-/// `d[1]`. Returns 1 when it flushed, else 0.
-#[allow(dead_code)]
-pub fn libmpeg_flush_pending_picture(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 9;
-        let frame = Frame::open(c, 0x30);
-        let a = frame.at(c, 0x10);
-        c.sd(a, c.g[S1][0]);
-        frame.save_ra(c, 0x20);
-        c.g[S1][0] = c.g[A0][0];
-        let a = frame.at(c, 0);
-        c.sd(a, c.g[S0][0]);
-        c.g[S0][0] = Addr(c.g[S1][0] as u32).off(0x40).lw(c);
-        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x4).lw(c);
-        let pending = c.g[V0][0] != 0;
-        c.g[A0][0] = 0;
-        let mut fall_through = true;
-        if pending {
-            c.cycles += 3;
-            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x8).lw(c);
-            let has_picture = c.g[V0][0] != 0;
-            frame.restore_ra(c, 0x20);
-            fall_through = has_picture;
-            if has_picture {
-                c.cycles += 8;
-                Callee {
-                    addr: 0x0040_32b8,
-                    f: ee::s15::f_004032b8,
-                }
-                .call(c, 0x0040_3278)?;
-                // The state is re-read from the callee-saved registers after the call.
-                c.g[V0][0] = Addr(c.g[S0][0] as u32).off(0x118).lw(c);
-                c.g[A0][0] = 1;
-                c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0xac).lw(c);
-                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
-                let frames = c.g[V0][0];
-                Addr(c.g[S1][0] as u32).off(0x8).sw(c, frames);
-                Addr(c.g[S0][0] as u32).off(0x4).sw(c, 0);
-            }
-        }
-        if fall_through {
-            c.cycles += 1;
-            frame.restore_ra(c, 0x20);
-        }
-        c.cycles += 5;
-        c.g[V0][0] = c.g[A0][0];
-        let a = frame.at(c, 0x10);
-        c.g[S1][0] = c.ld(a);
-        let a = frame.at(c, 0);
-        c.g[S0][0] = c.ld(a);
-        frame.close(c);
-        Ok(())
-    })
-}
-
 /// `void libmpeg_ResetMpeg1Flag(Mpeg *m)` (0x004032a8): clears `m->mpeg1` (+0x848)
 /// and tail-calls `libmpeg_SetIpuMpeg1Bit(1)`.
 pub fn libmpeg_reset_mpeg1_flag(c: &mut Cpu) {
@@ -5404,24 +5590,9 @@ pub fn libmpeg_error(c: &mut Cpu) {
 
 // Direct-call targets of this module's functions (guest address, readable alias
 // in the generated shard).
-pub(crate) const LIBMPEG_CALLEE_DISPATCH_CALLBACK: Callee = Callee {
-    addr: 0x0040_2c30,
-    f: ee::s15::libmpeg_DispatchCallback,
-};
-
 pub(crate) const LIBMPEG_CALLEE_ERROR: Callee = Callee {
     addr: 0x0040_34a8,
     f: ee::s15::libmpeg_Error,
-};
-
-pub(crate) const LIBMPEG_CALLEE_IPU_COMMAND: Callee = Callee {
-    addr: 0x0040_6df0,
-    f: ee::s15::libmpeg_IpuCommand,
-};
-
-pub(crate) const LIBMPEG_CALLEE_IPU_WAIT_BUSY: Callee = Callee {
-    addr: 0x0040_6e20,
-    f: ee::s15::libmpeg_IpuWaitBusy,
 };
 
 pub(crate) const LIBMPEG_CALLEE_GET_BITS: Callee = Callee {
@@ -5447,11 +5618,6 @@ pub(crate) const LIBMPEG_CALLEE_FLUSH_CACHE: Callee = Callee {
 pub(crate) const LIBMPEG_CALLEE_DINTR: Callee = Callee {
     addr: 0x0042_c078,
     f: ee::s15::DIntr,
-};
-
-pub(crate) const LIBMPEG_CALLEE_EINTR: Callee = Callee {
-    addr: 0x0042_c0c0,
-    f: ee::s15::EIntr,
 };
 
 /// `void libmpeg_AddBsDmaChain(base, addr, n)` (0x403500): build a DMA tag chain
@@ -5574,201 +5740,6 @@ pub fn libmpeg_set_picture_size(c: &mut Cpu) {
     Addr(pic.wrapping_add(0x4)).sw(c, width);
     Addr(pic.wrapping_add(0x8)).sw(c, height);
     ret(c);
-}
-
-/// `void libmpeg_SetupFrameBuffers(y, uBuffer, vBuffer, ..., w, height)`
-/// (0x4039f0): stores the Y, U and V output pointers of three frame-buffer
-/// sets (the first two at the plane start, the third advanced by
-/// `w * height / 512` in the reference). Its arguments are partly on the
-/// stack (the 9th to 14th words); the register form follows the generated
-/// body exactly, including the 32-bit multiplies (`mult`) and the scratch
-/// registers they leave.
-#[allow(dead_code)]
-pub fn libmpeg_setup_frame_buffers(c: &mut Cpu) {
-    c.cycles += 56;
-    let f = Frame::open(c, 0x50);
-    c.g[T6][0] = 0x0fff_0000;
-    let a = f.at(c, 0x70);
-    c.g[V1][0] = Addr(a).lw(c);
-    c.g[T6][0] |= 0xffff;
-    let a = f.at(c, 0x00);
-    let v = c.g[S0][0];
-    c.sd(a, v);
-    c.mult(0, 3, 3, 2);
-    c.g[S0][0] = u64::MAX;
-    let a = f.at(c, 0x20);
-    let v = c.g[S2][0];
-    c.sd(a, v);
-    c.g[S2][0] = 0x180;
-    let a = f.at(c, 0x58);
-    c.g[T4][0] = Addr(a).lw(c);
-    let a = f.at(c, 0x10);
-    let v = c.g[S1][0];
-    c.sd(a, v);
-    c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
-    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1ff));
-    if c.g[S0][0] != 0 {
-        c.g[V0][0] = c.g[V1][0];
-    }
-    c.g[S1][0] = c.g[T4][0] & c.g[T6][0];
-    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 9) as u32);
-    let a = f.at(c, 0x30);
-    let v = c.g[S3][0];
-    c.sd(a, v);
-    c.mult(0, 3, 2, 18);
-    let a = f.at(c, 0x60);
-    c.g[T5][0] = Addr(a).lw(c);
-    c.g[S3][0] = 0x2000_0000;
-    let a = f.at(c, 0x40);
-    let v = c.g[S4][0];
-    c.sd(a, v);
-    let a = f.at(c, 0x68);
-    c.g[S4][0] = Addr(a).lw(c);
-    c.g[S1][0] |= c.g[S3][0];
-    c.g[T7][0] = c.g[T5][0] & c.g[T6][0];
-    let a = c.g[A0][0] as u32;
-    let v = c.g[S1][0];
-    Addr(a).sw(c, v);
-    c.g[T4][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T4][0] as u32));
-    c.g[T7][0] |= c.g[S3][0];
-    c.mult(0, 3, 2, 18);
-    c.mult(0, 4, 2, 18);
-    let a = c.g[A1][0] as u32;
-    let v = c.g[T7][0];
-    Addr(a).sw(c, v);
-    c.g[T4][0] &= c.g[T6][0];
-    c.g[T4][0] |= c.g[S3][0];
-    let a = f.at(c, 0x20);
-    c.g[S2][0] = Addr(a).ld(c);
-    let a = f.at(c, 0x00);
-    c.g[S0][0] = Addr(a).ld(c);
-    c.g[T5][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T5][0] as u32));
-    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S4][0] as u32));
-    c.g[V1][0] = c.g[S4][0] & c.g[T6][0];
-    c.g[T5][0] &= c.g[T6][0];
-    c.g[V1][0] |= c.g[S3][0];
-    c.g[V0][0] &= c.g[T6][0];
-    let a = c.g[A2][0] as u32;
-    let v = c.g[V1][0];
-    Addr(a).sw(c, v);
-    c.g[T5][0] |= c.g[S3][0];
-    let a = c.g[A3][0] as u32;
-    let v = c.g[S1][0];
-    Addr(a).sw(c, v);
-    c.g[V0][0] |= c.g[S3][0];
-    let a = c.g[T0][0] as u32;
-    let v = c.g[T7][0];
-    Addr(a).sw(c, v);
-    let a = c.g[T1][0] as u32;
-    let v = c.g[V1][0];
-    Addr(a).sw(c, v);
-    let a = c.g[T2][0] as u32;
-    let v = c.g[T4][0];
-    Addr(a).sw(c, v);
-    let a = f.at(c, 0x50);
-    c.g[V1][0] = Addr(a).lw(c);
-    let a = c.g[T3][0] as u32;
-    let v = c.g[T5][0];
-    Addr(a).sw(c, v);
-    let a = f.at(c, 0x40);
-    c.g[S4][0] = Addr(a).ld(c);
-    let a = f.at(c, 0x30);
-    c.g[S3][0] = Addr(a).ld(c);
-    let a = f.at(c, 0x10);
-    c.g[S1][0] = Addr(a).ld(c);
-    let a = c.g[V1][0] as u32;
-    let v = c.g[V0][0];
-    Addr(a).sw(c, v);
-    f.close(c);
-}
-
-/// `void libmpeg_LoadIqMatrix(dec, srcAddr, ipuCmd)` (0x403ad0): wait for the
-/// dispatch callback and the IPU, start the IPU source DMA at `srcAddr` with
-/// interrupts masked around the channel setup, run the IPU command `ipuCmd`,
-/// wait again and dispatch the final callback (state 3).
-#[allow(dead_code)]
-pub fn libmpeg_load_iq_matrix(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 38;
-        let f = Frame::open(c, 0x60);
-        c.g[V0][0] = 2;
-        let a = f.at(c, 0x40);
-        let v = c.g[S2][0];
-        c.sd(a, v);
-        let a = f.at(c, 0x30);
-        let v = c.g[S1][0];
-        c.sd(a, v);
-        c.g[S2][0] = c.g[A1][0];
-        let a = f.at(c, 0x20);
-        let v = c.g[S0][0];
-        c.sd(a, v);
-        c.g[S1][0] = c.g[A0][0];
-        let a = f.at(c, 0x50);
-        let v = c.g[RA][0];
-        c.sd(a, v);
-        c.g[S0][0] = c.g[A2][0];
-        c.g[A1][0] = c.g[SP][0];
-        let a = (c.g[S1][0] as u32).wrapping_add(0x858);
-        c.g[A0][0] = Addr(a).lw(c);
-        let a = f.at(c, 0x00);
-        let v = c.g[V0][0];
-        Addr(a).sw(c, v);
-        LIBMPEG_CALLEE_DISPATCH_CALLBACK.call(c, 0x0040_3b04)?;
-        c.g[A0][0] = c.g[S1][0];
-        LIBMPEG_CALLEE_IPU_WAIT_BUSY.call(c, 0x0040_3b0c)?;
-        c.g[V0][0] = 0x1000_2000;
-        c.g[A0][0] = c.g[S1][0];
-        Addr(0x1000_2000).sw(c, 0);
-        LIBMPEG_CALLEE_IPU_WAIT_BUSY.call(c, 0x0040_3b20)?;
-        LIBMPEG_CALLEE_DINTR.call(c, 0x0040_3b28)?;
-        c.g[V1][0] = 0x0fff_ffff;
-        c.g[A0][0] = 0x1000_b410;
-        c.g[S0][0] &= c.g[V1][0];
-        c.g[A1][0] = 0x1000_0000;
-        let a = c.g[A0][0] as u32;
-        let v = c.g[S0][0];
-        Addr(a).sw(c, v);
-        c.g[A1][0] |= 0xb420;
-        c.g[A0][0] = 4;
-        c.g[V1][0] = 0x1000_0000;
-        let a = c.g[A1][0] as u32;
-        let v = c.g[A0][0];
-        Addr(a).sw(c, v);
-        c.g[V1][0] |= 0xb400;
-        c.g[A0][0] = 0x101;
-        let a = c.g[V1][0] as u32;
-        let v = c.g[A0][0];
-        Addr(a).sw(c, v);
-        if c.g[V0][0] == 0 {
-            c.g[A1][0] = c.g[S2][0];
-        } else {
-            c.cycles += 3;
-            LIBMPEG_CALLEE_EINTR.call(c, 0x0040_3b70)?;
-            c.g[A1][0] = c.g[S2][0];
-        }
-        c.cycles += 15;
-        c.g[A0][0] = c.g[S1][0];
-        LIBMPEG_CALLEE_IPU_COMMAND.call(c, 0x0040_3b7c)?;
-        c.g[A0][0] = c.g[S1][0];
-        LIBMPEG_CALLEE_IPU_WAIT_BUSY.call(c, 0x0040_3b84)?;
-        let a = (c.g[S1][0] as u32).wrapping_add(0x858);
-        c.g[A0][0] = Addr(a).lw(c);
-        c.g[V0][0] = 3;
-        let a = f.at(c, 0x00);
-        let v = c.g[V0][0];
-        Addr(a).sw(c, v);
-        c.g[A1][0] = c.g[SP][0];
-        LIBMPEG_CALLEE_DISPATCH_CALLBACK.call(c, 0x0040_3b98)?;
-        f.restore_ra(c, 0x50);
-        let a = f.at(c, 0x40);
-        c.g[S2][0] = Addr(a).ld(c);
-        let a = f.at(c, 0x30);
-        c.g[S1][0] = Addr(a).ld(c);
-        let a = f.at(c, 0x20);
-        c.g[S0][0] = Addr(a).ld(c);
-        f.close(c);
-        Ok(())
-    })
 }
 
 /// `void libmpeg_SequenceExtension(dec)` (0x403bb0): clear the IPU MPEG-1 bit,
@@ -10420,6 +10391,2284 @@ pub(crate) fn clear_frame_slot(c: &mut Cpu, sys: u64, slot: u32) {
     }
 }
 
+/// `libmpeg_FlushPendingPicture` (0x00403240): if the pending-picture slot
+/// (`A0 + 0x40`, `+ 0x4`) and its ready word (`+ 0x8`) are both set, output
+/// the last picture and clear the slot.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_flush_pending_picture(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x30);
+        'b_403294: {
+            'b_403290: {
+                c.cycles += 9;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[S0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x40)).lw(c);
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x4)).lw(c);
+                let t = c.g[V0][0] == 0u64;
+                c.g[A0][0] = 0u64;
+                if t {
+                    break 'b_403290;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x8)).lw(c);
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    if t {
+                        break 'b_403294;
+                    } else {
+                        c.cycles += 8;
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::LIBMPEG_OUTPUT_LAST_PICTURE.call(c, 0x00403278)?;
+                        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x118)).lw(c);
+                        c.g[A0][0] = 0x1;
+                        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0xac)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                        Addr((c.g[S1][0] as u32).wrapping_add(0x8)).sw(c, c.g[V0][0]);
+                        Addr((c.g[S0][0] as u32).wrapping_add(0x4)).sw(c, 0u64);
+                        break 'b_403290;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+            break 'b_403294;
+        }
+        c.cycles += 5;
+        c.g[V0][0] = c.g[A0][0];
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_SetupFrameBuffers` (0x004039f0): frame buffer setup
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_setup_frame_buffers(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x50);
+        c.cycles += 56;
+        c.g[T6][0] = 0xfff0000;
+        c.g[V0][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x78)).lw(c);
+        c.g[T6][0] = c.g[T6][0] | 0xffff;
+        c.g[V1][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x70)).lw(c);
+        c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+        c.mult(0, 3, 3, 2);
+        c.g[S0][0] = 0xffffffffffffffff;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+        c.g[S2][0] = 0x180;
+        c.g[T4][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x58)).lw(c);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+        c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1ff));
+        if c.g[S0][0] != 0 {
+            c.g[V0][0] = c.g[V1][0];
+        }
+        c.g[S1][0] = c.g[T4][0] & c.g[T6][0];
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 9) as u32);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+        c.mult(0, 3, 2, 18);
+        c.g[T5][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x60)).lw(c);
+        c.g[S3][0] = 0x20000000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+        c.g[S4][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x68)).lw(c);
+        c.g[S1][0] = c.g[S1][0] | c.g[S3][0];
+        c.g[T7][0] = c.g[T5][0] & c.g[T6][0];
+        Addr(c.g[A0][0] as u32).sw(c, c.g[S1][0]);
+        c.g[T4][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T4][0] as u32));
+        c.g[T7][0] = c.g[T7][0] | c.g[S3][0];
+        c.mult(0, 3, 2, 18);
+        c.mult(0, 4, 2, 18);
+        Addr(c.g[A1][0] as u32).sw(c, c.g[T7][0]);
+        c.g[T4][0] = c.g[T4][0] & c.g[T6][0];
+        c.g[T4][0] = c.g[T4][0] | c.g[S3][0];
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        c.g[T5][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T5][0] as u32));
+        c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+        c.g[V1][0] = c.g[S4][0] & c.g[T6][0];
+        c.g[T5][0] = c.g[T5][0] & c.g[T6][0];
+        c.g[V1][0] = c.g[V1][0] | c.g[S3][0];
+        c.g[V0][0] = c.g[V0][0] & c.g[T6][0];
+        Addr(c.g[A2][0] as u32).sw(c, c.g[V1][0]);
+        c.g[T5][0] = c.g[T5][0] | c.g[S3][0];
+        Addr(c.g[A3][0] as u32).sw(c, c.g[S1][0]);
+        c.g[V0][0] = c.g[V0][0] | c.g[S3][0];
+        Addr(c.g[T0][0] as u32).sw(c, c.g[T7][0]);
+        Addr(c.g[T1][0] as u32).sw(c, c.g[V1][0]);
+        Addr(c.g[T2][0] as u32).sw(c, c.g[T4][0]);
+        c.g[V1][0] = Addr((c.g[SP][0] as u32).wrapping_add(0x50)).lw(c);
+        Addr(c.g[T3][0] as u32).sw(c, c.g[T5][0]);
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        Addr(c.g[V1][0] as u32).sw(c, c.g[V0][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_LoadIqMatrix` (0x00403ad0): intra/non-intra quant matrix load
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_load_iq_matrix(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x60);
+        'b_403b74: {
+            c.cycles += 38;
+            c.g[V0][0] = 0x2;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+            c.g[S2][0] = c.g[A1][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+            c.g[S1][0] = c.g[A0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[RA][0]);
+            c.g[S0][0] = c.g[A2][0];
+            c.g[A1][0] = c.g[SP][0];
+            c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+            Addr(c.g[SP][0] as u32).sw(c, c.g[V0][0]);
+            callee::DISPATCH_CALLBACK.call(c, 0x00403b04)?;
+            c.g[A0][0] = c.g[S1][0];
+            callee::LIBMPEG_IPU_WAIT_BUSY.call(c, 0x00403b0c)?;
+            c.g[V0][0] = 0x10000000;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[V0][0] = c.g[V0][0] | 0x2000;
+            Addr(c.g[V0][0] as u32).sw(c, 0u64);
+            callee::LIBMPEG_IPU_WAIT_BUSY.call(c, 0x00403b20)?;
+            callee::DINTR.call(c, 0x00403b28)?;
+            c.g[V1][0] = 0xfff0000;
+            c.g[A0][0] = 0x10000000;
+            c.g[V1][0] = c.g[V1][0] | 0xffff;
+            c.g[A0][0] = c.g[A0][0] | 0xb410;
+            c.g[S0][0] = c.g[S0][0] & c.g[V1][0];
+            c.g[A1][0] = 0x10000000;
+            Addr(c.g[A0][0] as u32).sw(c, c.g[S0][0]);
+            c.g[A1][0] = c.g[A1][0] | 0xb420;
+            c.g[A0][0] = 0x4;
+            c.g[V1][0] = 0x10000000;
+            Addr(c.g[A1][0] as u32).sw(c, c.g[A0][0]);
+            c.g[V1][0] = c.g[V1][0] | 0xb400;
+            c.g[A0][0] = 0x101;
+            Addr(c.g[V1][0] as u32).sw(c, c.g[A0][0]);
+            if c.g[V0][0] == 0u64 {
+                c.g[A1][0] = c.g[S2][0];
+                break 'b_403b74;
+            } else {
+                c.cycles += 3;
+                callee::EINTR.call(c, 0x00403b70)?;
+                c.g[A1][0] = c.g[S2][0];
+                break 'b_403b74;
+            }
+        }
+        c.cycles += 15;
+        c.g[A0][0] = c.g[S1][0];
+        callee::LIBMPEG_IPU_COMMAND.call(c, 0x00403b7c)?;
+        c.g[A0][0] = c.g[S1][0];
+        callee::LIBMPEG_IPU_WAIT_BUSY.call(c, 0x00403b84)?;
+        c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+        c.g[V0][0] = 0x3;
+        Addr(c.g[SP][0] as u32).sw(c, c.g[V0][0]);
+        c.g[A1][0] = c.g[SP][0];
+        callee::DISPATCH_CALLBACK.call(c, 0x00403b98)?;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_ipu_command` (0x00406df0): issue an IPU command word and record the completion tag.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_ipu_command(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.g[V0][0] = 0x10000000;
+        c.g[A2][0] = sx((c.g[A1][0] as u32) >> 28);
+        c.g[V0][0] = c.g[V0][0] | 0x2000;
+        c.g[V1][0] = 0x450000;
+        Addr(c.g[V0][0] as u32).sw(c, c.g[A1][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x32c0));
+        c.g[A2][0] = sx((c.g[A2][0] as u32) << 2);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+        let t = c.g[RA][0] as u32;
+        Addr((c.g[A0][0] as u32).wrapping_add(0x818)).sw(c, c.g[V0][0]);
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `libmpeg_ipu_wait_busy` (0x00406e20): wait while the IPU is busy, with the nodata-callback timeout.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_ipu_wait_busy(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x50);
+        'b_406eac: {
+            c.cycles += 17;
+            c.g[V0][0] = 0x10000000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+            c.g[V0][0] = c.g[V0][0] | 0x2010;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+            c.g[A1][0] = 0xffffffff80000000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+            c.g[A1][0] = c.g[A1][0] | 0x4000;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+            c.g[S2][0] = c.g[A0][0];
+            c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+            c.g[A0][0] = 0u64;
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            c.g[V0][0] = 0xffffffff80000000;
+            c.g[V1][0] = c.g[V1][0] & c.g[A1][0];
+            let t = c.g[V1][0] != c.g[V0][0];
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+            if t {
+                break 'b_406eac;
+            } else {
+                c.cycles += 7;
+                c.g[S1][0] = 0x10000000;
+                c.g[S0][0] = 0xffffffff80000000;
+                c.g[S1][0] = c.g[S1][0] | 0x2010;
+                c.g[S0][0] = c.g[S0][0] | 0x4000;
+                c.g[S3][0] = 0xffffffff80000000;
+                c.g[V0][0] = c.g[A0][0];
+                'l_406e80: loop {
+                    'b_406e98: {
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 5001i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1));
+                        if t {
+                            break 'b_406e98;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x858)).lw(c);
+                            callee::LIBMPEG_CALLBACK_NODATA.call(c, 0x00406e94)?;
+                            c.g[A0][0] = 0u64;
+                            break 'b_406e98;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(c.g[S1][0] as u32).lw(c);
+                    c.g[V0][0] = c.g[V0][0] & c.g[S0][0];
+                    let t = c.g[V0][0] == c.g[S3][0];
+                    c.g[V0][0] = c.g[A0][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00406e80);
+                        }
+                        continue 'l_406e80;
+                    } else {
+                        c.cycles += 1;
+                        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                        break 'b_406eac;
+                    }
+                }
+            }
+        }
+        c.cycles += 6;
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_ipu_vdec` (0x00406f78): issue a VDEC command and wait for completion, with the nodata-callback timeout arms.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_ipu_vdec(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x50);
+        'b_40701c: {
+            'b_407010: {
+                c.cycles += 18;
+                c.g[V0][0] = 0x10000000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.g[V0][0] = c.g[V0][0] | 0x2010;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[V1][0] = 0xffffffff80000000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+                c.g[V1][0] = c.g[V1][0] | 0x4000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[S2][0] = 0u64;
+                c.g[A3][0] = 0u64;
+                c.g[A2][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = 0xffffffff80000000;
+                c.g[A2][0] = c.g[A2][0] & c.g[V1][0];
+                let t = c.g[A2][0] != c.g[V0][0];
+                c.g[S0][0] = sx((c.g[A1][0] as u32) << 26);
+                if t {
+                    break 'b_407010;
+                } else {
+                    c.cycles += 2;
+                    c.g[S3][0] = 0x450000;
+                    'l_406fc8: loop {
+                        'b_406fe4: {
+                            c.cycles += 4;
+                            c.g[V0][0] = c.g[A3][0];
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < 5001i64) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                            if t {
+                                break 'b_406fe4;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+                                callee::LIBMPEG_CALLBACK_NODATA.call(c, 0x00406fe0)?;
+                                c.g[A3][0] = 0u64;
+                                break 'b_406fe4;
+                            }
+                        }
+                        c.cycles += 9;
+                        c.g[V1][0] = 0x10000000;
+                        c.g[A0][0] = 0xffffffff80000000;
+                        c.g[V1][0] = c.g[V1][0] | 0x2010;
+                        c.g[A0][0] = c.g[A0][0] | 0x4000;
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                        c.g[A1][0] = 0xffffffff80000000;
+                        c.g[V0][0] = c.g[V0][0] & c.g[A0][0];
+                        let t = c.g[V0][0] == c.g[A1][0];
+                        c.g[V1][0] = 0x30000000;
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00406fc8);
+                            }
+                            continue 'l_406fc8;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.g[A0][0] = 0x10000000;
+                            if t {
+                                break 'b_40701c;
+                            } else {
+                                break 'b_407010;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[S3][0] = 0x450000;
+            c.g[V1][0] = 0x30000000;
+            c.g[A0][0] = 0x10000000;
+            break 'b_40701c;
+        }
+        'b_40707c: {
+            c.cycles += 11;
+            c.g[V1][0] = c.g[S0][0] | c.g[V1][0];
+            c.g[A0][0] = c.g[A0][0] | 0x2000;
+            c.g[V0][0] = sx(((c.g[V1][0] as u32) as i32 >> 28) as u32);
+            Addr(c.g[A0][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x32c0));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[A2][0] = c.ld(c.g[A0][0] as u32);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            let t = (c.g[A2][0] as i64) >= 0;
+            Addr((c.g[S1][0] as u32).wrapping_add(0x818)).sw(c, c.g[V1][0]);
+            if t {
+                break 'b_40707c;
+            } else {
+                c.cycles += 4;
+                c.g[S0][0] = 0x10000000;
+                c.g[S0][0] = c.g[S0][0] | 0x2000;
+                c.g[V0][0] = c.g[S2][0];
+                'l_407058: loop {
+                    'b_407070: {
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < 5001i64) as u64;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                        if t {
+                            break 'b_407070;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+                            c.g[S2][0] = 0u64;
+                            callee::LIBMPEG_CALLBACK_NODATA.call(c, 0x00407070)?;
+                            break 'b_407070;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[A2][0] = c.ld(c.g[S0][0] as u32);
+                    let t = (c.g[A2][0] as i64) < 0;
+                    c.g[V0][0] = c.g[S2][0];
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00407058);
+                        }
+                        continue 'l_407058;
+                    } else {
+                        break 'b_40707c;
+                    }
+                }
+            }
+        }
+        'b_4070b4: {
+            'b_4070b0: {
+                c.cycles += 9;
+                c.g[V0][0] = 0x10000000;
+                c.g[A0][0] = 0x10000000;
+                c.g[A0][0] = c.ld((c.g[A0][0] as u32).wrapping_add(0x2030));
+                c.g[V0][0] = c.g[V0][0] | 0x2020;
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V1][0] = c.g[A0][0] << 32;
+                c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+                let t = (c.g[A0][0] as i64) >= 0;
+                Addr((c.g[S1][0] as u32).wrapping_add(0x838)).sw(c, c.g[V1][0]);
+                if t {
+                    break 'b_4070b0;
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.g[V0][0] & 0x1f;
+                    c.g[V0][0] = sx(0u32.wrapping_sub(c.g[V0][0] as u32));
+                    let t = true;
+                    c.g[V0][0] = c.g[V0][0] & 0x1f;
+                    if t {
+                        break 'b_4070b4;
+                    } else {
+                        break 'b_4070b0;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x20;
+            break 'b_4070b4;
+        }
+        c.cycles += 15;
+        Addr((c.g[S1][0] as u32).wrapping_add(0x83c)).sw(c, c.g[V0][0]);
+        c.g[V1][0] = c.g[A2][0] << 32;
+        c.g[V1][0] = ((c.g[V1][0] as i64) >> 32) as u64;
+        c.g[V0][0] = c.g[A2][0] & 0xffff;
+        c.g[V1][0] = (c.g[V1][0] < 0x1u64) as u64;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+        Addr((c.g[S1][0] as u32).wrapping_add(0x11c)).sw(c, c.g[V1][0]);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 16) as u32);
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_ShowBits` (0x004070f0): peek at `A1` stream bits without
+/// consuming them. Same buffer discipline as `GetBits`: a set valid word
+/// refills through the IPU, otherwise the buffered bits are returned
+/// directly when the count covers the request.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_show_bits(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x40);
+        'b_4071d8: {
+            'b_407124: {
+                c.cycles += 9;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.g[S0][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x818)).lw(c);
+                let t = c.g[V0][0] != 0u64;
+                c.g[S2][0] = c.g[A1][0];
+                if t {
+                    break 'b_407124;
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x83c)).lw(c);
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    if c.g[V0][0] == 0u64 {
+                        c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x838)).lw(c);
+                        break 'b_4071d8;
+                    } else {
+                        break 'b_407124;
+                    }
+                }
+            }
+            'b_4071a4: {
+                'b_407198: {
+                    c.cycles += 9;
+                    c.g[V0][0] = 0x10000000;
+                    c.g[A0][0] = 0xffffffff80000000;
+                    c.g[V0][0] = c.g[V0][0] | 0x2010;
+                    c.g[A0][0] = c.g[A0][0] | 0x4000;
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    c.g[V0][0] = 0xffffffff80000000;
+                    c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[A2][0] = 0u64;
+                    if t {
+                        break 'b_407198;
+                    } else {
+                        c.cycles += 2;
+                        c.g[S1][0] = 0x450000;
+                        'l_407150: loop {
+                            'b_40716c: {
+                                c.cycles += 4;
+                                c.g[V0][0] = c.g[A2][0];
+                                c.g[V0][0] = ((c.g[V0][0] as i64) < 5001i64) as u64;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x1));
+                                if t {
+                                    break 'b_40716c;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[A0][0] =
+                                        Addr((c.g[S0][0] as u32).wrapping_add(0x858)).lw(c);
+                                    callee::LIBMPEG_CALLBACK_NODATA.call(c, 0x00407168)?;
+                                    c.g[A2][0] = 0u64;
+                                    break 'b_40716c;
+                                }
+                            }
+                            c.cycles += 9;
+                            c.g[V1][0] = 0x10000000;
+                            c.g[A0][0] = 0xffffffff80000000;
+                            c.g[V1][0] = c.g[V1][0] | 0x2010;
+                            c.g[A0][0] = c.g[A0][0] | 0x4000;
+                            c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                            c.g[A1][0] = 0xffffffff80000000;
+                            c.g[V0][0] = c.g[V0][0] & c.g[A0][0];
+                            let t = c.g[V0][0] == c.g[A1][0];
+                            c.g[V0][0] = 0x10000000;
+                            if t {
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x00407150);
+                                }
+                                continue 'l_407150;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[V1][0] = 0x40000000;
+                                if t {
+                                    break 'b_4071a4;
+                                } else {
+                                    break 'b_407198;
+                                }
+                            }
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[S1][0] = 0x450000;
+                c.g[V0][0] = 0x10000000;
+                c.g[V1][0] = 0x40000000;
+                break 'b_4071a4;
+            }
+            c.cycles += 13;
+            c.g[V0][0] = c.g[V0][0] | 0x2000;
+            c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x32c0));
+            Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x10)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0x818)).sw(c, c.g[V0][0]);
+            callee::LIBMPEG_IPU_WAIT_CMD.call(c, 0x004071c0)?;
+            c.g[V0][0] = c.g[V0][0] << 32;
+            c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+            c.g[V1][0] = 0x20;
+            Addr((c.g[S0][0] as u32).wrapping_add(0x838)).sw(c, c.g[V0][0]);
+            Addr((c.g[S0][0] as u32).wrapping_add(0x83c)).sw(c, c.g[V1][0]);
+            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x838)).lw(c);
+            break 'b_4071d8;
+        }
+        c.cycles += 8;
+        c.g[V0][0] = sx(0u32.wrapping_sub(c.g[S2][0] as u32));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = sx((c.g[V1][0] as u32) >> ((c.g[V0][0] as u32) & 31));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_FlushBits` (0x004071f8): consume `A1` stream bits without
+/// returning them. Same refill discipline as `GetBits`.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_flush_bits(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x40);
+        'b_407290: {
+            'b_407288: {
+                c.cycles += 17;
+                c.g[V0][0] = 0x10000000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[V0][0] = c.g[V0][0] | 0x2010;
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[A2][0] = 0xffffffff80000000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.g[A2][0] = c.g[A2][0] | 0x4000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.g[S0][0] = c.g[A0][0];
+                c.g[S1][0] = c.g[A1][0];
+                c.g[A3][0] = 0u64;
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = 0xffffffff80000000;
+                c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[S2][0] = 0x450000;
+                if t {
+                    break 'b_407288;
+                } else {
+                    c.cycles += 1;
+                    'l_407240: loop {
+                        'b_40725c: {
+                            c.cycles += 4;
+                            c.g[V0][0] = c.g[A3][0];
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < 5001i64) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                            if t {
+                                break 'b_40725c;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x858)).lw(c);
+                                callee::LIBMPEG_CALLBACK_NODATA.call(c, 0x00407258)?;
+                                c.g[A3][0] = 0u64;
+                                break 'b_40725c;
+                            }
+                        }
+                        c.cycles += 9;
+                        c.g[V1][0] = 0x10000000;
+                        c.g[A0][0] = 0xffffffff80000000;
+                        c.g[V1][0] = c.g[V1][0] | 0x2010;
+                        c.g[A0][0] = c.g[A0][0] | 0x4000;
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                        c.g[A1][0] = 0xffffffff80000000;
+                        c.g[V0][0] = c.g[V0][0] & c.g[A0][0];
+                        let t = c.g[V0][0] == c.g[A1][0];
+                        c.g[V0][0] = 0x40000000;
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00407240);
+                            }
+                            continue 'l_407240;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.g[V1][0] = 0x10000000;
+                            if t {
+                                break 'b_407290;
+                            } else {
+                                break 'b_407288;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0x40000000;
+            c.g[V1][0] = 0x10000000;
+            break 'b_407290;
+        }
+        c.cycles += 22;
+        c.g[V0][0] = c.g[S1][0] | c.g[V0][0];
+        c.g[V1][0] = c.g[V1][0] | 0x2000;
+        Addr(c.g[V1][0] as u32).sw(c, c.g[V0][0]);
+        c.g[A1][0] = sx((c.g[V0][0] as u32) >> 28);
+        c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x32c0));
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x818)).sw(c, c.g[V0][0]);
+        callee::LIBMPEG_IPU_WAIT_CMD.call(c, 0x004072bc)?;
+        c.g[V0][0] = c.g[V0][0] << 32;
+        c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+        c.g[V1][0] = 0x20;
+        Addr((c.g[S0][0] as u32).wrapping_add(0x83c)).sw(c, c.g[V1][0]);
+        Addr((c.g[S0][0] as u32).wrapping_add(0x838)).sw(c, c.g[V0][0]);
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_GetBits` (0x004072e8): consume `A1` bits from the stream at
+/// `A0` into `V0`. A set valid-bits word (`+ 0x818`) refills through the
+/// IPU; otherwise the buffered bits are consumed directly when the count
+/// (`+ 0x83c`) covers the request, else refilled first.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_get_bits(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x50);
+        'b_407380: {
+            'b_40737c: {
+                c.cycles += 18;
+                c.g[V0][0] = 0x10000000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.g[V0][0] = c.g[V0][0] | 0x2010;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[A2][0] = 0xffffffff80000000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[RA][0]);
+                c.g[A2][0] = c.g[A2][0] | 0x4000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[S2][0] = c.g[A1][0];
+                c.g[A3][0] = 0u64;
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = 0xffffffff80000000;
+                c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[S3][0] = 0x450000;
+                if t {
+                    break 'b_40737c;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[A3][0];
+                    'l_407338: loop {
+                        'b_407350: {
+                            c.cycles += 3;
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < 5001i64) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x1));
+                            if t {
+                                break 'b_407350;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+                                callee::LIBMPEG_CALLBACK_NODATA.call(c, 0x0040734c)?;
+                                c.g[A3][0] = 0u64;
+                                break 'b_407350;
+                            }
+                        }
+                        c.cycles += 9;
+                        c.g[V1][0] = 0x10000000;
+                        c.g[A0][0] = 0xffffffff80000000;
+                        c.g[V1][0] = c.g[V1][0] | 0x2010;
+                        c.g[A0][0] = c.g[A0][0] | 0x4000;
+                        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                        c.g[A1][0] = 0xffffffff80000000;
+                        c.g[V0][0] = c.g[V0][0] & c.g[A0][0];
+                        let t = c.g[V0][0] == c.g[A1][0];
+                        c.g[V0][0] = c.g[A3][0];
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00407338);
+                            }
+                            continue 'l_407338;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+                            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x818)).lw(c);
+                            if t {
+                                break 'b_407380;
+                            } else {
+                                break 'b_40737c;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x818)).lw(c);
+            break 'b_407380;
+        }
+        'b_4073c4: {
+            'b_407398: {
+                c.cycles += 2;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = 0x10000000;
+                if t {
+                    break 'b_407398;
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x83c)).lw(c);
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V0][0] = 0x10000000;
+                    if t {
+                        break 'b_4073c4;
+                    } else {
+                        break 'b_407398;
+                    }
+                }
+            }
+            c.cycles += 11;
+            c.g[V1][0] = 0x40000000;
+            c.g[V0][0] = c.g[V0][0] | 0x2000;
+            c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(0x32c0));
+            Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x10)).lw(c);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x818)).sw(c, c.g[V0][0]);
+            callee::LIBMPEG_IPU_WAIT_CMD.call(c, 0x004073b8)?;
+            c.g[V0][0] = c.g[V0][0] << 32;
+            c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+            Addr((c.g[S1][0] as u32).wrapping_add(0x838)).sw(c, c.g[V0][0]);
+            break 'b_4073c4;
+        }
+        c.cycles += 29;
+        c.g[A1][0] = 0x20;
+        c.g[A0][0] = 0x40000000;
+        c.g[V0][0] = 0x10000000;
+        c.g[A0][0] = c.g[S2][0] | c.g[A0][0];
+        Addr((c.g[S1][0] as u32).wrapping_add(0x83c)).sw(c, c.g[A1][0]);
+        c.g[V0][0] = c.g[V0][0] | 0x2000;
+        c.g[S0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x838)).lw(c);
+        c.g[V1][0] = sx((c.g[A0][0] as u32) >> 28);
+        Addr(c.g[V0][0] as u32).sw(c, c.g[A0][0]);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x32c0));
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[S2][0] as u32));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S0][0] = sx((c.g[S0][0] as u32) >> ((c.g[A1][0] as u32) & 31));
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        Addr((c.g[S1][0] as u32).wrapping_add(0x818)).sw(c, c.g[V0][0]);
+        callee::LIBMPEG_IPU_WAIT_CMD.call(c, 0x0040740c)?;
+        c.g[V0][0] = c.g[V0][0] << 32;
+        c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        Addr((c.g[S1][0] as u32).wrapping_add(0x838)).sw(c, c.g[V0][0]);
+        c.g[V0][0] = c.g[S0][0];
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_GetHeader` (0x00407520): pull start codes off the stream and
+/// dispatch: sequence (`0x1b3`), GOP (`0x1b7`/`0x1b8`) and picture
+/// (`0x100`, which also reports through the dispatcher) headers;
+/// anything else loops for the next code.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_get_header(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0xa0);
+        c.cycles += 16;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x80), c.g[S6][0]);
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[S5][0]);
+        c.g[S6][0] = 0x5;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S4][0]);
+        c.g[S5][0] = 0x1b3;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S3][0]);
+        c.g[S4][0] = 0x100;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S2][0]);
+        c.g[S3][0] = 0x1b7;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S1][0]);
+        c.g[S2][0] = 0x1b8;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S0][0]);
+        c.g[S1][0] = 0xffffffffffffffff;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x90), c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        'l_407560: loop {
+            'b_407604: {
+                'b_4075d0: {
+                    'b_4075c0: {
+                        'b_4075b0: {
+                            c.cycles += 8;
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::LIBMPEG_NEXT_START_CODE.call(c, 0x00407568)?;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A1][0] = 0x20;
+                            callee::LIBMPEG_GETBITS.call(c, 0x00407574)?;
+                            c.g[V1][0] = c.g[V0][0];
+                            let t = c.g[V1][0] == c.g[S5][0];
+                            c.g[V0][0] = (c.g[V1][0] < 0x1b4u64) as u64;
+                            if t {
+                                break 'b_4075b0;
+                            } else {
+                                'b_407598: {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    if t {
+                                        break 'b_407598;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V1][0] == c.g[S4][0];
+                                        if t {
+                                            break 'b_4075d0;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+                                            if t {
+                                                if event_due(c) {
+                                                    deliver_event_here(c, 0x00407560);
+                                                }
+                                                continue 'l_407560;
+                                            } else {
+                                                break 'b_407598;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 2;
+                                let t = c.g[V1][0] == c.g[S3][0];
+                                c.g[V0][0] = 0u64;
+                                if t {
+                                    break 'b_407604;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[V1][0] == c.g[S2][0];
+                                    if t {
+                                        break 'b_4075c0;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = true;
+                                        if t {
+                                            if event_due(c) {
+                                                deliver_event_here(c, 0x00407560);
+                                            }
+                                            continue 'l_407560;
+                                        } else {
+                                            break 'b_4075b0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::LIBMPEG_SEQUENCE_HEADER.call(c, 0x004075b8)?;
+                        let t = true;
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00407560);
+                            }
+                            continue 'l_407560;
+                        } else {
+                            break 'b_4075c0;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::LIBMPEG_GROUP_OF_PICTURES_HEADER.call(c, 0x004075c8)?;
+                    let t = true;
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00407560);
+                        }
+                        continue 'l_407560;
+                    } else {
+                        break 'b_4075d0;
+                    }
+                }
+                c.cycles += 13;
+                c.g[A0][0] = c.g[S0][0];
+                callee::LIBMPEG_PICTURE_HEADER.call(c, 0x004075d8)?;
+                c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x858)).lw(c);
+                c.g[A1][0] = c.g[SP][0];
+                Addr(c.g[SP][0] as u32).sw(c, c.g[S6][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x8), c.g[S1][0]);
+                callee::DISPATCH_CALLBACK.call(c, 0x004075f0)?;
+                c.g[V0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[V1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x8));
+                c.sd((c.g[S0][0] as u32).wrapping_add(0x830), c.g[V0][0]);
+                c.sd((c.g[S0][0] as u32).wrapping_add(0x828), c.g[V1][0]);
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x150)).lw(c);
+                break 'b_407604;
+            }
+            c.cycles += 10;
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x90));
+            c.g[S6][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x80));
+            c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+            c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+            frame.close(c);
+            return Ok(());
+        }
+    })
+}
+
+/// `libmpeg_ExtensionAndUserData` (0x004076f8): scan extensions and user
+/// data: dispatch each extension start code through the handler table,
+/// skipping anything else. A resume after an unwound callee or event runs
+/// the generated body.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_extension_and_user_data(c: &mut Cpu) {
+    if c.pc != 0x004076f8 {
+        return ee::s15::f_004076f8__generated(c);
+    }
+    guest(c, |c| {
+        let mut pc: u32 = 0x004076f8;
+        loop {
+            match pc {
+                0x004076f8 => {
+                    c.cycles += 37;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x80));
+                    c.g[V0][0] = 0x490000;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S0][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S3][0]);
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S2][0]);
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S1][0]);
+                    c.g[S3][0] = 0x1b2;
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+                    c.g[S1][0] = 0x1b5;
+                    c.g[A3][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7fe0));
+                    c.ldl(3, (c.g[A3][0] as u32).wrapping_add(0x7));
+                    c.ldr(3, c.g[A3][0] as u32);
+                    c.ldl(5, (c.g[A3][0] as u32).wrapping_add(0xf));
+                    c.ldr(5, (c.g[A3][0] as u32).wrapping_add(0x8));
+                    c.ldl(6, (c.g[A3][0] as u32).wrapping_add(0x17));
+                    c.ldr(6, (c.g[A3][0] as u32).wrapping_add(0x10));
+                    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x7));
+                    c.sdr(3, c.g[SP][0] as u32);
+                    c.sdl(5, (c.g[SP][0] as u32).wrapping_add(0xf));
+                    c.sdr(5, (c.g[SP][0] as u32).wrapping_add(0x8));
+                    c.sdl(6, (c.g[SP][0] as u32).wrapping_add(0x17));
+                    c.sdr(6, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.ldl(3, (c.g[A3][0] as u32).wrapping_add(0x1f));
+                    c.ldr(3, (c.g[A3][0] as u32).wrapping_add(0x18));
+                    c.ldl(5, (c.g[A3][0] as u32).wrapping_add(0x27));
+                    c.ldr(5, (c.g[A3][0] as u32).wrapping_add(0x20));
+                    c.g[A2][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x28)).lw(c);
+                    c.sdl(3, (c.g[SP][0] as u32).wrapping_add(0x1f));
+                    c.sdr(3, (c.g[SP][0] as u32).wrapping_add(0x18));
+                    c.sdl(5, (c.g[SP][0] as u32).wrapping_add(0x27));
+                    c.sdr(5, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    Addr((c.g[SP][0] as u32).wrapping_add(0x28)).sw(c, c.g[A2][0]);
+                    c.g[S2][0] = 0xa;
+                    callee::LIBMPEG_NEXT_START_CODE.call(c, 0x00407784)?;
+                    let t = true;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x004077ec;
+                        continue;
+                    }
+                    pc = 0x0040778c;
+                    continue;
+                }
+                0x0040778c => {
+                    c.cycles += 1;
+                    pc = 0x00407790;
+                    continue;
+                }
+                0x00407790 => {
+                    c.cycles += 2;
+                    if c.g[V0][0] != c.g[S1][0] {
+                        c.g[A0][0] = c.g[S0][0];
+                        pc = 0x004077d8;
+                        continue;
+                    }
+                    pc = 0x00407798;
+                    continue;
+                }
+                0x00407798 => {
+                    c.cycles += 16;
+                    callee::LIBMPEG_FLUSH_BITS.call(c, 0x004077a0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0x4;
+                    callee::LIBMPEG_GETBITS.call(c, 0x004077ac)?;
+                    c.g[V1][0] = (c.g[S2][0] < c.g[V0][0]) as u64;
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = 0u64;
+                    }
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                    let t = c.g[V0][0] as u32;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, t, 0x004077c8)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::LIBMPEG_NEXT_START_CODE.call(c, 0x004077d0)?;
+                    let t = true;
+                    c.g[A0][0] = c.g[S0][0];
+                    if t {
+                        pc = 0x004077ec;
+                        continue;
+                    }
+                    pc = 0x004077d8;
+                    continue;
+                }
+                0x004077d8 => {
+                    c.cycles += 5;
+                    c.g[A1][0] = 0x20;
+                    callee::LIBMPEG_FLUSH_BITS.call(c, 0x004077e0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::LIBMPEG_NEXT_START_CODE.call(c, 0x004077e8)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    pc = 0x004077ec;
+                    continue;
+                }
+                0x004077ec => {
+                    c.cycles += 5;
+                    c.g[A1][0] = 0x20;
+                    callee::LIBMPEG_SHOW_BITS.call(c, 0x004077f4)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    let t = c.g[V0][0] == c.g[S1][0];
+                    c.g[A1][0] = 0x20;
+                    if t {
+                        if back_edge_unwinds(c, 0x00407798) {
+                            return Ok(());
+                        }
+                        pc = 0x00407798;
+                        continue;
+                    }
+                    pc = 0x00407800;
+                    continue;
+                }
+                0x00407800 => {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == c.g[S3][0];
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    if t {
+                        if back_edge_unwinds(c, 0x00407790) {
+                            return Ok(());
+                        }
+                        pc = 0x00407790;
+                        continue;
+                    }
+                    pc = 0x00407808;
+                    continue;
+                }
+                0x00407808 => {
+                    c.cycles += 6;
+                    c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                    c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.g[S0][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x80));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x004076f8, 0x00407820);
+                    return Ok(());
+                }
+            }
+        }
+    })
+}
+
+/// `libmpeg_decode_picture_slices` (0x00407dc0): dispatch picture-slice decode on the picture structure, then decode the slices.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_decode_picture_slices(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x30);
+        'b_407e08: {
+            c.cycles += 9;
+            c.g[V0][0] = 0x3;
+            c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.g[S0][0] = c.g[A0][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x174)).lw(c);
+            let t = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = 0x2;
+            if t {
+                break 'b_407e08;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x120)).lw(c);
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = 0x2;
+                if t {
+                    break 'b_407e08;
+                } else {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0x4a0000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7f98));
+                    callee::LIBMPEG_ERROR.call(c, 0x00407dfc)?;
+                    Addr((c.g[S0][0] as u32).wrapping_add(0x120)).sw(c, 0u64);
+                    c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x174)).lw(c);
+                    c.g[V0][0] = 0x2;
+                    break 'b_407e08;
+                }
+            }
+        }
+        'b_407e5c: {
+            'b_407e50: {
+                'b_407e4c: {
+                    'b_407e44: {
+                        c.cycles += 2;
+                        let t = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = ((c.g[V1][0] as i64) < 3i64) as u64;
+                        if t {
+                            break 'b_407e44;
+                        } else {
+                            'b_407e3c: {
+                                'b_407e28: {
+                                    c.cycles += 2;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = 0x1;
+                                    if t {
+                                        break 'b_407e28;
+                                    } else {
+                                        c.cycles += 2;
+                                        let t = c.g[V1][0] == c.g[V0][0];
+                                        c.g[A1][0] = 0x4a0000;
+                                        if t {
+                                            break 'b_407e3c;
+                                        } else {
+                                            c.cycles += 2;
+                                            let t = true;
+                                            c.g[S1][0] =
+                                                Addr((c.g[S0][0] as u32).wrapping_add(0x1c0)).lw(c);
+                                            if t {
+                                                break 'b_407e50;
+                                            } else {
+                                                break 'b_407e28;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[V0][0] = 0x3;
+                                let t = c.g[V1][0] != c.g[V0][0];
+                                c.g[A1][0] = 0x4a0000;
+                                if t {
+                                    break 'b_407e4c;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = true;
+                                    c.g[S1][0] =
+                                        Addr((c.g[S0][0] as u32).wrapping_add(0x1c0)).lw(c);
+                                    if t {
+                                        break 'b_407e5c;
+                                    } else {
+                                        break 'b_407e3c;
+                                    }
+                                }
+                            }
+                            c.cycles += 2;
+                            let t = true;
+                            c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1d0)).lw(c);
+                            if t {
+                                break 'b_407e5c;
+                            } else {
+                                break 'b_407e44;
+                            }
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = true;
+                    c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1e0)).lw(c);
+                    if t {
+                        break 'b_407e5c;
+                    } else {
+                        break 'b_407e4c;
+                    }
+                }
+                c.cycles += 1;
+                c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c0)).lw(c);
+                break 'b_407e50;
+            }
+            c.cycles += 3;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x7f78));
+            c.g[A0][0] = c.g[S0][0];
+            callee::LIBMPEG_ERROR.call(c, 0x00407e5c)?;
+            break 'b_407e5c;
+        }
+        'b_407e74: {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            callee::LIBMPEG_DECODE_SLICES.call(c, 0x00407e64)?;
+            c.g[V1][0] = c.g[V0][0];
+            let t = c.g[V1][0] == 0u64;
+            c.g[V0][0] = 0x1;
+            if t {
+                break 'b_407e74;
+            } else {
+                c.cycles += 1;
+                Addr((c.g[S1][0] as u32).wrapping_add(0x28)).sw(c, c.g[V0][0]);
+                break 'b_407e74;
+            }
+        }
+        c.cycles += 6;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[V0][0] = c.g[V1][0];
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_output_picture` (0x00407e90): dispatch picture output on the picture structure: frame or field pair.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_output_picture(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x20);
+        'b_407f00: {
+            'b_407efc: {
+                c.cycles += 6;
+                c.g[A3][0] = c.g[A1][0];
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                let t = c.g[A2][0] == 0u64;
+                c.g[S0][0] = c.g[A0][0];
+                if t {
+                    break 'b_407efc;
+                } else {
+                    'b_407ed8: {
+                        c.cycles += 4;
+                        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x174)).lw(c);
+                        c.g[V1][0] = 0x3;
+                        let t = c.g[V0][0] != c.g[V1][0];
+                        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x150)).lw(c);
+                        if t {
+                            break 'b_407ed8;
+                        } else {
+                            'b_407ec4: {
+                                c.cycles += 2;
+                                if c.g[V0][0] != c.g[V1][0] {
+                                    c.g[A1][0] =
+                                        Addr((c.g[S0][0] as u32).wrapping_add(0x1b8)).lw(c);
+                                    break 'b_407ec4;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[A1][0] =
+                                        Addr((c.g[S0][0] as u32).wrapping_add(0x1c4)).lw(c);
+                                    break 'b_407ec4;
+                                }
+                            }
+                            c.cycles += 5;
+                            c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
+                            c.g[A0][0] = c.g[S0][0];
+                            callee::LIBMPEG_OUTPUT_FRAME.call(c, 0x00407ed0)?;
+                            let t = true;
+                            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0xf8)).lw(c);
+                            if t {
+                                break 'b_407f00;
+                            } else {
+                                break 'b_407ed8;
+                            }
+                        }
+                    }
+                    'b_407ef0: {
+                        'b_407eec: {
+                            c.cycles += 2;
+                            if c.g[V0][0] != c.g[V1][0] {
+                                c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1c8)).lw(c);
+                                break 'b_407eec;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1d4)).lw(c);
+                                let t = true;
+                                c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1e4)).lw(c);
+                                if t {
+                                    break 'b_407ef0;
+                                } else {
+                                    break 'b_407eec;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x1d8)).lw(c);
+                        break 'b_407ef0;
+                    }
+                    c.cycles += 3;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::LIBMPEG_OUTPUT_FIELD_PAIR.call(c, 0x00407efc)?;
+                    break 'b_407efc;
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(0xf8)).lw(c);
+            break 'b_407f00;
+        }
+        'b_407f14: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x1;
+            let t = c.g[V1][0] != c.g[V0][0];
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            if t {
+                break 'b_407f14;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0x2;
+                Addr((c.g[S0][0] as u32).wrapping_add(0xf8)).sw(c, c.g[V0][0]);
+                break 'b_407f14;
+            }
+        }
+        c.cycles += 3;
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_output_frame` (0x004086c0): output one frame: timestamps, buffer check, and CSC or raw copy, then mark done.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_output_frame(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x30);
+        'b_4087c0: {
+            c.cycles += 45;
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+            c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+            c.g[S1][0] = c.g[A1][0];
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.g[S0][0] = c.g[A0][0];
+            c.g[A3][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x858)).lw(c);
+            c.g[T0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
+            c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x18));
+            callee::LIBMPEG_COMPUTE_PTS.call(c, 0x004086ec)?;
+            c.g[A3][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x858)).lw(c);
+            c.g[A2][0] = 0x450000;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x32e8));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[V0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x20));
+            c.g[A1][0] = c.g[S1][0];
+            c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x10)).lw(c);
+            c.g[V0][0] = c.g[V0][0] << 27;
+            c.g[V0][0] = ((c.g[V0][0] as i64) >> 32) as u64;
+            Addr((c.g[S0][0] as u32).wrapping_add(0x80)).sw(c, c.g[V1][0]);
+            c.g[V0][0] = c.g[V0][0] & 0xf;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x5c)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.g[A2][0] = c.lwu(c.g[V0][0] as u32);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xcc)).sw(c, c.g[V1][0]);
+            c.sd((c.g[S0][0] as u32).wrapping_add(0x88), c.g[A2][0]);
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x60)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xd0)).sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x44)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xb4)).sw(c, c.g[V1][0]);
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x48)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xb8)).sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x4c)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xbc)).sw(c, c.g[V1][0]);
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x50)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xc0)).sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x54)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xc4)).sw(c, c.g[V1][0]);
+            c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x58)).lw(c);
+            Addr((c.g[S0][0] as u32).wrapping_add(0xc8)).sw(c, c.g[V0][0]);
+            callee::LIBMPEG_CHECK_OUTPUT_BUFFER.call(c, 0x0040876c)?;
+            let t = c.g[V0][0] == 0u64;
+            c.g[V0][0] = 0x1;
+            if t {
+                c.cycles += 1;
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                break 'b_4087c0;
+            } else {
+                c.cycles += 3;
+                c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x28)).lw(c);
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                if t {
+                    break 'b_4087c0;
+                } else {
+                    'b_4087a8: {
+                        'b_40879c: {
+                            c.cycles += 3;
+                            c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0xb0)).lw(c);
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[A1][0] = c.g[S1][0];
+                            if t {
+                                break 'b_40879c;
+                            } else {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.g[S0][0];
+                                callee::LIBMPEG_CONVERT_PICTURE_CSC.call(c, 0x00408794)?;
+                                let t = true;
+                                c.g[A0][0] = c.g[S0][0];
+                                if t {
+                                    break 'b_4087a8;
+                                } else {
+                                    break 'b_40879c;
+                                }
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S0][0];
+                        callee::LIBMPEG_COPY_OUTPUT_RAW.call(c, 0x004087a4)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        break 'b_4087a8;
+                    }
+                    c.cycles += 5;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+                    frame.close(c);
+                    c.pc = 0x00408508;
+                    ee::s15::libmpeg_SetOutputDone(c);
+                    return Ok(());
+                }
+            }
+        }
+        c.cycles += 4;
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_output_field_pair` (0x004087d0): output one field pair: timestamps, buffer check, and CSC or raw copy, then mark done.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_output_field_pair(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x80);
+        'b_408828: {
+            'b_408820: {
+                c.cycles += 16;
+                c.g[V0][0] = 0x2;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[S6][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
+                c.g[S6][0] = 0u64;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.g[S5][0] = c.g[A2][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x70), c.g[RA][0]);
+                c.g[S1][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x174)).lw(c);
+                let t = c.g[V1][0] != c.g[V0][0];
+                c.g[S2][0] = c.g[A1][0];
+                if t {
+                    break 'b_408820;
+                } else {
+                    c.cycles += 4;
+                    c.g[S3][0] = c.g[S2][0];
+                    c.g[S4][0] = c.g[S5][0];
+                    let t = true;
+                    c.g[S6][0] = 0x40;
+                    if t {
+                        break 'b_408828;
+                    } else {
+                        break 'b_408820;
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[S3][0] = c.g[S5][0];
+            c.g[S4][0] = c.g[S2][0];
+            break 'b_408828;
+        }
+        'b_408968: {
+            'b_408964: {
+                c.cycles += 46;
+                c.g[A3][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S3][0];
+                c.g[S0][0] = 0x1;
+                c.g[T0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
+                c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x10));
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x18));
+                callee::LIBMPEG_COMPUTE_PTS.call(c, 0x00408848)?;
+                c.g[A3][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S4][0];
+                c.g[V0][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x10)).lw(c);
+                c.g[T0][0] = sx((c.g[A3][0] as u32).wrapping_add(0x38));
+                c.g[A2][0] = sx((c.g[A3][0] as u32).wrapping_add(0x28));
+                c.sd((c.g[S1][0] as u32).wrapping_add(0x88), c.g[S0][0]);
+                Addr((c.g[S1][0] as u32).wrapping_add(0x80)).sw(c, c.g[V0][0]);
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x30));
+                callee::LIBMPEG_COMPUTE_PTS.call(c, 0x00408870)?;
+                c.g[A3][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x858)).lw(c);
+                c.g[T0][0] = c.g[S6][0];
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[V1][0] = Addr((c.g[A3][0] as u32).wrapping_add(0x28)).lw(c);
+                c.sd((c.g[S1][0] as u32).wrapping_add(0x88), c.g[S0][0]);
+                Addr((c.g[S1][0] as u32).wrapping_add(0x80)).sw(c, c.g[V1][0]);
+                c.g[V0][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x20));
+                c.g[A2][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x5c)).lw(c);
+                c.g[V0][0] = c.g[V0][0] | c.g[T0][0];
+                c.g[V1][0] = c.ld((c.g[A3][0] as u32).wrapping_add(0x38));
+                Addr((c.g[S1][0] as u32).wrapping_add(0xcc)).sw(c, c.g[A2][0]);
+                c.sd((c.g[A3][0] as u32).wrapping_add(0x20), c.g[V0][0]);
+                c.g[V1][0] = c.g[V1][0] | c.g[T0][0];
+                c.g[A2][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x60)).lw(c);
+                c.sd((c.g[A3][0] as u32).wrapping_add(0x38), c.g[V1][0]);
+                Addr((c.g[S1][0] as u32).wrapping_add(0xd0)).sw(c, c.g[A2][0]);
+                c.g[V0][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x44)).lw(c);
+                Addr((c.g[S1][0] as u32).wrapping_add(0xb4)).sw(c, c.g[V0][0]);
+                c.g[V1][0] = Addr((c.g[S4][0] as u32).wrapping_add(0x48)).lw(c);
+                Addr((c.g[S1][0] as u32).wrapping_add(0xb8)).sw(c, c.g[V1][0]);
+                c.g[V0][0] = Addr((c.g[S3][0] as u32).wrapping_add(0x50)).lw(c);
+                Addr((c.g[S1][0] as u32).wrapping_add(0xc0)).sw(c, c.g[V0][0]);
+                c.g[V1][0] = Addr((c.g[S4][0] as u32).wrapping_add(0x54)).lw(c);
+                Addr((c.g[S1][0] as u32).wrapping_add(0xc4)).sw(c, c.g[V1][0]);
+                callee::LIBMPEG_CHECK_OUTPUT_BUFFER.call(c, 0x004088d8)?;
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = 0x1;
+                if t {
+                    c.cycles += 1;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    break 'b_408964;
+                } else {
+                    c.cycles += 3;
+                    c.g[V1][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x28)).lw(c);
+                    let t = c.g[V1][0] != c.g[V0][0];
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                    if t {
+                        break 'b_408964;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr((c.g[S5][0] as u32).wrapping_add(0x28)).lw(c);
+                        let t = c.g[V0][0] != c.g[V1][0];
+                        c.g[S6][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                        if t {
+                            break 'b_408968;
+                        } else {
+                            'b_40892c: {
+                                'b_408920: {
+                                    c.cycles += 6;
+                                    c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x10)).lw(c);
+                                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                                    Addr((c.g[S2][0] as u32).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+                                    c.g[V1][0] = Addr((c.g[S1][0] as u32).wrapping_add(0xb0)).lw(c);
+                                    let t = c.g[V1][0] == 0u64;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    if t {
+                                        break 'b_408920;
+                                    } else {
+                                        c.cycles += 4;
+                                        c.g[A1][0] = c.g[S2][0];
+                                        callee::LIBMPEG_CONVERT_PICTURE_CSC.call(c, 0x00408918)?;
+                                        let t = true;
+                                        c.g[V0][0] =
+                                            Addr((c.g[S2][0] as u32).wrapping_add(0x10)).lw(c);
+                                        if t {
+                                            break 'b_40892c;
+                                        } else {
+                                            break 'b_408920;
+                                        }
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.g[A1][0] = c.g[S2][0];
+                                callee::LIBMPEG_COPY_OUTPUT_RAW.call(c, 0x00408928)?;
+                                c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(0x10)).lw(c);
+                                break 'b_40892c;
+                            }
+                            c.cycles += 13;
+                            c.g[A0][0] = c.g[S1][0];
+                            c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x70));
+                            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+                            c.g[S6][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+                            Addr((c.g[S2][0] as u32).wrapping_add(0x10)).sw(c, c.g[V0][0]);
+                            c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+                            c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+                            c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+                            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+                            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+                            frame.close(c);
+                            c.pc = 0x00408508;
+                            ee::s15::libmpeg_SetOutputDone(c);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[S6][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+            break 'b_408968;
+        }
+        c.cycles += 8;
+        c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_fetch_ref_blocks` (0x00408988): fetch the reference blocks for the macroblock row.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_fetch_ref_blocks(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x40);
+        'b_408a6c: {
+            'b_408a68: {
+                c.cycles += 20;
+                c.g[A1][0] = 0x140;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.g[V0][0] = 0xfff0000;
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.g[S2][0] = 0x520000;
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[RA][0]);
+                c.g[S0][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6fc0));
+                c.g[V0][0] = c.g[V0][0] | 0xffff;
+                c.g[T3][0] = 0u64;
+                c.g[T8][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x810)).lw(c);
+                c.g[A0][0] = c.g[A0][0] & c.g[V0][0];
+                c.mult(0, 3, 24, 5);
+                c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                c.g[V1][0] = 0x20000000;
+                c.g[T4][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x6bc)).lw(c);
+                let t = (c.g[T4][0] as i64) <= 0;
+                c.g[T2][0] = c.g[A0][0] | c.g[V1][0];
+                if t {
+                    break 'b_408a68;
+                } else {
+                    c.cycles += 4;
+                    c.g[T7][0] = sx((c.g[S0][0] as u32).wrapping_add(0x598));
+                    c.g[T6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5a8));
+                    c.g[T5][0] = sx((c.g[T4][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x590));
+                    'l_4089e8: loop {
+                        c.cycles += 30;
+                        c.g[V1][0] = 0x140;
+                        c.g[V0][0] = c.g[T3][0] ^ c.g[T5][0];
+                        c.mult(0, 3, 24, 3);
+                        c.g[A0][0] = sx((c.g[T3][0] as u32) << 2);
+                        c.g[A1][0] = 0x3;
+                        c.g[A2][0] = 0xfff0000;
+                        if c.g[V0][0] == 0 {
+                            c.g[A1][0] = 0u64;
+                        }
+                        c.g[A2][0] = c.g[A2][0] | 0xffff;
+                        c.g[A1][0] = c.g[A1][0] << 28;
+                        c.g[T1][0] = 0x30000000;
+                        c.g[T1][0] = c.g[T1][0] | 0x30;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[T0][0] = 0x30;
+                        c.g[V0][0] = sx((c.g[T6][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(0x1));
+                        c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                        c.g[A0][0] = sx((c.g[T7][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                        c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+                        c.g[A3][0] = ((c.g[T3][0] as i64) < (c.g[T4][0] as i64)) as u64;
+                        c.g[V1][0] = c.g[V1][0] & c.g[A2][0];
+                        c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+                        c.g[V1][0] = c.g[V1][0] << 32;
+                        c.g[V1][0] = c.g[V1][0] | c.g[A1][0];
+                        c.g[V0][0] = c.g[V0][0] << 32;
+                        c.g[V0][0] = c.g[V0][0] | c.g[T1][0];
+                        c.g[V1][0] = c.g[V1][0] | c.g[T0][0];
+                        c.sd(c.g[T2][0] as u32, c.g[V0][0]);
+                        c.sd((c.g[T2][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                        let t = c.g[A3][0] != 0u64;
+                        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x20));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x004089e8);
+                            }
+                            continue 'l_4089e8;
+                        } else {
+                            c.cycles += 2;
+                            let t = true;
+
+                            if t {
+                                break 'b_408a6c;
+                            } else {
+                                break 'b_408a68;
+                            }
+                        }
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x590));
+            break 'b_408a6c;
+        }
+        c.cycles += 24;
+        callee::DINTR.call(c, 0x00408a74)?;
+        c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x810)).lw(c);
+        c.g[V1][0] = 0x140;
+        c.g[A3][0] = 0x10000000;
+        c.g[T0][0] = 0x10000000;
+        c.mult(0, 4, 6, 3);
+        c.g[A3][0] = c.g[A3][0] | 0xd480;
+        c.g[T2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6fc0));
+        c.g[T0][0] = c.g[T0][0] | 0xd430;
+        c.g[V1][0] = 0x10000000;
+        c.g[T1][0] = 0x105;
+        c.g[V1][0] = c.g[V1][0] | 0xd420;
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        c.g[A1][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[A0][0] = 0x10000000;
+        c.g[A0][0] = c.g[A0][0] | 0xd400;
+        Addr(c.g[A3][0] as u32).sw(c, c.g[A1][0]);
+        Addr(c.g[T0][0] as u32).sw(c, c.g[T2][0]);
+        Addr(c.g[V1][0] as u32).sw(c, 0u64);
+        Addr(c.g[A0][0] as u32).sw(c, c.g[T1][0]);
+        let t = c.g[V0][0] == 0u64;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        if t {
+            c.cycles += 5;
+            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+            frame.close(c);
+            Ok(())
+        } else {
+            c.cycles += 5;
+            c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+            c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+            frame.close(c);
+            c.pc = 0x0042c0c0;
+            ee::s15::EIntr(c);
+            return Ok(());
+        }
+    })
+}
+
+/// `libmpeg_SliceHeader` (0x004061e8): parse the slice header: the start
+/// code, quantiser scale, macroblock address, and the per-slice state.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_slice_header(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x70);
+        'b_4062f0: {
+            'b_406258: {
+                c.cycles += 22;
+                c.sd(c.g[SP][0] as u32, c.g[S0][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x50), c.g[S5][0]);
+                c.g[S0][0] = c.g[A0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x40), c.g[S4][0]);
+                c.g[S5][0] = c.g[A2][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[S2][0]);
+                c.g[S4][0] = c.g[A3][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[S1][0]);
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x60), c.g[RA][0]);
+                c.g[S1][0] = c.g[T0][0];
+                c.sd((c.g[SP][0] as u32).wrapping_add(0x30), c.g[S3][0]);
+                Addr((c.g[S0][0] as u32).wrapping_add(0x11c)).sw(c, 0u64);
+                callee::LIBMPEG_NEXT_START_CODE.call(c, 0x00406220)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0x20;
+                callee::LIBMPEG_SHOW_BITS.call(c, 0x0040622c)?;
+                c.g[S2][0] = c.g[V0][0];
+                c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_sub(0x101));
+                c.g[V0][0] = (c.g[V0][0] < 0xafu64) as u64;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A0][0] = c.g[S0][0];
+                if t {
+                    break 'b_406258;
+                } else {
+                    c.cycles += 6;
+                    c.g[A1][0] = 0x490000;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7f28));
+                    c.g[A2][0] = c.g[S2][0];
+                    callee::ERRORF.call(c, 0x00406250)?;
+                    let t = true;
+                    c.g[V0][0] = 0x2;
+                    if t {
+                        break 'b_4062f0;
+                    } else {
+                        break 'b_406258;
+                    }
+                }
+            }
+            'b_40629c: {
+                c.cycles += 12;
+                c.g[A1][0] = 0x20;
+                callee::LIBMPEG_FLUSH_BITS.call(c, 0x00406260)?;
+                c.g[A0][0] = c.g[S0][0];
+                callee::LIBMPEG_SLICE_HEADER_TAIL.call(c, 0x00406268)?;
+                c.g[S3][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S0][0];
+                callee::LIBMPEG_MACROBLOCK_ADDRESS_INCREMENT.call(c, 0x00406274)?;
+                c.g[A2][0] = c.g[V0][0];
+                Addr(c.g[S4][0] as u32).sw(c, c.g[A2][0]);
+                c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x11c)).lw(c);
+                let t = c.g[V0][0] == 0u64;
+                c.g[A1][0] = 0x490000;
+                if t {
+                    break 'b_40629c;
+                } else {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7f50));
+                    callee::LIBMPEG_ERROR.call(c, 0x00406294)?;
+                    let t = true;
+                    c.g[V0][0] = 0x1;
+                    if t {
+                        break 'b_4062f0;
+                    } else {
+                        break 'b_40629c;
+                    }
+                }
+            }
+            c.cycles += 21;
+            c.g[V0][0] = c.g[S2][0] & 0xff;
+            c.g[V1][0] = sx((c.g[S3][0] as u32) << 7);
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(0x12c)).lw(c);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            c.g[A1][0] = 0x1;
+            c.mult(0, 2, 3, 4);
+            c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+            c.g[V0][0] = 0u64;
+            Addr(c.g[S5][0] as u32).sw(c, c.g[V1][0]);
+            Addr(c.g[S4][0] as u32).sw(c, c.g[A1][0]);
+            Addr((c.g[S0][0] as u32).wrapping_add(0x1b0)).sw(c, c.g[A1][0]);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x8)).sw(c, 0u64);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x14)).sw(c, 0u64);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x10)).sw(c, 0u64);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x4)).sw(c, 0u64);
+            Addr(c.g[S1][0] as u32).sw(c, 0u64);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x1c)).sw(c, 0u64);
+            Addr((c.g[S1][0] as u32).wrapping_add(0x18)).sw(c, 0u64);
+            Addr((c.g[S1][0] as u32).wrapping_add(0xc)).sw(c, 0u64);
+            break 'b_4062f0;
+        }
+        c.cycles += 9;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[S5][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.g[S4][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S3][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[S2][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S1][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[S0][0] = c.ld(c.g[SP][0] as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_SequenceScalableExtension` (0x00403d70): unsupported-sequence
+/// extension probe: reports through `libmpeg_Error` and returns.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_sequence_scalable_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7d58));
+        c.pc = 0x004034a8;
+        ee::s15::libmpeg_Error(c);
+        return Ok(());
+    })
+}
+
+/// `libmpeg_UnknownExtension` (0x00403d80): unknown-extension probe:
+/// reports through `libmpeg_Error` and returns.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_unknown_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7d88));
+        c.pc = 0x004034a8;
+        ee::s15::libmpeg_Error(c);
+        return Ok(());
+    })
+}
+
+/// `libmpeg_PictureSpatialScalableExtension` (0x00403d90): spatial-scalable
+/// probe: reports through `libmpeg_Error` and returns.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_picture_spatial_scalable_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7da0));
+        c.pc = 0x004034a8;
+        ee::s15::libmpeg_Error(c);
+        return Ok(());
+    })
+}
+
+/// `libmpeg_PictureTemporalScalableExtension` (0x00403da0): temporal-scalable
+/// probe: reports through `libmpeg_Error` and returns.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_picture_temporal_scalable_extension(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 3;
+        c.g[A1][0] = 0x490000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x7dd8));
+        c.pc = 0x004034a8;
+        ee::s15::libmpeg_Error(c);
+        return Ok(());
+    })
+}
+
+/// `libmpeg_StopDmaCallback` (0x00403db0): DMA-stop completion callback.
+/// Derives the channel id from the work area (`A0 + 0x40`, `+ 0x4c`) and
+/// stops its IPU DMA. Returns 1.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_stop_dma_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x10);
+        c.cycles += 9;
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        c.g[A0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x40)).lw(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4c));
+        callee::SCE_IPU_STOP_DMA.call(c, 0x00403dc4)?;
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        c.g[V0][0] = 0x1;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `libmpeg_IpuFromDmaHandler` (0x00408ca8): FROM-DMA completion handler.
+/// Acknowledges the channel, bumps the finished count at `A1`, and, while
+/// IPU busy words read clear, programs the next transfer from the `A1`
+/// descriptor (`+ 0x0` count, `+ 0x8` address, `+ 0xc` length,
+/// `+ 0x10` remaining).
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_ipu_from_dma_handler(c: &mut Cpu) {
+    guest(c, |c| {
+        'b_408cf4: {
+            c.cycles += 13;
+            c.g[V0][0] = 0x10000000;
+            c.g[V1][0] = 0x8;
+            c.g[V0][0] = c.g[V0][0] | 0xe010;
+            c.g[T1][0] = c.g[A1][0];
+            Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+            c.g[A0][0] = 0x10000000;
+            c.g[A0][0] = c.g[A0][0] | 0xb020;
+            c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+            Addr(c.g[T1][0] as u32).sw(c, c.g[V0][0]);
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+            let t = c.g[V1][0] != 0u64;
+            c.g[V0][0] = 0x1;
+            if t {
+                break 'b_408cf4;
+            } else {
+                c.cycles += 6;
+                c.g[V0][0] = 0x10000000;
+                c.g[V0][0] = c.g[V0][0] | 0xb000;
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V1][0] = c.g[V1][0] & 0x100;
+                let t = c.g[V1][0] == 0u64;
+                c.g[V0][0] = 0x1;
+                if t {
+                    'b_408de0: {
+                        'b_408d7c: {
+                            c.cycles += 6;
+                            c.g[V1][0] = Addr((c.g[T1][0] as u32).wrapping_add(0x10)).lw(c);
+                            c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = 0x10000000;
+                            if t {
+                                break 'b_408d7c;
+                            } else {
+                                c.cycles += 23;
+                                c.g[V1][0] = Addr((c.g[T1][0] as u32).wrapping_add(0xc)).lw(c);
+                                c.g[V0][0] = c.g[V0][0] | 0xb010;
+                                c.g[A0][0] = 0xffc0;
+                                Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+                                c.g[A1][0] = 0x100;
+                                c.g[AT][0] = 0x10010000;
+                                c.sw((c.g[AT][0] as u32).wrapping_sub(0x4fe0), c.g[A0][0]);
+                                c.g[V1][0] = 0x10000000;
+                                c.g[V0][0] = 0x70000000;
+                                c.g[AT][0] = 0x10010000;
+                                c.sw((c.g[AT][0] as u32).wrapping_sub(0x5000), c.g[A1][0]);
+                                c.g[V1][0] = c.g[V1][0] | 0x2000;
+                                c.g[V0][0] = c.g[V0][0] | 0x3ff;
+                                Addr(c.g[V1][0] as u32).sw(c, c.g[V0][0]);
+                                c.g[A0][0] = 0xf0000;
+                                c.g[A0][0] = c.g[A0][0] | 0xfc00;
+                                c.g[V1][0] = 0xfff0000;
+                                c.g[V0][0] = Addr((c.g[T1][0] as u32).wrapping_add(0xc)).lw(c);
+                                c.g[V1][0] = c.g[V1][0] | 0xffff;
+                                c.g[V0][0] =
+                                    sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
+                                let t = true;
+                                Addr((c.g[T1][0] as u32).wrapping_add(0xc)).sw(c, c.g[V0][0]);
+                                if t {
+                                    break 'b_408de0;
+                                } else {
+                                    break 'b_408d7c;
+                                }
+                            }
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(c.g[T1][0] as u32).lw(c);
+                        let t = c.g[V0][0] != c.g[V1][0];
+                        c.g[T0][0] = 0x100;
+                        if t {
+                            break 'b_408de0;
+                        } else {
+                            c.cycles += 22;
+                            c.g[A1][0] = Addr(c.g[T1][0] as u32).lw(c);
+                            c.g[A0][0] = 0x10000000;
+                            c.g[V1][0] = Addr((c.g[T1][0] as u32).wrapping_add(0x8)).lw(c);
+                            c.g[A0][0] = c.g[A0][0] | 0xb010;
+                            c.g[V0][0] = sx((c.g[A1][0] as u32) << 10);
+                            c.g[A2][0] = Addr((c.g[T1][0] as u32).wrapping_add(0xc)).lw(c);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                            c.g[A1][0] = 0x10000000;
+                            Addr((c.g[T1][0] as u32).wrapping_add(0x8)).sw(c, c.g[V1][0]);
+                            c.g[A3][0] = 0x70000000;
+                            Addr(c.g[A0][0] as u32).sw(c, c.g[A2][0]);
+                            c.g[A1][0] = c.g[A1][0] | 0x2000;
+                            c.g[V0][0] = Addr((c.g[T1][0] as u32).wrapping_add(0x8)).lw(c);
+                            c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
+                            c.g[AT][0] = 0x10010000;
+                            c.sw((c.g[AT][0] as u32).wrapping_sub(0x4fe0), c.g[V0][0]);
+                            c.g[AT][0] = 0x10010000;
+                            c.sw((c.g[AT][0] as u32).wrapping_sub(0x5000), c.g[T0][0]);
+                            c.g[V0][0] = Addr((c.g[T1][0] as u32).wrapping_add(0x8)).lw(c);
+                            c.g[V0][0] = c.g[V0][0] | c.g[A3][0];
+                            Addr(c.g[A1][0] as u32).sw(c, c.g[V0][0]);
+                            break 'b_408de0;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.ei();
+                    let t = c.g[RA][0] as u32;
+                    c.g[V0][0] = 0u64;
+                    c.pc = t;
+                    return Ok(());
+                } else {
+                    break 'b_408cf4;
+                }
+            }
+        }
+        c.cycles += 5;
+        Addr((c.g[T1][0] as u32).wrapping_add(0x4)).sw(c, c.g[V0][0]);
+        c.ei();
+        let t = c.g[RA][0] as u32;
+        c.g[V0][0] = 0u64;
+        c.pc = t;
+        return Ok(());
+    })
+}
+
+/// `libmpeg_IpuToDmaHandler` (0x00408fb0): TO-DMA completion handler.
+/// On a non-zero count, programs the transfer from the `A1` descriptor
+/// (`+ 0x4` address) while the count is below the 0xffff cut, then clears
+/// the count; a zero count returns 1 at once.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_ipu_to_dma_handler(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        c.g[V0][0] = 0x10000000;
+        c.g[V1][0] = 0x10;
+        c.g[V0][0] = c.g[V0][0] | 0xe010;
+        c.g[A2][0] = c.g[A1][0];
+        Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+        let t = c.g[V0][0] != 0u64;
+        c.g[A3][0] = 0xffff;
+        if t {
+            'b_409074: {
+                'b_409044: {
+                    c.cycles += 3;
+                    c.g[V0][0] = (c.g[A3][0] < c.g[V0][0]) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[V1][0] = 0x10000000;
+                    if t {
+                        break 'b_409044;
+                    } else {
+                        c.cycles += 22;
+                        c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x4)).lw(c);
+                        c.g[V0][0] = 0x10000000;
+                        c.g[V0][0] = c.g[V0][0] | 0xb410;
+                        Addr(c.g[V0][0] as u32).sw(c, c.g[A0][0]);
+                        c.g[V1][0] = c.g[V1][0] | 0xb420;
+                        Addr(c.g[V1][0] as u32).sw(c, c.g[A3][0]);
+                        c.g[V0][0] = 0x10000000;
+                        c.g[V0][0] = c.g[V0][0] | 0xb400;
+                        c.g[V1][0] = 0x101;
+                        Addr(c.g[V0][0] as u32).sw(c, c.g[V1][0]);
+                        c.g[A1][0] = 0xf0000;
+                        c.g[A1][0] = c.g[A1][0] | 0xfff0;
+                        c.g[A0][0] = 0xfff0000;
+                        c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x4)).lw(c);
+                        c.g[A0][0] = c.g[A0][0] | 0xffff;
+                        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+                        c.g[V1][0] = c.g[V1][0] & c.g[A0][0];
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+                        Addr(c.g[A2][0] as u32).sw(c, c.g[V0][0]);
+                        let t = true;
+                        Addr((c.g[A2][0] as u32).wrapping_add(0x4)).sw(c, c.g[V1][0]);
+                        if t {
+                            break 'b_409074;
+                        } else {
+                            break 'b_409044;
+                        }
+                    }
+                }
+                c.cycles += 12;
+                c.g[A0][0] = Addr((c.g[A2][0] as u32).wrapping_add(0x4)).lw(c);
+                c.g[V0][0] = 0x10000000;
+                c.g[V0][0] = c.g[V0][0] | 0xb410;
+                Addr(c.g[V0][0] as u32).sw(c, c.g[A0][0]);
+                c.g[V1][0] = c.g[V1][0] | 0xb420;
+                c.g[V0][0] = 0x10000000;
+                c.g[A1][0] = 0x101;
+                c.g[A0][0] = Addr(c.g[A2][0] as u32).lw(c);
+                c.g[V0][0] = c.g[V0][0] | 0xb400;
+                Addr(c.g[V1][0] as u32).sw(c, c.g[A0][0]);
+                Addr(c.g[V0][0] as u32).sw(c, c.g[A1][0]);
+                Addr(c.g[A2][0] as u32).sw(c, 0u64);
+                break 'b_409074;
+            }
+            c.cycles += 4;
+            c.ei();
+            let t = c.g[RA][0] as u32;
+            c.g[V0][0] = 0u64;
+            c.pc = t;
+            return Ok(());
+        } else {
+            c.cycles += 4;
+            c.ei();
+            let t = c.g[RA][0] as u32;
+            c.g[V0][0] = 0x1;
+            c.pc = t;
+            return Ok(());
+        }
+    })
+}
+
+/// `libmpeg_SetOutputDone` (0x00408508): mark the output buffer done. When
+/// the in-flight marker (`A0 + 0x8`) already reads 2 the buffer is done and
+/// the function returns at once; otherwise it stores the channel's pending
+/// count (`+ 0x118`) into `+ 0xac`, raises the marker to 2, and reports the
+/// frame complete (`+ 0x820`). A resume after an unwound callee or event
+/// runs the generated body.
+#[allow(clippy::too_many_lines)]
+pub fn libmpeg_set_output_done(c: &mut Cpu) {
+    if c.pc != 0x00408508 {
+        return ee::s15::f_00408508__generated(c);
+    }
+    guest(c, |c| {
+        'b_408528: {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x8).lw(c);
+            c.g[V1][0] = 0x2;
+            let t = c.g[V0][0] == c.g[V1][0];
+            c.g[V0][0] = 0x1;
+            if t {
+                break 'b_408528;
+            } else {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(c.g[A0][0] as u32).off(0x118).lw(c);
+                Addr(c.g[A0][0] as u32).off(0x8).sw(c, c.g[V1][0]);
+                Addr(c.g[A0][0] as u32).off(0xac).sw(c, c.g[V0][0]);
+                c.g[V0][0] = 0x1;
+                break 'b_408528;
+            }
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        Addr(c.g[A0][0] as u32).off(0x820).sw(c, c.g[V0][0]);
+        c.pc = t;
+        return Ok(());
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10488,7 +12737,9 @@ pub(crate) mod tests {
     use crate::difftest::check_paths;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
+    use crate::difftest::require_paths;
     use crate::game::misc::tests::event_at;
     use crate::game::misc::tests::require_heads;
     use crate::game::seg::seg_2fe810::REM_PIO2F_TWO_OVER_PI;
@@ -10880,7 +13131,10 @@ pub(crate) mod tests {
     }
 
     use crate::difftest::fakes;
+    use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
     use std::ptr::addr_of_mut;
     use std::sync::atomic::AtomicUsize;
 
@@ -14460,5 +16714,5825 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
             },
         );
+    }
+
+    /// Prediction-store fixture, steered by six seed bits: bit 0 the
+    /// macroblock slot `k` (`a1`; the body stores it at `sp` and scales it
+    /// by 0x140 with three-operand `mult`s, whose destinations are the slot
+    /// offset, so both slots are mapped state), bit 1 the `+0x6c8` gate,
+    /// bits 2-3 the store-loop count at `+0x6bc` (-1, 1, 2, 3), bit 4
+    /// `+0x6c0` and bit 5 `+0x6cc` (the `Error` report and the two copy
+    /// loops). The loop's routine slots (`+0x5b8`/`+0x5c8` per iteration)
+    /// hold fake addresses, so every call logs its registers (the `a0`
+    /// block pointers included); `fakes::machine` unwinds at a random call
+    /// on a third of the seeds. Source, prediction and destination buffers
+    /// are mapped and prefilled; the game image supplies the MMI constant
+    /// at 0x405b30.
+    pub(crate) fn mpeg2_pred_store_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x0040_4b78, 6);
+        elf_image(c);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let mut o = 0u32;
+        while o < 0x400 {
+            c.bus.write32(
+                state + o * 4,
+                (0x4d4d_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5))) & 0x7fff_ffff,
+            );
+            o += 1;
+        }
+        let k = seed & 1;
+        let at = state + k * 0x140;
+        c.bus
+            .write32(at + 0x6c8, if seed >> 1 & 1 == 0 { 0 } else { 0x06c8 });
+        c.bus
+            .write32(at + 0x6bc, [u32::MAX, 1, 2, 3][(seed >> 2 & 3) as usize]);
+        c.bus
+            .write32(at + 0x6c0, if seed >> 4 & 1 == 0 { 0 } else { 0x06c0 });
+        c.bus
+            .write32(at + 0x6cc, if seed >> 5 & 1 == 0 { 0 } else { 0x06cc });
+        let mut i = 0u32;
+        while i < 3 {
+            c.bus.write32(at + 0x5b8 + 4 * i, FAKE + 0x20 * i);
+            c.bus.write32(at + 0x5c8 + 4 * i, FAKE + 0x20 * i + 0x10);
+            i += 1;
+        }
+        c.bus.write32(state + 0x858, 0);
+        c.bus.write32(state + 0x81c, DATA + 0x6000);
+        c.bus.write32(at + 0x594, DATA + 0x6400);
+        c.bus.write32(at + 0x6b8, DATA + 0x6800);
+        let mut o = 0u32;
+        while o < 0x300 {
+            c.bus.write32(
+                DATA + 0x6000 + o * 4,
+                0x0770_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0xc2b2_ae35)),
+            );
+            o += 1;
+        }
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = k as u64;
+        c.g[A2][0] = seed as u64 ^ 0x8765_4321;
+        c.g[A3][0] = seed as u64 ^ 0x2222_2222;
+        c.g[T0][0] = seed as u64 ^ 0x1111_1111;
+        c.g[T1][0] = seed as u64 ^ 0x3333_3333;
+        c.g[T2][0] = seed as u64 ^ 0x4444_4444;
+        c.g[T3][0] = seed as u64 ^ 0x5555_5555;
+        c.pc = 0x0040_4b78;
+    }
+
+    #[test]
+    fn libmpeg_add_pred_and_store_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_pred_store_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404b78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_add_pred_and_store,
+            192,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00404b78__generated,
+            64,
+            &[
+                59, 61, 99, 102, 135, 356, 358, 360, 362, 401, 403, 405, 407, 442, 444, 472, 476,
+                478, 479, 481, 517, 521, 552, 1171, 1511, 1555, 1593, 1630,
+            ],
+            setup,
+        );
+    }
+
+    /// [`schedule`] with the deadline `at` cycles into the run; on the
+    /// unwind seeds a VBlank is due by then too, so the first back edge
+    /// past `at` unwinds (the fixtures' own VBlank would come much later).
+    pub(crate) fn libmpeg_events_at(c: &mut Cpu, seed: u32, entry: u32, at: u64) -> Events {
+        let mut r = Rng(entry as u64 ^ seed as u64);
+        let mode = schedule(c, &mut r, seed, entry);
+        if mode != Events::Off {
+            c.next_event = c.cycles + at;
+        }
+        if mode == Events::Unwind {
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = c.next_event;
+        }
+        mode
+    }
+
+    driven!(gen_add_pred_and_store, ee::s15::f_00404b78__generated);
+    driven!(
+        hand_add_pred_and_store,
+        crate::game::seg::seg_2fe810::libmpeg_add_pred_and_store
+    );
+
+    /// Live events at the store loop's back edge (0x404bf0, counts 2 and
+    /// 3) and in the two MMI loops (0x405a98, 0x405af8): the deadline
+    /// walks 0-630 cycles into the run.
+    #[test]
+    fn libmpeg_add_pred_and_store_events() {
+        check_events(
+            gen_add_pred_and_store,
+            hand_add_pred_and_store,
+            384,
+            &|c, seed| {
+                // `+0x6cc` stays 0, so no `Error` report: its printf loops
+                // sit two calls down, past what `drive` resumes.
+                mpeg2_pred_store_setup(c, seed / 3 % 64 & !0x20);
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                let at = 90 * (seed / 192 * 4 + seed / 3 % 4) as u64;
+                libmpeg_events_at(c, seed, 0x0040_4b78, at)
+            },
+        );
+    }
+
+    /// Direct-entry test: resume at an MMI loop head goes through the
+    /// guard into the generated `__entries` twin on both sides. `T4`
+    /// bounds the loop; the source/destination buffers are mapped and
+    /// prefilled so the written quadwords are checked, not just registers.
+    /// The store-loop head is covered by the main test (it runs the loop);
+    /// entering it bare would read an unopened frame.
+    #[test]
+    fn libmpeg_add_pred_and_store_resume_heads() {
+        for head in [0x0040_5a98u32, 0x0040_5af8] {
+            let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+                mpeg2_pred_store_setup(c, seed);
+                let src1 = DATA + 0x6000;
+                let src2 = DATA + 0x6100;
+                let dst = DATA + 0x6200;
+                let tab = DATA + 0x6300;
+                let mut o = 0u32;
+                while o < 0x10 {
+                    c.bus.write32(
+                        src1 + o * 4,
+                        0x1111_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5)),
+                    );
+                    c.bus.write32(
+                        src2 + o * 4,
+                        0x2222_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x85eb_ca6b)),
+                    );
+                    c.bus.write32(tab + o * 4, 0x0b0b_0000 | (o & 0xffff));
+                    o += 1;
+                }
+                let mut o = 0u32;
+                while o < 0x20 {
+                    c.bus.write32(dst + o * 4, 0);
+                    o += 1;
+                }
+                c.g[T4][0] = 2;
+                c.g[T2][0] = tab as u64;
+                c.g[A1][0] = src1 as u64;
+                c.g[A2][0] = src2 as u64;
+                c.g[A0][0] = (dst + 0x10) as u64;
+                c.g[RA][0] = DATA as u64;
+                c.pc = head;
+            };
+            check_lohi(
+                ee::s15::f_00404b78__generated,
+                crate::game::seg::seg_2fe810::libmpeg_add_pred_and_store,
+                8,
+                setup,
+            );
+        }
+    }
+
+    /// Decoder-state fixture for the prediction setup: macroblock state at
+    /// `DATA + 0x4000`, reference state at `DATA + 0x5000`, stack slots for
+    /// the shift (T5), source (S2) and field (S6) words steered by seed.
+    pub(crate) fn mpeg2_pred_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0040_4758 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let refr = DATA + 0x5000;
+        let mut o = 0u32;
+        while o < 0x900 {
+            c.bus.write32(
+                state + o,
+                0x3c3c_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5)),
+            );
+            o += 4;
+        }
+        let mut o = 0u32;
+        while o < 0x100 {
+            c.bus.write32(
+                refr + o,
+                0x2b2b_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x85eb_ca6b)),
+            );
+            o += 4;
+        }
+        let sp = c.g[SP][0] as u32;
+        // Caller-stack words the body reads: post-open SP is sp-0xb0, so
+        // SP+0xb0/+0xb8/+0xc0 land at incoming sp+0x0/+0x8/+0x10.
+        c.bus.write32(sp + 0x10, if seed % 2 == 0 { 0 } else { 3 });
+        c.bus
+            .write32(sp + 0x8, 0x1000_0000 | ((seed / 2 % 2) as u32));
+        c.bus
+            .write32(sp + 0x0, 0x2000_0000 | ((seed / 4 % 2) as u32));
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = refr as u64;
+        c.g[A2][0] = seed as u64 ^ 0x1234_5678;
+        c.g[A3][0] = seed as u64 ^ 0x8765_4321;
+        c.g[T0][0] = seed as u64 ^ 0x1111_1111;
+        c.g[T1][0] = seed as u64 ^ 0x2222_2222;
+        c.g[T2][0] = seed as u64 ^ 0x3333_3333;
+        c.g[T3][0] = seed as u64 ^ 0x4444_4444;
+        c.pc = 0x0040_4758;
+    }
+
+    /// Leave ECD set in IPU_CTRL: a VDEC (macroblock-address table) over
+    /// the bits `0000 0000 1...`, which are neither a valid code nor a
+    /// start code (all-zero bits would read as one and set SCD).
+    pub(crate) fn ipu_raise_ecd(c: &mut Cpu) {
+        c.bus.write128(0x1000_7010, !0u128 << 16 | 0x8000);
+        c.bus.write32(0x1000_2000, 0x3000_0000);
+    }
+
+    /// Point the decoder's `+0x858` at a callback object whose table
+    /// (`+0x40`) holds fake entries for callback types 0-3.
+    pub(crate) fn mpeg2_callbacks(c: &mut Cpu, state: u32) {
+        let mp = DATA + 0x5000;
+        let table = DATA + 0x5100;
+        c.bus.write32(state + 0x858, mp);
+        c.bus.write32(mp + 0x40, table);
+        let mut t = 0u32;
+        while t < 4 {
+            c.bus.write32(table + t * 8 + 0xc, FAKE + 0x10 * t);
+            c.bus.write32(table + t * 8 + 0x10, 0x0cb0_0000 | t);
+            t += 1;
+        }
+    }
+
+    /// Decoder-state fixture for one macroblock: state work area at
+    /// `DATA + 0x4000` (0x1000 bytes, covers the `+0x848` reads), reference
+    /// state at `DATA + 0x6000`, `+0x858` NULled so the `Error` leg takes
+    /// its fast path (house precedent: deeper legs need a live stream).
+    pub(crate) fn mpeg2_mb_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0040_65d0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let refr = DATA + 0x6000;
+        let mut o = 0u32;
+        while o < 0x400 {
+            c.bus.write32(
+                state + o * 4,
+                // Bit 31 masked: `IpuVdec` spins while `ld(state)` is
+                // negative, so every seed must keep the sign bit clear.
+                (0x4d4d_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5))) & 0x7fff_ffff,
+            );
+            o += 1;
+        }
+        c.bus.write32(state + 0x858, 0);
+        // `+0x150` feeds the IPU_CTRL handshake word (`A0 << 24`); a fixed
+        // known-benign value keeps `IpuVdec` off its all-night FIFO wait
+        // for every seed (a live stream would be needed to steer decode).
+        c.bus.write32(state + 0x150, 0x4d4d_0150);
+        let mut o = 0u32;
+        while o < 0x100 {
+            c.bus.write32(
+                refr + o * 4,
+                0x2b2b_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x85eb_ca6b)),
+            );
+            o += 1;
+        }
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = refr as u64;
+        c.g[A2][0] = seed as u64 ^ 0x1234_5678;
+        c.g[A3][0] = seed as u64 ^ 0x8765_4321;
+        c.g[T0][0] = seed as u64 ^ 0x1111_1111;
+        c.g[T1][0] = seed as u64 ^ 0x2222_2222;
+        c.g[T2][0] = seed as u64 ^ 0x3333_3333;
+        c.g[T3][0] = seed as u64 ^ 0x4444_4444;
+        c.pc = 0x0040_65d0;
+    }
+
+    /// Hand `bytes` to the IPU through toIPU DMA (ch4, normal mode, from
+    /// `buf`): the IPU pulls quadwords as its commands need them.
+    pub(crate) fn ipu_feed(c: &mut Cpu, buf: u32, bytes: &[u8]) {
+        for (i, b) in bytes.iter().enumerate() {
+            c.bus.write8(buf + i as u32, *b);
+        }
+        c.bus.write32(0x1000_b410, buf);
+        c.bus
+            .write32(0x1000_b420, (bytes.len() as u32).div_ceil(16));
+        c.bus.write32(0x1000_b400, 0x101);
+    }
+
+    /// Decoder-state fixture for one macroblock, decoded by the real IPU:
+    /// 512 stream bytes fed over toIPU DMA, the first byte steering the
+    /// macroblock-type code (`seed % 12`) under the picture coding type at
+    /// `+0x150` (I/P/B, `seed / 12 % 3`, which the body writes into
+    /// IPU_CTRL's PCT field), the rest seed-hashed (motion and DCT types,
+    /// quantiser, motion codes, block data). The picture structure
+    /// `+0x174`, `+0x17c` (frame prediction), `+0x180` (concealment
+    /// vectors), `+0x848`, `+0x11c` (decode error) and the `+0x810` slot
+    /// come from further seed digits. State at `DATA + 0x4000` (the
+    /// `+0x858` callback NULled), the output words at `DATA + 0x6000..`
+    /// and the vector blocks prefilled non-zero; the block output buffers
+    /// (`+0x594`, `+0x6d4`) are mapped.
+    pub(crate) fn mpeg2_mb_stream_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0040_65d0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let mut o = 0u32;
+        while o < 0x440 {
+            c.bus.write32(
+                state + o * 4,
+                (0x4d4d_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5))) & 0x7fff_ffff,
+            );
+            o += 1;
+        }
+        let h = |k: u32| (seed.wrapping_mul(0x85eb_ca6b) ^ k.wrapping_mul(0xc2b2_ae35)) >> 7;
+        c.bus.write32(state + 0x858, 0);
+        c.bus.write32(state + 0x150, 1 + seed / 12 % 3);
+        c.bus
+            .write32(state + 0x174, [3, 1, 2][(seed / 36 % 3) as usize]);
+        c.bus.write32(state + 0x17c, h(1) & 1);
+        c.bus.write32(state + 0x180, h(2) & 1);
+        c.bus.write32(state + 0x848, h(3) & 1);
+        c.bus
+            .write32(state + 0x11c, if h(4) % 4 == 0 { 1 } else { 0 });
+        c.bus.write32(state + 0x810, h(5) & 1);
+        // f_code words (forward/backward x horizontal/vertical, two pairs):
+        // the motion-vector reads take `f_code - 1` bits.
+        let mut k = 0u32;
+        while k < 8 {
+            c.bus.write32(state + 0x154 + 4 * k, 1 + h(32 + k) % 3);
+            k += 1;
+        }
+        c.bus.write32(state + 0x594, DATA + 0x6800);
+        c.bus.write32(state + 0x6d4, DATA + 0x6800);
+        let mut o = 0u32;
+        while o < 0x40 {
+            c.bus.write32(
+                DATA + 0x6000 + o * 4,
+                0x0e0e_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x27d4_eb2f)),
+            );
+            o += 1;
+        }
+        let mut bytes = [0u8; 512];
+        bytes[0] = [
+            0x80, 0x40, 0x20, 0x10, 0x18, 0x08, 0x0c, 0x04, 0x06, 0x02, 0xc0, 0x60,
+        ][(seed % 12) as usize];
+        let mut k = 1usize;
+        while k < bytes.len() {
+            bytes[k] = (h(k as u32 + 16) >> 3) as u8;
+            k += 1;
+        }
+        ipu_feed(c, DATA + 0x8000, &bytes);
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = (DATA + 0x6000) as u64;
+        c.g[A2][0] = (DATA + 0x6010) as u64;
+        c.g[A3][0] = (DATA + 0x6020) as u64;
+        c.g[T0][0] = (DATA + 0x6040) as u64;
+        c.g[T1][0] = (DATA + 0x6030) as u64;
+        c.g[T2][0] = (DATA + 0x6080) as u64;
+        c.g[T3][0] = seed as u64 ^ 0x4444_4444;
+        c.pc = 0x0040_65d0;
+    }
+
+    /// The arms of `DecodeMacroblock` past the error exit, from the decoded
+    /// macroblock type `mb` (the word the body stores through `a1`) and the
+    /// planted `+0x174` (picture structure), `+0x17c` (frame prediction)
+    /// and `+0x180` (concealment vectors), with one total only seeds that
+    /// take the arm produce.
+    const MB_ARMS: [(&str, u64); 11] = [
+        ("IpuVdec == 0: the Error report (returns to 0x406668)", 184),
+        (
+            "mb & 0xc, not frame pred in a frame: GetBits(2) motion type (returns to 0x4066ac)",
+            776,
+        ),
+        (
+            "mb & 0xc, frame structure + frame pred: motion type 2 stored",
+            656,
+        ),
+        ("mb & 0xc == 0: the block at 0x4066b4", 360),
+        ("  mb & 1 == 0: A2 = +0x174, on to 0x4066e4", 284),
+        ("  intra, +0x180 == 0: V1 = 1, the +1 at 0x4066e0", 281),
+        (
+            "  intra, +0x180 != 0: A0 = 2, motion type 1 or 2 stored",
+            713,
+        ),
+        ("A2 != 3: field structure, the block at 0x40670c", 631),
+        ("A2 == 3: frame structure, the +7 block", 441),
+        (
+            "A2 == 3, +0x17c == 0: the DCT-type test (GetBits(1) returns to 0x406768)",
+            365,
+        ),
+        (
+            "A2 == 3, +0x17c != 0: DCT type skipped, the +1 at 0x406774",
+            728,
+        ),
+    ];
+
+    fn mb_arms(mb: u32, a2: u32, f: u32, cmv: u32) -> u32 {
+        if mb == 0 {
+            return 1;
+        }
+        let mut m = 0;
+        if mb & 0xc != 0 {
+            m |= if a2 != 3 || f == 0 { 1 << 1 } else { 1 << 2 };
+        } else {
+            m |= 1 << 3;
+            m |= if mb & 1 == 0 {
+                1 << 4
+            } else if cmv == 0 {
+                1 << 5
+            } else {
+                1 << 6
+            };
+        }
+        if a2 != 3 {
+            m |= 1 << 7;
+        } else {
+            m |= 1 << 8;
+            m |= if f == 0 { 1 << 9 } else { 1 << 10 };
+        }
+        m
+    }
+
+    /// The real-IPU fixture: every arm past the error exit is compared,
+    /// and each arm's total in [`MB_ARMS`] is taken, by seeds that take
+    /// that arm only.
+    #[test]
+    fn libmpeg_decode_macroblock_stream_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_mb_stream_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_004065d0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_macroblock,
+            432,
+            setup,
+        );
+        let mut seen: Vec<(u64, u32)> = Vec::new();
+        for seed in 0..432 {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let before = c.cycles;
+            crate::difftest::run_generated(&mut c, ee::s15::f_004065d0__generated);
+            let w = |c: &mut Cpu, a: u32| c.bus.read32(a);
+            let m = mb_arms(
+                w(&mut c, DATA + 0x6000),
+                w(&mut c, DATA + 0x4174),
+                w(&mut c, DATA + 0x417c),
+                w(&mut c, DATA + 0x4180),
+            );
+            seen.push((c.cycles - before, m));
+        }
+        for (i, (arm, total)) in MB_ARMS.iter().enumerate() {
+            let hits: Vec<u32> = seen.iter().filter(|s| s.0 == *total).map(|s| s.1).collect();
+            assert!(!hits.is_empty(), "{arm}: total {total} never taken");
+            assert!(
+                hits.iter().all(|m| m >> i & 1 != 0),
+                "{arm}: total {total} also taken off the arm"
+            );
+        }
+        let totals: Vec<u64> = MB_ARMS.iter().map(|a| a.1).collect();
+        require_paths(ee::s15::f_004065d0__generated, 432, &totals, setup);
+    }
+
+    /// Prediction fixture: macroblock state at `DATA + 0x4000` (0x1000
+    /// bytes, covers the `+0x810` reads; `+0x174` steers the direction
+    /// dispatch, `+0x150` the intra check, `+0x858` NULled for the fast
+    /// `Error` leg), reference buffers at `DATA + 0x6000`/`+0x6800`,
+    /// macroblock params at `+0x6400` and the forward-pointer block at
+    /// `+0x6500` (both seed-steered; the callee reads them through `S2`
+    /// and `FP`). `T0`/`A3` steer the direction gates directly.
+    pub(crate) fn mpeg2_form_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0040_4050 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let refr = DATA + 0x6000;
+        let refr2 = DATA + 0x6800;
+        let mb = DATA + 0x6400;
+        let fp = DATA + 0x6500;
+        let mut o = 0u32;
+        while o < 0x400 {
+            c.bus.write32(
+                state + o * 4,
+                (0x4d4d_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5))) & 0x7fff_ffff,
+            );
+            o += 1;
+        }
+        c.bus.write32(state + 0x858, 0);
+        let mut o = 0u32;
+        while o < 0x100 {
+            c.bus.write32(
+                refr + o * 4,
+                0x2b2b_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x85eb_ca6b)),
+            );
+            c.bus.write32(
+                refr2 + o * 4,
+                0x3c3c_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0xc2b2_ae35)),
+            );
+            o += 1;
+        }
+        let mut o = 0u32;
+        while o < 8 {
+            c.bus.write32(
+                mb + o * 4,
+                0x1100_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x5bd1_e995)),
+            );
+            o += 1;
+        }
+        let mut o = 0u32;
+        while o < 4 {
+            c.bus.write32(
+                fp + o * 4,
+                0x0770_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x27d4_eb2f)),
+            );
+            o += 1;
+        }
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = refr as u64;
+        c.g[A2][0] = refr2 as u64;
+        c.g[A3][0] = seed as u64 ^ 0x8765_4321;
+        c.g[T0][0] = seed as u64 ^ 0x1111_1111;
+        c.g[T1][0] = mb as u64;
+        c.g[T2][0] = fp as u64;
+        c.g[T3][0] = seed as u64 ^ 0x4444_4444;
+        c.pc = 0x0040_4050;
+    }
+
+    #[test]
+    fn libmpeg_form_predictions_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_form_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404050__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_form_predictions,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00404050__generated,
+            64,
+            &[46, 266, 283, 503],
+            setup,
+        );
+    }
+
+    #[test]
+    fn libmpeg_decode_macroblock_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_mb_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_004065d0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_macroblock,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_004065d0__generated, 64, &[187], setup);
+    }
+
+    #[test]
+    fn libmpeg_setup_pred_block_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_pred_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404758__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_setup_pred_block,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00404758__generated,
+            64,
+            &[219, 220, 222, 223],
+            setup,
+        );
+    }
+
+    /// Mailbox of the [`bdec_callback`] fake: callbacks left before the
+    /// wait's exit condition is planted, then the exit kind (0: the
+    /// fromIPU transfer drains, D3_QWC 0; 1: the IPU reports ECD).
+    pub(crate) const BDEC_CB: u32 = DATA + 0x7f00;
+
+    /// The `miss` hook of the Wait-BDEC fixture: the decoder's callbacks
+    /// (the `+0x858` table's fake entries) log like `fakes::fake_call`, and
+    /// the n-th one plants the exit condition the poll loop waits for.
+    pub(crate) fn bdec_callback(c: &mut Cpu, target: u32) {
+        let left = c.bus.read32(BDEC_CB);
+        if left != 0 {
+            if left == 1 {
+                if c.bus.read32(BDEC_CB + 4) == 0 {
+                    c.bus.write32(0x1000_b020, 0);
+                } else {
+                    ipu_raise_ecd(c);
+                }
+            }
+            c.bus.write32(BDEC_CB, left - 1);
+        }
+        fake_call(c, target);
+    }
+
+    /// Wait-BDEC fixture: decoder state at `DATA + 0x4000` whose `+0x858`
+    /// points at a callback object (`+0x40`: table of fake entries for the
+    /// no-data, error and reset callbacks). The status words are planted
+    /// per seed: D3_QWC (0x1000b020) 0 or pending (`seed % 3`), ECD already
+    /// set (`seed / 3 % 2`), the callbacks before the wait ends (1-3,
+    /// `seed / 6 % 3`) and how it ends (`seed / 18 % 2`), and `+0x10a0`
+    /// (`seed / 36 % 2`; zero runs the IPU_TOP/BP half). `fakes::machine`
+    /// unwinds at a random callback on a third of the seeds.
+    pub(crate) fn mpeg2_bdec_setup(c: &mut Cpu, seed: u32) {
+        machine(c, seed, 0x0040_5b70, 4);
+        c.hooks.miss = bdec_callback;
+        c.hooks.jump_out = |c, pc, _, _| bdec_callback(c, pc);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let mut o = 0u32;
+        while o < 0x440 {
+            c.bus.write32(
+                state + o * 4,
+                (0x4d4d_0000 | (o & 0xffff) ^ (seed.wrapping_mul(0x1f3b_52d5))) & 0x7fff_ffff,
+            );
+            o += 1;
+        }
+        mpeg2_callbacks(c, state);
+        c.bus.write32(
+            state + 0x10a0,
+            if seed / 36 % 2 == 0 {
+                0
+            } else {
+                0x0bde_c000 | (seed & 0xffff)
+            },
+        );
+        c.bus
+            .write32(0x1000_b020, [0, 1, 0x20][(seed % 3) as usize]);
+        if seed / 3 % 2 == 1 {
+            ipu_raise_ecd(c);
+        }
+        c.bus.write32(BDEC_CB, 1 + seed / 6 % 3);
+        c.bus.write32(BDEC_CB + 4, seed / 18 % 2);
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = seed as u64 ^ 0x1234_5678;
+        c.g[A2][0] = seed as u64 ^ 0x8765_4321;
+        c.g[A3][0] = seed as u64 ^ 0x2222_2222;
+        c.g[T0][0] = seed as u64 ^ 0x1111_1111;
+        c.g[T1][0] = seed as u64 ^ 0x3333_3333;
+        c.g[T2][0] = seed as u64 ^ 0x4444_4444;
+        c.g[T3][0] = seed as u64 ^ 0x5555_5555;
+        c.pc = 0x0040_5b70;
+    }
+
+    #[test]
+    fn libmpeg_wait_bdec_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_bdec_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00405b70__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_wait_bdec,
+            216,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00405b70__generated,
+            216,
+            &[
+                74, 87, 95, 99, 127, 128, 137, 138, 148, 153, 163, 168, 170, 189, 191, 193, 194,
+                197, 210, 218, 219, 223, 231, 236, 260, 274, 311, 354,
+            ],
+            setup,
+        );
+    }
+
+    driven!(gen_wait_bdec, ee::s15::f_00405b70__generated);
+    driven!(
+        hand_wait_bdec,
+        crate::game::seg::seg_2fe810::lib_mpeg_wait_bdec
+    );
+
+    /// Live events at the poll loop's back edge (0x405bf0): the wait runs
+    /// 1-3 passes and the deadline walks across them.
+    #[test]
+    fn libmpeg_wait_bdec_events() {
+        check_events(gen_wait_bdec, hand_wait_bdec, 216, &|c, seed| {
+            mpeg2_bdec_setup(c, seed / 3 % 72);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            libmpeg_events_at(c, seed, 0x0040_5b70, 40 * (seed / 3 % 5) as u64)
+        });
+    }
+
+    /// Raw-copy fixture: sys object at `DATA + 0x4000` (`+0xd8` masked into
+    /// the channel select), copy params at `DATA + 0x6000` (`+0xc` is the
+    /// bounded copy count, steered -1..2; `+0x10` feeds the mults), macro
+    /// state at `DATA + 0x6400` (`+0x174` steers the direction arm,
+    /// `+0xe0` the alternate arm).
+    pub(crate) fn mpeg2_raw_setup(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x0040_8278 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let sys = DATA + 0x4000;
+        let prm = DATA + 0x6000;
+        let mb = DATA + 0x6400;
+        c.bus.write32(sys + 0xd8, 0x00ff_0000 | (seed & 0xffff));
+        c.bus.write32(prm + 0xc, (seed % 4).wrapping_sub(1));
+        c.bus.write32(
+            prm + 0x10,
+            0x0010_0000 | (seed.wrapping_mul(0x1f3b_52d5) & 0xffff),
+        );
+        c.bus.write32(mb + 0x174, (seed >> 2) & 3);
+        c.bus
+            .write32(mb + 0xe0, if seed & 1 == 0 { 0 } else { 0x0200_0000 });
+        c.bus.write32(
+            mb + 0x10,
+            0x0020_0000 | (seed.wrapping_mul(0x85eb_ca6b) & 0xffff),
+        );
+        c.bus.write32(
+            mb + 0x14,
+            0x0030_0000 | (seed.wrapping_mul(0xc2b2_ae35) & 0xffff),
+        );
+        c.bus.write32(
+            mb + 0x18,
+            0x0040_0000 | (seed.wrapping_mul(0x5bd1_e995) & 0xffff),
+        );
+        c.bus.write32(
+            mb + 0x1c,
+            0x0050_0000 | (seed.wrapping_mul(0x27d4_eb2f) & 0xffff),
+        );
+        c.g[A0][0] = sys as u64;
+        c.g[A1][0] = prm as u64;
+        c.g[A2][0] = mb as u64;
+        c.g[A3][0] = seed as u64 ^ 0x8765_4321;
+        c.pc = 0x0040_8278;
+    }
+
+    #[test]
+    fn libmpeg_copy_output_raw_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_raw_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00408278__generated,
+            crate::game::seg::seg_2fe810::libmpeg_copy_output_raw,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_00408278__generated, 64, &[70, 156, 241], setup);
+    }
+
+    driven!(gen_copy_output_raw, ee::s15::f_00408278__generated);
+    driven!(
+        hand_copy_output_raw,
+        crate::game::seg::seg_2fe810::libmpeg_copy_output_raw
+    );
+
+    /// Live events at the copy loops' back edges (0x408360 per output
+    /// block, 0x408370 per row pair; the copy count at `+0xc` is 1 or 2
+    /// here). The three SPR-DMA waits (0x4083d0, 0x408448, 0x408470) exit
+    /// on their first poll: the emulator runs an SPR transfer to completion
+    /// when its CHCR is written, so STR and D9_QWC already read 0.
+    #[test]
+    fn libmpeg_copy_output_raw_events() {
+        check_events(gen_copy_output_raw, hand_copy_output_raw, 96, &|c, seed| {
+            mpeg2_raw_setup(c, (seed / 3 % 16) | 2);
+            let at = 30 * (seed / 48 % 2 * 4 + seed / 3 % 4) as u64;
+            libmpeg_events_at(c, seed, 0x0040_8278, at)
+        });
+    }
+
+    /// [`check_lohi`], then the listed hardware words must match too: the
+    /// DMAC and IPU registers the bodies write sit outside RAM, so the
+    /// machine comparison never sees them.
+    pub(crate) fn check_hw(
+        generated: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+        regs: &[u32],
+    ) {
+        check_lohi(generated, hand, seeds, setup);
+        for seed in 0..seeds {
+            let mut a = crate::difftest::fresh();
+            let mut b = crate::difftest::fresh();
+            setup(&mut a, seed);
+            setup(&mut b, seed);
+            crate::difftest::run_generated(&mut a, generated);
+            hand(&mut b);
+            for &r in regs {
+                let (x, y) = (a.bus.read32(r), b.bus.read32(r));
+                assert_eq!(x, y, "seed {seed}: hardware word {r:#x}");
+            }
+        }
+    }
+
+    /// Distinct words at guest address 0 (bit 8 set, the busy bit the DMA
+    /// polls test): a hardware address that lost its high half reads or
+    /// writes here instead, which the RAM comparison then sees, and a poll
+    /// of it never ends.
+    pub(crate) fn mark_page_zero(c: &mut Cpu) {
+        let mut o = 0u32;
+        while o < 0x40 {
+            c.bus.write32(o, 0x0bad_0100 | o);
+            o += 4;
+        }
+    }
+
+    /// The DMAC and IPU words the decoder's waits and copies write.
+    pub(crate) const LIBMPEG_HW: [u32; 13] = [
+        0x1000_f520, // D_ENABLER
+        0x1000_b000, // D3_CHCR (fromIPU)
+        0x1000_b020, // D3_QWC
+        0x1000_b400, // D4_CHCR (toIPU)
+        0x1000_b420, // D4_QWC
+        0x1000_2010, // IPU_CTRL
+        0x1000_d000, // D8_CHCR (fromSPR)
+        0x1000_d010, // D8_MADR
+        0x1000_d020, // D8_QWC
+        0x1000_d080, // D8_SADR
+        0x1000_d400, // D9_CHCR (toSPR)
+        0x1000_d410, // D9_MADR
+        0x1000_d420, // D9_QWC
+    ];
+
+    /// The Wait-BDEC fixture with the channel and enable words read back:
+    /// both halves write D_ENABLE (suspend set, then cleared from a fresh
+    /// read), clear the IPU channels and their counts, and reset the IPU.
+    #[test]
+    fn libmpeg_wait_bdec_hw_matches() {
+        check_hw(
+            ee::s15::f_00405b70__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_wait_bdec,
+            216,
+            &|c, seed| {
+                mpeg2_bdec_setup(c, seed);
+                mark_page_zero(c);
+            },
+            &LIBMPEG_HW,
+        );
+    }
+
+    /// Raw-copy fixture over real buffers: the copy params' source word
+    /// (`+0x0`) and the sys object's destination (`+0xd8`) point at
+    /// prefilled picture and output buffers with junk in the masked high
+    /// nibble, the width (`+0x10`, 1-2) and row count (`+0xc`, 0-2) are
+    /// small, and the sys words `+0x174` (frame structure 3 or a field),
+    /// `+0xe0` (field offset 0, 0x20, 0x40) and `+0xe4` (output stride
+    /// 1-2) steer the three set-up arms and the second field pass. The
+    /// copies go through the scratchpad DMA channels, so the destination
+    /// rows are what the RAM comparison checks.
+    pub(crate) fn mpeg2_raw_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_raw_setup(c, seed);
+        mark_page_zero(c);
+        let sys = DATA + 0x4000;
+        let prm = DATA + 0x6000;
+        let src = DATA + 0x1_0000;
+        let dst = DATA + 0x2_0000;
+        let mut o = 0u32;
+        while o < 0x1000 {
+            c.bus.write32(
+                src + o * 4,
+                0x5c00_0000 | o ^ seed.wrapping_mul(0x9e37_79b9),
+            );
+            c.bus.write32(
+                dst + o * 4,
+                0x0d00_0000 | o ^ seed.wrapping_mul(0x85eb_ca6b),
+            );
+            o += 1;
+        }
+        c.bus.write32(prm, src | 0xf000_0000);
+        c.bus.write32(sys + 0xd8, dst | 0x7000_0000);
+        c.bus.write32(sys + 0x174, [3, 1, 2][(seed % 3) as usize]);
+        c.bus
+            .write32(sys + 0xe0, [0, 0x20, 0x40][(seed / 3 % 3) as usize]);
+        c.bus.write32(sys + 0xe4, 1 + seed / 9 % 2);
+        c.bus.write32(prm + 0xc, seed / 18 % 3);
+        c.bus.write32(prm + 0x10, 1 + seed / 54 % 2);
+    }
+
+    #[test]
+    fn libmpeg_copy_output_raw_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_raw_live_setup(c, seed);
+        };
+        check_hw(
+            ee::s15::f_00408278__generated,
+            crate::game::seg::seg_2fe810::libmpeg_copy_output_raw,
+            108,
+            setup,
+            &LIBMPEG_HW,
+        );
+        // The copies really move rows: some destination word changes.
+        let mut moved = false;
+        for seed in [18 + 1, 36 + 4, 54 + 18 + 7] {
+            let mut c = crate::difftest::fresh();
+            setup(&mut c, seed);
+            let before = c.bus.read32(DATA + 0x2_0000);
+            crate::difftest::run_generated(&mut c, ee::s15::f_00408278__generated);
+            moved |= c.bus.read32(DATA + 0x2_0000) != before;
+        }
+        assert!(moved, "no seed copied a row");
+    }
+
+    /// Prediction-block fixture in the decoder's own ranges, as
+    /// `FormPredictions` calls it: block height 16 or 8 (`t1`), field
+    /// shift 0/1 (stack `+0x10`), small signed motion vectors (stack `+0x0`
+    /// x, `+0x8` y, odd and negative ones included, so the round-to-zero
+    /// halvings matter), the table select (stack `+0x18`, 0/1), the
+    /// direction and parity args (`a2`, `t0`, 0/1), small block positions
+    /// (`a3`, `t2`, `t3`), slot 0 (`+0x810`) with 0-2 blocks already queued
+    /// (`+0x6bc`), and the game image for the two DMA-tag tables at
+    /// 0x453280 and 0x4532a0. The queued block records land inside the
+    /// state, so every field is compared.
+    pub(crate) fn mpeg2_pred_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_pred_setup(c, seed);
+        elf_image(c);
+        let state = DATA + 0x4000;
+        let h = |k: u32| seed.wrapping_mul(0x85eb_ca6b) ^ k.wrapping_mul(0xc2b2_ae35);
+        c.bus.write32(state + 0x810, 0);
+        c.bus.write32(state + 0x6bc, seed % 3);
+        let sp = c.g[SP][0] as u32;
+        c.bus.write32(sp + 0x10, seed / 3 % 2);
+        c.bus.write32(sp + 0x18, seed / 6 % 2);
+        c.bus.write32(sp, (h(1) >> 7) % 64 - 32);
+        c.bus.write32(sp + 0x8, (h(2) >> 9) % 64 - 32);
+        c.g[T1][0] = [16, 8][(seed / 12 % 2) as usize];
+        c.g[A2][0] = (h(3) >> 3 & 1) as u64;
+        c.g[T0][0] = (h(4) >> 5 & 1) as u64;
+        c.g[A3][0] = ((h(5) >> 4) % 45) as u64;
+        c.g[T2][0] = ((h(6) >> 6) % 0x2d0) as u64;
+        c.g[T3][0] = ((h(7) >> 8) % 0x1e0) as u64;
+    }
+
+    #[test]
+    fn libmpeg_setup_pred_block_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_pred_live_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404758__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_setup_pred_block,
+            384,
+            setup,
+        );
+    }
+
+    /// Prediction fixture in the decoder's own ranges: motion type 1-3
+    /// (`t0`), the macroblock-type direction bits 0x8/0x4 (`a3`, with the
+    /// other bits set too), picture structure and coding type 1-3
+    /// (`+0x174`, `+0x150`), small signed motion vectors at `t1` and
+    /// field-select words 0/1 at `t2`, small block positions (`a1`, `a2`),
+    /// slot 0 with nothing queued, the reference slots `+0x1b8..+0x1dc`
+    /// pointing at reference records with small fields, and the game
+    /// image for the prediction-block tables. `SetupPredBlock` (the real
+    /// body) queues each prediction inside the state, so the queued
+    /// records are compared.
+    pub(crate) fn mpeg2_form_live_setup(c: &mut Cpu, seed: u32) {
+        mpeg2_form_setup(c, seed);
+        elf_image(c);
+        let state = DATA + 0x4000;
+        let mb = DATA + 0x6400;
+        let fp = DATA + 0x6500;
+        let h = |k: u32| (seed.wrapping_mul(0x85eb_ca6b) ^ k.wrapping_mul(0xc2b2_ae35)) >> 7;
+        c.bus.write32(state + 0x810, 0);
+        c.bus.write32(state + 0x6bc, 0);
+        c.bus.write32(state + 0x174, 1 + seed / 3 % 3);
+        c.bus.write32(state + 0x150, 1 + seed / 9 % 3);
+        let mut k = 0u32;
+        while k < 10 {
+            let r = DATA + 0x6c00 + k * 0x20;
+            c.bus.write32(r, 0x20 + h(40 + k) % 0x40);
+            c.bus.write32(r + 0x10, 0x30 + h(50 + k) % 0x40);
+            c.bus.write32(state + 0x1b8 + 4 * k, r);
+            k += 1;
+        }
+        let mut o = 0u32;
+        while o < 8 {
+            c.bus.write32(mb + o * 4, h(o) % 64 - 32);
+            o += 1;
+        }
+        let mut o = 0u32;
+        while o < 4 {
+            c.bus.write32(fp + o * 4, h(20 + o) & 1);
+            o += 1;
+        }
+        c.g[T0][0] = (1 + seed % 3) as u64;
+        c.g[A3][0] = ([0x8, 0x4, 0xc, 0x0][(seed / 27 % 4) as usize] | 0x13) as u64;
+        c.g[A1][0] = (h(30) % 45 * 16) as u64;
+        c.g[A2][0] = (h(31) % 30 * 16) as u64;
+    }
+
+    #[test]
+    fn libmpeg_form_predictions_live_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            mpeg2_form_live_setup(c, seed);
+        };
+        check_lohi(
+            ee::s15::f_00404050__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_form_predictions,
+            432,
+            setup,
+        );
+    }
+
+    /// The real-IPU macroblock fixture with IPU_CTRL's decode-format bits
+    /// (intra-DC precision, alternate scan, intra VLC format, quantiser
+    /// scale type) preset from the seed: the body rewrites only the picture
+    /// coding type field and must keep the rest, which the IPU decode and
+    /// the IPU_CTRL readback then check.
+    #[test]
+    fn libmpeg_decode_macroblock_ctrl_matches() {
+        check_hw(
+            ee::s15::f_004065d0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_macroblock,
+            432,
+            &|c, seed| {
+                mpeg2_mb_stream_setup(c, seed);
+                let bits = (seed.wrapping_mul(0x27d4_eb2f) >> 11) & 0xf3;
+                c.bus.write32(0x1000_2010, bits << 16);
+            },
+            &LIBMPEG_HW,
+        );
+    }
+
+    /// Gate of this module's callee fakes.
+    pub(crate) const FAKE_CTRL_A: u32 = DATA + 0xc000;
+
+    pub(crate) const FAKE_MAGIC: u32 = 0xFA9E_0001;
+
+    /// Scripted GetHeader list (8 entries) + cursor.
+    pub(crate) const FAKE_CODES: u32 = DATA + 0xc040;
+
+    pub(crate) const FAKE_CURSOR: u32 = DATA + 0xc0c0;
+
+    /// GetHeader fake: returns the next word of the fixture's scripted list.
+    pub(crate) static PREV_GET_HEADER: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_get_header(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_A) != FAKE_MAGIC {
+            return fakes::fall_back(c, &PREV_GET_HEADER, ee::s15::f_00407520__generated);
+        }
+        let n = c.bus.read32(FAKE_CURSOR);
+        c.bus.write32(FAKE_CURSOR, n + 1);
+        c.g[V0][0] = c.bus.read32(FAKE_CODES + 4 * (n & 7)) as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Fixed-cost fake: `V0 = tag`, 7 cycles, return.
+    macro_rules! fixed_fake {
+        ($fake:ident, $prev:ident, $generated:path, $tag:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_A) != FAKE_MAGIC {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = $tag;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+    fixed_fake!(fake_flush, PREV_FLUSH, ee::s15::f_00403240__generated, 1);
+
+    fixed_fake!(fake_decode, PREV_DECODE, ee::s15::f_00403098__generated, 2);
+
+    pub(crate) fn install_fakes() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407520),
+            fake_get_header,
+            &PREV_GET_HEADER,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00403240),
+            fake_flush,
+            &PREV_FLUSH,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00403098),
+            fake_decode,
+            &PREV_DECODE,
+        );
+    }
+
+    pub(crate) fn fake_on(c: &mut Cpu) {
+        install_fakes();
+        c.bus.write32(FAKE_CTRL_A, FAKE_MAGIC);
+    }
+
+    pub(crate) fn fake_on_2(c: &mut Cpu) {
+        install_fakes_9();
+        c.bus.write32(FAKE_CTRL_2, FAKE_MAGIC_2);
+    }
+
+    pub(crate) fn fake_on_3(c: &mut Cpu) {
+        install_fakes_10();
+        c.bus.write32(FAKE_CTRL_3, FAKE_MAGIC_3);
+    }
+
+    pub(crate) fn fake_on_4(c: &mut Cpu) {
+        install_fakes_4();
+        c.bus.write32(FAKE_CTRL_4, FAKE_MAGIC_4);
+    }
+
+    pub(crate) fn fake_on_5(c: &mut Cpu) {
+        install_fakes_5();
+        c.bus.write32(FAKE_CTRL_5, FAKE_MAGIC_5);
+    }
+
+    pub(crate) fn fake_on_6(c: &mut Cpu) {
+        install_fakes_6();
+        c.bus.write32(FAKE_CTRL_6, FAKE_MAGIC_6);
+    }
+
+    pub(crate) fn fake_on_7(c: &mut Cpu) {
+        install_fakes_7();
+        c.bus.write32(FAKE_CTRL_7, FAKE_MAGIC_7);
+    }
+
+    pub(crate) fn fake_on_8(c: &mut Cpu) {
+        install_fakes_8();
+        c.bus.write32(FAKE_CTRL_8, FAKE_MAGIC_8);
+    }
+
+    /// Picture-common fixture: the game image (jump table + message
+    /// strings), state at `DATA + 0x4000` with a null-table pointer at
+    /// `+ 0x40`, scripted `GetHeader` codes, and planted type words.
+    /// Classes steer the request-valid bit, the header results, the type
+    /// match and the callback index.
+    pub(crate) fn libmpeg_piccom_setup(c: &mut Cpu, seed: u32) {
+        elf_image(c);
+        let mut r = machine(c, seed, 0x0040_2e10, 0);
+        fake_on(c);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let table = DATA + 0x5000;
+        fill(c, &mut r, state, 0x240);
+        fill(c, &mut r, table, 0x100);
+        c.bus.write32(state + 0x40, table);
+        // Request-valid bit: nonzero low 6 bits take the Error arm.
+        if seed % 6 == 0 {
+            c.bus.write32(state + 0xd8, 0x00ff_0001);
+        } else {
+            c.bus.write32(state + 0xd8, 0x00ff_0000);
+        }
+        // Type words: equal on even classes (match exit), different after.
+        // Type words live on the TABLE (`S0 = lw(state + 0x40)`), not the
+        // state: equal on even classes (match exit) or different, with the
+        // callback index steering the re-scan.
+        if seed / 6 % 2 == 0 {
+            c.bus.write32(table + 0x174, 0x00aa_0000 | (seed & 0xffff));
+            c.bus.write32(table + 0xd4, 0x00aa_0000 | (seed & 0xffff));
+        } else {
+            c.bus.write32(table + 0x174, 0x00aa_0000 | (seed & 0xffff));
+            c.bus.write32(table + 0xd4, 0x00bb_0000 | (seed & 0xffff));
+        }
+        // Callback index: nonzero keeps the header loop scanning.
+        c.bus.write32(table + 0x848, (seed / 12 % 2) as u32);
+        // Pending-picture flag for the tail.
+        c.bus.write32(table + 0x820, (seed / 24 % 2) as u32);
+        // Script per class: s3zero / match / idx0 / idxloop / big / error.
+        let codes: &[u32] = match seed % 6 {
+            0 => &[0x100],
+            1 => &[0, 0],
+            2 => &[3, 0],
+            3 => &[3, 0],
+            4 => &[3, 0, 0],
+            _ => &[7, 0],
+        };
+        for (i, w) in codes.iter().enumerate() {
+            c.bus.write32(FAKE_CODES + 4 * i as u32, *w);
+        }
+        c.bus.write32(FAKE_CURSOR, 0);
+        c.g[A0][0] = state as u64;
+        c.pc = 0x0040_2e10;
+    }
+
+    #[test]
+    fn libmpeg_get_picture_common_matches_alt() {
+        check(
+            ee::s15::f_00402e10__generated,
+            crate::game::seg::seg_2fe810::libmpeg_get_picture_common,
+            64,
+            &libmpeg_piccom_setup,
+        );
+        require_paths(
+            ee::s15::f_00402e10__generated,
+            64,
+            &[114, 9325, 9330, 9340],
+            &libmpeg_piccom_setup,
+        );
+    }
+
+    driven!(gen_piccom, ee::s15::f_00402e10__generated);
+
+    driven!(
+        hand_piccom,
+        crate::game::seg::seg_2fe810::libmpeg_get_picture_common
+    );
+
+    /// Events on the header-scan loop (`0x00402e70`, the only head with a
+    /// poll on the exercised paths): the script runs two headers so the
+    /// natural schedule always meets the head.
+    #[test]
+    fn libmpeg_get_picture_common_events() {
+        check_events(gen_piccom, hand_piccom, 60, &|c, seed| {
+            elf_image(c);
+            let mut r = machine(c, seed, 0x0040_2e10, 0);
+            fake_on(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            let table = DATA + 0x5000;
+            fill(c, &mut r, state, 0x240);
+            fill(c, &mut r, table, 0x100);
+            c.bus.write32(state + 0x40, table);
+            c.bus.write32(state + 0xd8, 0x00ff_0000);
+            c.bus.write32(table + 0x174, 0x00cc_0000);
+            c.bus.write32(table + 0xd4, 0x00dd_0000);
+            c.bus.write32(table + 0x848, 1);
+            c.bus.write32(table + 0x820, 0);
+            c.bus.write32(FAKE_CODES, 3);
+            c.bus.write32(FAKE_CODES + 4, 0);
+            c.bus.write32(FAKE_CURSOR, 0);
+            c.g[A0][0] = state as u64;
+            schedule(c, &mut r, seed, 0x0040_2e10)
+        });
+    }
+
+    /// Gate of this test's callee fakes (magic-gated scripted lists).
+    pub(crate) const FAKE_CTRL_2: u32 = DATA + 0x9000;
+
+    pub(crate) const FAKE_MAGIC_2: u32 = 0xFA9E_0002;
+
+    /// Per-seed GetBits code list + cursor (GetHeader fixture).
+    pub(crate) const FAKE_CODES_2: u32 = DATA + 0x9040;
+
+    pub(crate) const FAKE_CURSOR_2: u32 = DATA + 0x9080;
+
+    /// Scripted ShowBits list + cursor (scan events fixture). Gated by
+    /// `FAKE_SHOW_ON` so the increment fixture keeps real `ShowBits`.
+    pub(crate) const FAKE_SHOWCODES: u32 = DATA + 0x90c0;
+
+    pub(crate) const FAKE_SHOWCURSOR: u32 = DATA + 0x90e0;
+
+    pub(crate) const FAKE_SHOW_ON: u32 = DATA + 0x90e4;
+
+    /// IpuVdec fake answer list + cursor (MAI fixture).
+    pub(crate) const FAKE_VDEC: u32 = DATA + 0x90a0;
+
+    /// Fixed-cost fake: `V0 = 1`, 7 cycles, return.
+    macro_rules! fixed_fake_2 {
+        ($fake:ident, $prev:ident, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_2) != FAKE_MAGIC_2 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = 1;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+    fixed_fake_2!(fake_seq_hdr, PREV_SEQ_HDR, ee::s15::f_00403620__generated);
+
+    fixed_fake_2!(fake_gop_hdr, PREV_GOP_HDR, ee::s15::f_00407ad0__generated);
+
+    fixed_fake_2!(fake_pic_hdr, PREV_PIC_HDR, ee::s15::f_00407630__generated);
+    fixed_fake_2!(fake_nsc, PREV_NSC, ee::s15::f_00407438__generated);
+
+    fixed_fake_2!(fake_extra, PREV_EXTRA, ee::s15::f_00407a10__generated);
+
+    /// GetBits fake: returns the next code of the fixture's list.
+    pub(crate) static PREV_GETBITS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_getbits(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_2) != FAKE_MAGIC_2 {
+            return fakes::fall_back(c, &PREV_GETBITS, ee::s15::f_004072e8__generated);
+        }
+        let n = c.bus.read32(FAKE_CURSOR_2);
+        c.bus.write32(FAKE_CURSOR_2, n + 1);
+        let code = c.bus.read32(FAKE_CODES_2 + 4 * (n & 7));
+        c.g[V0][0] = code as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// ShowBits fake: returns the next word of the fixture's scripted list,
+    /// but only when the scan events fixture arms it (`FAKE_SHOW_ON`).
+    /// Otherwise falls back to the real body (the increment fixture needs
+    /// real `ShowBits` against its crafted buffer).
+    pub(crate) static PREV_SHOWBITS: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_showbits(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_2) != FAKE_MAGIC_2 || c.bus.read32(FAKE_SHOW_ON) != FAKE_MAGIC_2 {
+            return fakes::fall_back(c, &PREV_SHOWBITS, ee::s15::f_004070f0__generated);
+        }
+        let n = c.bus.read32(FAKE_SHOWCURSOR);
+        c.bus.write32(FAKE_SHOWCURSOR, n + 1);
+        let v = c.bus.read32(FAKE_SHOWCODES + 4 * (n & 7));
+        c.g[V0][0] = v as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// IpuVdec fake: returns the next word of the fixture's answer list
+    /// (`FAKE_VDEC`), advancing a cursor, so multi-iteration loops can be
+    /// steered arm by arm and always terminated.
+    pub(crate) const FAKE_VCURSOR: u32 = DATA + 0x9090;
+
+    pub(crate) static PREV_VDEC: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_vdec(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_2) != FAKE_MAGIC_2 {
+            return fakes::fall_back(c, &PREV_VDEC, ee::s15::f_00406f78__generated);
+        }
+        let n = c.bus.read32(FAKE_VCURSOR);
+        c.bus.write32(FAKE_VCURSOR, n + 1);
+        let v = c.bus.read32(FAKE_VDEC + 4 * (n & 7));
+        c.g[V0][0] = v as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn install_fakes_9() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00403620),
+            fake_seq_hdr,
+            &PREV_SEQ_HDR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407AD0),
+            fake_gop_hdr,
+            &PREV_GOP_HDR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407630),
+            fake_pic_hdr,
+            &PREV_PIC_HDR,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407438),
+            fake_nsc,
+            &PREV_NSC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407A10),
+            fake_extra,
+            &PREV_EXTRA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004072E8),
+            fake_getbits,
+            &PREV_GETBITS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00406F78),
+            fake_vdec,
+            &PREV_VDEC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004070F0),
+            fake_showbits,
+            &PREV_SHOWBITS,
+        );
+    }
+
+    /// Shared bitstream-state setup: state at `DATA + 0x4000` prefilled
+    /// non-zero, `+ 0x858` zeroed (no callback promises), the bit-table
+    /// window at `0x4832c0` planted.
+    pub(crate) fn libmpeg_bs_setup(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = machine(c, seed, salt, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x240);
+        c.bus.write32(state + 0x858, 0);
+        for i in 0..16u32 {
+            c.bus.write32(
+                0x0048_32c0 + 4 * i,
+                0x0101_0101u32.wrapping_mul(i + 1) ^ seed,
+            );
+        }
+        c.g[A0][0] = state as u64;
+        r
+    }
+
+    /// Valid-words fixture for the bit trio: `+ 0x818`/`+ 0x838`/`+ 0x83c`
+    /// steered per class — set valid bits (refill arm), direct consume, or
+    /// empty with a short count (refill-check arm).
+    /// Feed the IPU input FIFO so bitstream commands complete instead of
+    /// starving: an FDEC with an empty FIFO wedges busy forever and every
+    /// later `IpuWaitCmd` spins. `first` is the peeked word: it must be
+    /// non-negative for the waits to exit, and `0x100` makes `ShowBits(24)`
+    /// return 1 (scan-loop terminator). The rest is invalid-on-purpose so
+    /// a real VDEC fails fast instead of draining the FIFO. FDEC only
+    /// peeks, so the feed never depletes.
+    pub(crate) fn ipu_feed_bs(c: &mut Cpu, first: u32) {
+        let m = ssx3_ps2::platform::machine_of(&mut c.bus.plat);
+        let mut words = [0xffff_ffffu32; 32];
+        words[0] = first;
+        let mut qs = Vec::with_capacity(8);
+        for chunk in words.chunks_exact(4) {
+            qs.push(
+                chunk[0] as u128
+                    | ((chunk[1] as u128) << 32)
+                    | ((chunk[2] as u128) << 64)
+                    | ((chunk[3] as u128) << 96),
+            );
+        }
+        m.hw.ipu.write_fifo(&qs, &mut ssx3_ps2::ipu::NoDma);
+    }
+
+    pub(crate) fn libmpeg_trio_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_bs_setup(c, seed, 0x0040_72e8);
+        ipu_feed_bs(c, 1);
+        let state = DATA + 0x4000;
+        match seed % 4 {
+            0 => {
+                c.bus.write32(state + 0x818, 0x00c0_ffee);
+                c.bus.write32(state + 0x838, 0x00c0_ffee);
+                c.bus.write32(state + 0x83c, 24);
+            }
+            1 => {
+                c.bus.write32(state + 0x818, 0);
+                c.bus.write32(state + 0x838, 0xff00_ff00);
+                c.bus.write32(state + 0x83c, 64);
+            }
+            2 => {
+                c.bus.write32(state + 0x818, 0);
+                c.bus.write32(state + 0x838, 0xff00_ff00);
+                c.bus.write32(state + 0x83c, 4);
+            }
+            _ => {
+                // Boundary class: the remaining count equals the request
+                // (`A1` = 8), so `<` and `<=` take different arms.
+                c.bus.write32(state + 0x818, 0);
+                c.bus.write32(state + 0x838, 0xff00_ff00);
+                c.bus.write32(state + 0x83c, 8);
+            }
+        }
+        c.g[A1][0] = 8;
+        c.pc = 0x0040_72e8;
+    }
+
+    #[test]
+    fn libmpeg_get_bits_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_trio_setup(c, seed);
+            c.pc = 0x0040_72e8;
+        };
+        check(
+            ee::s15::f_004072e8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_get_bits,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004072e8__generated, 48, &[72, 97, 101], setup);
+    }
+
+    driven!(gen_get_bits_busy, ee::s15::f_004072e8__generated);
+
+    driven!(
+        hand_get_bits_busy,
+        crate::game::seg::seg_2fe810::libmpeg_get_bits
+    );
+
+    /// Events on the GetBits busy-wait loop (`0x00407338`): the wedged FDEC
+    /// keeps `IPU_CTRL` busy, so every seed spins ~5001 polls to the nodata
+    /// timeout, which fires the clearing fake and exits the loop. Structured
+    /// loop: no resumes; the fired count proves the bound on both sides.
+    #[test]
+    fn libmpeg_get_bits_busy_events() {
+        BUSY_FIRES.with(|f| f.set(0));
+        check_events(gen_get_bits_busy, hand_get_bits_busy, 32, &|c, seed| {
+            libmpeg_trio_busy_setup(c, seed, 0x0040_72e8);
+            let mut r = Rng(seed as u64 ^ 0x0040_72e8);
+            schedule(c, &mut r, seed, 0x0040_72e8)
+        });
+        let fires = BUSY_FIRES.with(|f| f.get());
+        assert_eq!(
+            fires, 96,
+            "clearing fake fired {fires} times, want one per run (gen, hand, verification) per seed"
+        );
+    }
+
+    #[test]
+    fn libmpeg_show_bits_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_trio_setup(c, seed);
+            c.pc = 0x0040_70f0;
+        };
+        check(
+            ee::s15::f_004070f0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_show_bits,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004070f0__generated, 48, &[21, 60, 64], setup);
+    }
+
+    driven!(gen_show_bits_busy, ee::s15::f_004070f0__generated);
+
+    driven!(
+        hand_show_bits_busy,
+        crate::game::seg::seg_2fe810::libmpeg_show_bits
+    );
+
+    /// Events on the ShowBits busy-wait loop (`0x00407150`): the wedged FDEC
+    /// keeps `IPU_CTRL` busy, so every spinning seed runs ~5001 polls to the
+    /// nodata timeout, which fires the clearing fake and exits the loop.
+    /// Classes 1 and 3 (`seed % 4`) take the direct-consume arm and return
+    /// without reaching the loop, so 16 of 32 seeds spin. Structured loop:
+    /// no resumes; the fired count proves the bound on both sides.
+    #[test]
+    fn libmpeg_show_bits_busy_events() {
+        BUSY_FIRES.with(|f| f.set(0));
+        check_events(gen_show_bits_busy, hand_show_bits_busy, 32, &|c, seed| {
+            libmpeg_trio_busy_setup(c, seed, 0x0040_70f0);
+            let mut r = Rng(seed as u64 ^ 0x0040_70f0);
+            schedule(c, &mut r, seed, 0x0040_70f0)
+        });
+        let fires = BUSY_FIRES.with(|f| f.get());
+        assert_eq!(
+            fires, 48,
+            "clearing fake fired {fires} times, want one per run (gen, hand, verification) per spinning seed"
+        );
+    }
+
+    #[test]
+    fn libmpeg_flush_bits_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_trio_setup(c, seed);
+            c.pc = 0x0040_71f8;
+        };
+        check(
+            ee::s15::f_004071f8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_flush_bits,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004071f8__generated, 48, &[59], setup);
+    }
+
+    driven!(gen_flush_bits_busy, ee::s15::f_004071f8__generated);
+
+    driven!(
+        hand_flush_bits_busy,
+        crate::game::seg::seg_2fe810::libmpeg_flush_bits
+    );
+
+    /// Events on the FlushBits busy-wait loop (`0x00407240`): the wedged FDEC
+    /// keeps `IPU_CTRL` busy, so every seed spins ~5001 polls to the nodata
+    /// timeout, which fires the clearing fake and exits the loop. Structured
+    /// loop: no resumes; the fired count proves the bound on both sides.
+    #[test]
+    fn libmpeg_flush_bits_busy_events() {
+        BUSY_FIRES.with(|f| f.set(0));
+        check_events(gen_flush_bits_busy, hand_flush_bits_busy, 32, &|c, seed| {
+            libmpeg_trio_busy_setup(c, seed, 0x0040_71f8);
+            let mut r = Rng(seed as u64 ^ 0x0040_71f8);
+            schedule(c, &mut r, seed, 0x0040_71f8)
+        });
+        let fires = BUSY_FIRES.with(|f| f.get());
+        assert_eq!(
+            fires, 96,
+            "clearing fake fired {fires} times, want one per run (gen, hand, verification) per seed"
+        );
+    }
+
+    /// Scan fixture: bit buffer crafted so `ShowBits(24)` returns 1 at
+    /// once (`+ 0x838 = 0x100`, zero iterations) or after one flush
+    /// (`+ 0x838 = 0x1`, one iteration). Never refills: the IPU returns
+    /// zeros headless and the scan would never see its 1.
+    pub(crate) fn libmpeg_nsc_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_bs_setup(c, seed, 0x0040_7438);
+        ipu_feed_bs(c, 1);
+        let state = DATA + 0x4000;
+        c.bus.write32(state + 0x818, 0);
+        c.bus.write32(state + 0x83c, 32);
+        c.bus
+            .write32(state + 0x838, if seed % 2 == 0 { 0x100 } else { 0x1 });
+        c.bus.write32(state + 0x858, 0);
+        c.pc = 0x0040_7438;
+    }
+
+    #[test]
+    fn libmpeg_next_start_code_matches_alt() {
+        check(
+            ee::s15::f_00407438__generated,
+            crate::game::seg::seg_2fe810::libmpeg_next_start_code,
+            32,
+            &libmpeg_nsc_setup,
+        );
+        require_paths(
+            ee::s15::f_00407438__generated,
+            32,
+            &[69, 152],
+            &libmpeg_nsc_setup,
+        );
+    }
+
+    thread_local! {
+        static NSC_RESUMES: std::cell::RefCell<[std::collections::BTreeMap<u32, u32>; 2]> =
+            const { std::cell::RefCell::new([std::collections::BTreeMap::new(), std::collections::BTreeMap::new()]) };
+    }
+
+    pub(crate) fn nsc_count_resume(c: &Cpu, side: usize) {
+        if c.pc != 0x00407438 {
+            NSC_RESUMES.with(|r| *r.borrow_mut()[side].entry(c.pc).or_default() += 1);
+        }
+    }
+
+    pub(crate) fn gen_nsc_counted(c: &mut Cpu) {
+        nsc_count_resume(c, 0);
+        ee::s15::f_00407438__generated(c);
+    }
+
+    pub(crate) fn hand_nsc_counted(c: &mut Cpu) {
+        nsc_count_resume(c, 1);
+        crate::game::seg::seg_2fe810::libmpeg_next_start_code(c);
+    }
+
+    driven!(gen_nsc_driven, gen_nsc_counted);
+
+    driven!(hand_nsc_driven, hand_nsc_counted);
+
+    /// Events on the scan loop's back edge (`0x00407480`): `ShowBits` is
+    /// scripted (eight 0s then a 1) and `FlushBits` runs real on the direct
+    /// path, so the only executed poll is the scan head itself — a forced
+    /// early deadline would fire inside nested callee waits and resume at
+    /// a pc the outer body cannot handle, so the natural schedule is kept.
+    #[test]
+    fn libmpeg_next_start_code_events() {
+        check_events(gen_nsc_driven, hand_nsc_driven, 60, &|c, seed| {
+            let mut r = libmpeg_bs_setup(c, seed, 0x0040_7438);
+            fake_on_2(c);
+            ipu_feed_bs(c, 1);
+            let state = DATA + 0x4000;
+            c.bus.write32(state + 0x818, 0);
+            c.bus.write32(state + 0x83c, 32);
+            c.bus.write32(state + 0x838, 0xff00_ff00);
+            c.bus.write32(state + 0x858, 0);
+            for i in 0..7u32 {
+                c.bus.write32(FAKE_SHOWCODES + 4 * i, 0);
+            }
+            c.bus.write32(FAKE_SHOWCODES + 4 * 7, 1);
+            c.bus.write32(FAKE_SHOWCURSOR, 0);
+            c.bus.write32(FAKE_SHOW_ON, FAKE_MAGIC_2);
+            schedule(c, &mut r, seed, 0x0040_7438)
+        });
+        let [generated, hand] = NSC_RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
+        for (side, counts) in [(0, generated), (1, hand)] {
+            let n = counts.get(&0x0040_7480).copied().unwrap_or(0);
+            assert!(n > 0, "side {side}: no resumes at the scan head");
+        }
+    }
+
+    /// Extra-bit fixture: the leading bits decide the iteration count —
+    /// a leading zero exits at once, `0x80000000` runs twice, `0xC0000000`
+    /// three times, then the stream hits zeros and stops.
+    pub(crate) fn libmpeg_extra_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_bs_setup(c, seed, 0x0040_7a10);
+        ipu_feed_bs(c, 1);
+        let state = DATA + 0x4000;
+        c.bus.write32(state + 0x818, 0);
+        c.bus.write32(state + 0x83c, 32);
+        c.bus.write32(
+            state + 0x838,
+            [0, 0x8000_0000, 0xc000_0000][(seed % 3) as usize],
+        );
+        c.bus.write32(state + 0x858, 0);
+        c.pc = 0x0040_7a10;
+    }
+
+    #[test]
+    fn libmpeg_extra_bit_information_matches() {
+        check(
+            ee::s15::f_00407a10__generated,
+            crate::game::seg::seg_2fe810::libmpeg_extra_bit_information,
+            48,
+            &libmpeg_extra_setup,
+        );
+        require_paths(
+            ee::s15::f_00407a10__generated,
+            48,
+            &[83, 87],
+            &libmpeg_extra_setup,
+        );
+    }
+
+    thread_local! {
+        static EXTRA_RESUMES: std::cell::RefCell<[std::collections::BTreeMap<u32, u32>; 2]> =
+            const { std::cell::RefCell::new([std::collections::BTreeMap::new(), std::collections::BTreeMap::new()]) };
+    }
+
+    pub(crate) fn extra_count_resume(c: &Cpu, side: usize) {
+        if c.pc != 0x00407a10 {
+            EXTRA_RESUMES.with(|r| *r.borrow_mut()[side].entry(c.pc).or_default() += 1);
+        }
+    }
+
+    pub(crate) fn gen_extra_counted(c: &mut Cpu) {
+        extra_count_resume(c, 0);
+        ee::s15::f_00407a10__generated(c);
+    }
+
+    pub(crate) fn hand_extra_counted(c: &mut Cpu) {
+        extra_count_resume(c, 1);
+        crate::game::seg::seg_2fe810::libmpeg_extra_bit_information(c);
+    }
+
+    driven!(gen_extra_driven, gen_extra_counted);
+
+    driven!(hand_extra_driven, hand_extra_counted);
+
+    /// Events on the extra-bit loop (`0x00407a28`): `GetBits` is scripted
+    /// (seven 1s then a 0) and `FlushBits` runs real on the direct path,
+    /// so the only executed poll is the extra-bit head itself.
+    #[test]
+    fn libmpeg_extra_bit_information_events() {
+        check_events(gen_extra_driven, hand_extra_driven, 60, &|c, seed| {
+            let mut r = libmpeg_bs_setup(c, seed, 0x0040_7a10);
+            fake_on_2(c);
+            ipu_feed_bs(c, 1);
+            let state = DATA + 0x4000;
+            c.bus.write32(state + 0x818, 0);
+            c.bus.write32(state + 0x83c, 32);
+            c.bus.write32(state + 0x838, 0xff00_ff00);
+            c.bus.write32(state + 0x858, 0);
+            for i in 0..7u32 {
+                c.bus.write32(FAKE_CODES_2 + 4 * i, 1);
+            }
+            c.bus.write32(FAKE_CODES_2 + 4 * 7, 0);
+            c.bus.write32(FAKE_CURSOR_2, 0);
+            schedule(c, &mut r, seed, 0x0040_7a10)
+        });
+        let [generated, hand] = EXTRA_RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
+        for (side, counts) in [(0, generated), (1, hand)] {
+            let n = counts.get(&0x0040_7a28).copied().unwrap_or(0);
+            assert!(n > 0, "side {side}: no resumes at the extra-bit head");
+        }
+    }
+
+    /// Slice-tail fixture: `GetBits` is scripted per seed (`FAKE_CODES` =
+    /// `[quant, branch]`: branch 0 takes the short exit, 1 the extra-bit
+    /// arm), `ExtraBit` faked (fixed cost). `FlushBits` runs real against
+    /// the crafted buffer (direct path, count covers). This proves the
+    /// tail's branching + stores; `GetBits` itself is proven in the trio.
+    pub(crate) fn libmpeg_tail_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_bs_setup(c, seed, 0x0040_74b8);
+        fake_on_2(c);
+        ipu_feed_bs(c, 1);
+        let state = DATA + 0x4000;
+        c.bus.write32(state + 0x818, 0);
+        c.bus.write32(state + 0x83c, 32);
+        c.bus.write32(state + 0x838, 0xff00_ff00);
+        c.bus.write32(state + 0x858, 0);
+        c.bus.write32(FAKE_CODES_2, 0x15);
+        c.bus.write32(FAKE_CODES_2 + 4, (seed % 2) as u32);
+        c.bus.write32(FAKE_CURSOR_2, 0);
+        c.pc = 0x0040_74b8;
+    }
+
+    #[test]
+    fn libmpeg_slice_header_tail_matches_alt() {
+        check(
+            ee::s15::f_004074b8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_slice_header_tail,
+            32,
+            &libmpeg_tail_setup,
+        );
+        require_paths(
+            ee::s15::f_004074b8__generated,
+            32,
+            &[30, 112],
+            &libmpeg_tail_setup,
+        );
+    }
+
+    /// Address-increment fixture: the IpuVdec answer list is faked per
+    /// seed — two calls, the second steering termination. `ShowBits(0xb)`
+    /// reads the crafted buffer. Loop iterations are bounded by the list.
+    pub(crate) fn libmpeg_mai_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_bs_setup(c, seed, 0x0040_5fb8);
+        ipu_feed_bs(c, 1);
+        fake_on_2(c);
+        let state = DATA + 0x4000;
+        c.bus.write32(state + 0x818, 0);
+        c.bus.write32(state + 0x83c, 32);
+        c.bus.write32(state + 0x838, 0xf000_0000);
+        c.bus.write32(state + 0x848, 1);
+        c.bus.write32(state + 0x858, 0);
+        c.bus.write32(FAKE_VCURSOR, 0);
+        let pair = [(0x30, 0), (1, 0), (0x22, 0), (0x23, 0)][(seed % 4) as usize];
+        c.bus.write32(FAKE_VDEC, pair.0);
+        c.bus.write32(FAKE_VDEC + 4, pair.1);
+        c.bus.write32(FAKE_VDEC + 8, 0);
+        c.bus.write32(FAKE_VDEC + 12, 0);
+        c.pc = 0x0040_5fb8;
+    }
+
+    #[test]
+    fn libmpeg_macroblock_address_increment_matches() {
+        check(
+            ee::s15::f_00405fb8__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_macroblock_address_increment,
+            64,
+            &libmpeg_mai_setup,
+        );
+        require_paths(
+            ee::s15::f_00405fb8__generated,
+            64,
+            &[49, 51, 304, 309],
+            &libmpeg_mai_setup,
+        );
+    }
+
+    driven!(
+        gen_macroblock_address_increment,
+        ee::s15::f_00405fb8__generated
+    );
+
+    driven!(
+        hand_macroblock_address_increment,
+        crate::game::seg::seg_2fe810::lib_mpeg_macroblock_address_increment
+    );
+
+    /// Events on the increment loop (`0x00406000`): `ShowBits`/`FlushBits`
+    /// run real on the direct path (no executed polls there) and the faked
+    /// `Vdec` answers steer two iterations, so the only executed poll is
+    /// the increment head itself. Single poll head, no unwinds counted:
+    /// `check_events` proves delivery; per-arm sensitivity is by
+    /// break-and-restore (REPORT).
+    #[test]
+    fn libmpeg_macroblock_address_increment_events() {
+        check_events(
+            gen_macroblock_address_increment,
+            hand_macroblock_address_increment,
+            60,
+            &|c, seed| {
+                let mut r = libmpeg_bs_setup(c, seed, 0x0040_5fb8);
+                ipu_feed_bs(c, 1);
+                fake_on_2(c);
+                let state = DATA + 0x4000;
+                c.bus.write32(state + 0x818, 0);
+                c.bus.write32(state + 0x83c, 32);
+                c.bus.write32(state + 0x838, 0xf000_0000);
+                c.bus.write32(state + 0x848, 0);
+                c.bus.write32(state + 0x858, 0);
+                c.bus.write32(FAKE_VCURSOR, 0);
+                // `0x22` re-enters the loop (`V0 = 1` at the bottom check);
+                // seven of them then a 0 (accumulate-and-exit) run eight
+                // iterations, so every event seed meets the head poll.
+                for i in 0..7u32 {
+                    c.bus.write32(FAKE_VDEC + 4 * i, 0x22);
+                }
+                c.bus.write32(FAKE_VDEC + 4 * 7, 0);
+                schedule(c, &mut r, seed, 0x0040_5fb8)
+            },
+        );
+    }
+
+    /// Temporal-ref fixture: `+ 0x150` of 3 (short exit) or not; `A1` of
+    /// 0, positive or negative; the compared words prefilled distinct.
+    #[test]
+    fn libmpeg_update_temporal_ref_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_bs_setup(c, seed, 0x0040_7a58);
+            let state = DATA + 0x4000;
+            c.bus
+                .write32(state + 0x150, if seed % 3 == 0 { 3 } else { 7 });
+            c.bus.write32(state + 0x84c, 0x0101_0101 ^ seed);
+            c.bus.write32(state + 0x850, 0x0202_0202 ^ seed);
+            c.bus.write32(state + 0x854, 0x0303_0303 ^ (seed & 0xffff));
+            c.bus.write32(state + 0x1ac, 0x0404_0404 ^ seed);
+            c.g[A1][0] = [0u32, 5, 0xffff_ffff][(seed / 3 % 3) as usize] as u64;
+            c.pc = 0x0040_7a58;
+        };
+        check(
+            ee::s15::f_00407a58__generated,
+            crate::game::seg::seg_2fe810::libmpeg_update_temporal_ref,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00407a58__generated, 48, &[16, 17, 21], setup);
+    }
+
+    /// GetHeader fixture: faked `NextStartCode` (ignored) + `GetBits`
+    /// code list steer the dispatch — junk codes loop, `0x1b3` runs the
+    /// sequence fake, `0x1b8` the GOP fake, `0x100` the picture fake (then
+    /// the real dispatcher on a null state) and exits. Lists always end
+    /// with `0x100` so the loop terminates.
+    pub(crate) fn libmpeg_get_header_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_bs_setup(c, seed, 0x0040_7520);
+        fake_on_2(c);
+        let state = DATA + 0x4000;
+        c.bus.write32(state + 0x858, 0);
+        c.bus.write32(state + 0x150, 0x00c0_ffee);
+        let codes: &[u32] = match seed % 4 {
+            0 => &[0x1, 0x1b3, 0x2, 0x100],
+            1 => &[0x100],
+            2 => &[0x1b8, 0x100],
+            _ => &[0x1, 0x2, 0x100],
+        };
+        for (i, w) in codes.iter().enumerate() {
+            c.bus.write32(FAKE_CODES_2 + 4 * i as u32, *w);
+        }
+        c.bus.write32(FAKE_CODES_2 + 4 * codes.len() as u32, 0x100);
+        c.bus.write32(FAKE_CURSOR_2, 0);
+        c.g[A0][0] = state as u64;
+        c.pc = 0x0040_7520;
+    }
+
+    #[test]
+    fn libmpeg_get_header_matches() {
+        check(
+            ee::s15::f_00407520__generated,
+            crate::game::seg::seg_2fe810::libmpeg_get_header,
+            48,
+            &libmpeg_get_header_setup,
+        );
+        require_paths(
+            ee::s15::f_00407520__generated,
+            48,
+            &[80, 119, 136, 169],
+            &libmpeg_get_header_setup,
+        );
+    }
+
+    driven!(gen_get_header, ee::s15::f_00407520__generated);
+
+    driven!(
+        hand_get_header,
+        crate::game::seg::seg_2fe810::libmpeg_get_header
+    );
+
+    /// Events on the header loop (`0x00407560`, four sites, one head):
+    /// short-run seeding forces the first due check inside the run.
+    /// Structured loop (`deliver_event_here` ignores unwind requests, as
+    /// does the generated twin), so no resumes can occur: `check_events`
+    /// proves delivery, and per-arm sensitivity is by break-and-restore
+    /// (REPORT). Per-head resume counts are inapplicable here; they are
+    /// proven for the dispatcher loop in
+    /// `libmpeg_extension_and_user_data_events` below.
+    #[test]
+    fn libmpeg_get_header_events() {
+        check_events(gen_get_header, hand_get_header, 60, &|c, seed| {
+            libmpeg_get_header_setup(c, seed);
+            let mut r = Rng(seed as u64 ^ 0x0040_7520);
+            let mode = schedule(c, &mut r, seed, 0x0040_7520);
+            if mode != Events::Off {
+                c.next_event = c.cycles + 10;
+            }
+            mode
+        });
+    }
+
+    /// Gate of this test's callee fakes (magic-gated scripted lists).
+    pub(crate) const FAKE_CTRL_3: u32 = DATA + 0xa000;
+
+    pub(crate) const FAKE_MAGIC_3: u32 = 0xFA9E_0003;
+
+    /// Scripted GetBits list (32 entries) + cursor.
+    pub(crate) const FAKE_CODES_3: u32 = DATA + 0xa040;
+
+    pub(crate) const FAKE_CURSOR_3: u32 = DATA + 0xa0c0;
+
+    pub(crate) static PREV_GETBITS_C: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_getbits_2(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_3) != FAKE_MAGIC_3 {
+            return fakes::fall_back(c, &PREV_GETBITS_C, ee::s15::f_004072e8__generated);
+        }
+        let n = c.bus.read32(FAKE_CURSOR_3);
+        c.bus.write32(FAKE_CURSOR_3, n + 1);
+        c.g[V0][0] = c.bus.read32(FAKE_CODES_3 + 4 * (n & 31)) as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Fixed-cost fake: `V0 = 1`, 7 cycles, return.
+    macro_rules! fixed_fake_3 {
+        ($fake:ident, $prev:ident, $generated:path) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_3) != FAKE_MAGIC_3 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = 1;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+    fixed_fake_3!(fake_ext, PREV_EXT, ee::s15::f_004076f8__generated);
+
+    fixed_fake_3!(fake_loadiq, PREV_LOAD_IQ, ee::s15::f_00403ad0__generated);
+
+    pub(crate) fn install_fakes_10() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004072E8),
+            fake_getbits_2,
+            &PREV_GETBITS_C,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004076F8),
+            fake_ext,
+            &PREV_EXT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00403AD0),
+            fake_loadiq,
+            &PREV_LOAD_IQ,
+        );
+    }
+
+    /// Shared sequence-state setup: state at `DATA + 0x4000` prefilled
+    /// non-zero, callback promise zeroed, table pointer nulled (the
+    /// dispatcher exits early on a null table).
+    pub(crate) fn libmpeg_seq_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x240);
+        c.bus.write32(state + 0x40, 0);
+        c.bus.write32(state + 0x858, 0);
+        c.g[A0][0] = state as u64;
+    }
+
+    /// SetPictureSize fixture: dimensions seed-steered.
+    #[test]
+    fn libmpeg_set_picture_size_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_seq_setup(c, seed, 0x0040_3600);
+            c.g[A1][0] = (0x100 | (seed & 0xff)) as u64;
+            c.g[A2][0] = (0x200 | (seed & 0xff)) as u64;
+            c.pc = 0x0040_3600;
+        };
+        check(
+            ee::s15::f_00403600__generated,
+            crate::game::seg::seg_2fe810::libmpeg_set_picture_size,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403600__generated, 32, &[8], setup);
+    }
+
+    /// SetupFrameBuffers fixture: caller-stack words (post-open `SP +
+    /// `0x50`..`0x78` read the incoming stack) and nine destination
+    /// pointers, all planted. `mult` writes LO: `check_lohi`.
+    #[test]
+    fn libmpeg_setup_frame_buffers_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_39f0, 0);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let mut o = 0u32;
+            for w in [0x10u32, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70] {
+                c.bus.write32(DATA + 0x7000 + o, w | (seed & 0xffff));
+                o += 8;
+            }
+            let dst = DATA + 0x4000;
+            fill(c, &mut r, dst, 0x100);
+            c.g[A0][0] = (dst + 0x000) as u64;
+            c.g[A1][0] = (dst + 0x100) as u64;
+            c.g[A2][0] = (dst + 0x200) as u64;
+            c.g[A3][0] = (dst + 0x300) as u64;
+            c.g[T0][0] = (dst + 0x400) as u64;
+            c.g[T1][0] = (dst + 0x500) as u64;
+            c.g[T2][0] = (dst + 0x600) as u64;
+            c.g[T3][0] = (dst + 0x700) as u64;
+            c.pc = 0x0040_39f0;
+        };
+        check_lohi(
+            ee::s15::f_004039f0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_setup_frame_buffers,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_004039f0__generated, 32, &[56], setup);
+    }
+
+    /// LoadIqMatrix fixture: real callees throughout (the dispatcher exits
+    /// on the null table, `IpuCommand` SETIQ completes off the feed).
+    /// Odd seeds pre-disable interrupts so `DINTR` returns 0 and the
+    /// `EIntr` tail is skipped.
+    #[test]
+    fn libmpeg_load_iq_matrix_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_seq_setup(c, seed, 0x0040_3ad0);
+            // Non-zero sentinel at RAM word 0: a write redirected there by
+            // an address mutant shows in the RAM comparison.
+            c.bus.write32(0, 0x100);
+            ipu_feed_bs(c, 1);
+            c.g[A1][0] = (0x0010_0000 | (seed & 0xffff)) as u64;
+            c.g[A2][0] = (0x0020_0000 | (seed & 0xffff)) as u64;
+            if seed % 2 == 1 {
+                // Fresh machines boot with EIE off, so `DINTR` would always
+                // return 0: pre-enable via `EIntr` so the body takes the
+                // re-enable tail on odd seeds.
+                c.g[RA][0] = 0x1234_5678;
+                ee::s15::f_0042c0c0(c);
+            }
+            c.pc = 0x0040_3ad0;
+        };
+        check(
+            ee::s15::f_00403ad0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_load_iq_matrix,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403ad0__generated, 32, &[157, 173], setup);
+    }
+
+    /// DisplayExtension fixture: scripted `GetBits` (positions: `GetBits(3)`
+    /// value, branch bit, then the fixed tail values). Even seeds take the
+    /// short exit, odd seeds the full store path.
+    #[test]
+    fn libmpeg_sequence_display_extension_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_seq_setup(c, seed, 0x0040_3ce0);
+            fake_on_3(c);
+            let vals: [u32; 8] = if seed % 2 == 0 {
+                [0x5, 0, 0, 0, 0, 0, 0, 0]
+            } else {
+                [0x5, 1, 0x11, 0x22, 0x33, 0x6, 1, 0x7]
+            };
+            for (i, w) in vals.iter().enumerate() {
+                c.bus.write32(FAKE_CODES_3 + 4 * i as u32, *w);
+            }
+            c.bus.write32(FAKE_CURSOR_3, 0);
+            c.pc = 0x0040_3ce0;
+        };
+        check(
+            ee::s15::f_00403ce0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_sequence_display_extension,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403ce0__generated, 32, &[61, 91], setup);
+    }
+
+    /// Error-probe fixture: the four scalable/unknown extension stubs all
+    /// report through `libmpeg_Error` and return.
+    #[test]
+    fn libmpeg_extension_error_probes_match() {
+        for (gen, hand, addr) in [
+            (
+                ee::s15::f_00403d70__generated as fn(&mut Cpu),
+                crate::game::seg::seg_2fe810::libmpeg_sequence_scalable_extension as fn(&mut Cpu),
+                0x0040_3d70,
+            ),
+            (
+                ee::s15::f_00403d80__generated as fn(&mut Cpu),
+                crate::game::seg::seg_2fe810::libmpeg_unknown_extension as fn(&mut Cpu),
+                0x0040_3d80,
+            ),
+            (
+                ee::s15::f_00403d90__generated as fn(&mut Cpu),
+                crate::game::seg::seg_2fe810::libmpeg_picture_spatial_scalable_extension
+                    as fn(&mut Cpu),
+                0x0040_3d90,
+            ),
+            (
+                ee::s15::f_00403da0__generated as fn(&mut Cpu),
+                crate::game::seg::seg_2fe810::libmpeg_picture_temporal_scalable_extension
+                    as fn(&mut Cpu),
+                0x0040_3da0,
+            ),
+        ] {
+            let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+                libmpeg_seq_setup(c, seed, addr as u64);
+                c.pc = addr;
+            };
+            check(gen, hand, 16, setup);
+            require_paths(gen, 16, &[76], setup);
+        }
+    }
+
+    /// SequenceExtension fixture: scripted `GetBits(0x1c)` steers the
+    /// profile/level class (bad profile, 0x48, 0x58, 0x44, other), the
+    /// second `GetBits(0x10)` value feeds the final fold.
+    #[test]
+    fn libmpeg_sequence_extension_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_seq_setup(c, seed, 0x0040_3bb0);
+            fake_on_3(c);
+            let s2 = match seed % 5 {
+                0 => 0x480_0000,
+                1 => 0x482_0000,
+                2 => 0x582_0000,
+                3 => 0x442_0000,
+                _ => 0x402_0000,
+            };
+            c.bus.write32(FAKE_CODES_3, s2);
+            c.bus.write32(FAKE_CODES_3 + 4, 0x5a5a);
+            for i in 2..32u32 {
+                c.bus
+                    .write32(FAKE_CODES_3 + 4 * i, 0x0101_0101u32.wrapping_mul(i + 1));
+            }
+            c.bus.write32(FAKE_CURSOR_3, 0);
+            c.g[A0][0] = (DATA + 0x4000) as u64;
+            c.pc = 0x0040_3bb0;
+        };
+        check(
+            ee::s15::f_00403bb0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_sequence_extension,
+            48,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00403bb0__generated,
+            48,
+            &[89, 91, 93, 166, 169],
+            setup,
+        );
+    }
+
+    /// SequenceHeader fixture: scripted `GetBits` (`[w, x, m1, intra]`),
+    /// faked `ExtensionAndUserData`/`LoadIqMatrix`, real `IpuCommand` /
+    /// `WaitBusy` off the feed, real work-area/frame/picture callees.
+    /// `+ 0x858` points at a planted aux area (not a small callback index)
+    /// so the late size checks steer in high RAM: aux+0x0 vs `S7` picks the
+    /// early return, aux+0x4 vs `S6` the full buffer layout.
+    pub(crate) fn libmpeg_seq_header_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_seq_setup(c, seed, 0x0040_3620);
+        fake_on_3(c);
+        ipu_feed_bs(c, 1);
+        let state = DATA + 0x4000;
+        let table = DATA + 0x5000;
+        let aux = DATA + 0x6000;
+        // Script: width normal/error, aspect word, mpeg1 flag, intra flag.
+        let w = if seed % 2 == 0 {
+            0x1e02_d05a
+        } else {
+            0x1e0f_ff5a
+        };
+        c.bus.write32(FAKE_CODES_3, w);
+        c.bus.write32(FAKE_CODES_3 + 4, 0x00c0_ffee);
+        c.bus.write32(FAKE_CODES_3 + 8, (seed / 2 % 2) as u32);
+        c.bus.write32(FAKE_CODES_3 + 12, (seed / 4 % 2) as u32);
+        for i in 4..32u32 {
+            c.bus
+                .write32(FAKE_CODES_3 + 4 * i, 0x0101_0101u32.wrapping_mul(i + 1));
+        }
+        c.bus.write32(FAKE_CURSOR_3, 0);
+        // Aux area: the late checks read through it.
+        c.bus.write32(state + 0x858, aux);
+        c.bus.write32(aux + 0x40, table);
+        let t124 = 0x00c0_0000u32;
+        let t128 = 0x00d0_0000u32;
+        let a2 = if seed / 8 % 2 == 0 { 0 } else { 0x0707u32 };
+        c.bus.write32(table + 0x848, a2);
+        c.bus.write32(table + 0x124, t124);
+        c.bus.write32(table + 0x128, t128);
+        let t13c = if seed / 16 % 2 == 0 { 0 } else { 0x0808u32 };
+        c.bus.write32(table + 0x13c, t13c);
+        // S7 = (t12c << 4) with t12c = (t124 + 0xf) >> 4.
+        let t12c = t124.wrapping_add(0xf) >> 4;
+        let s7 = t12c << 4;
+        // S6: A2 == 0 and (A2 != 0, t13c != 0) share the (t128 + 0xf) >> 4
+        // form; (A2 != 0, t13c == 0) uses ((t128 + 0x1f) >> 5) << 1.
+        let s6 = if a2 != 0 && t13c == 0 {
+            ((t128.wrapping_add(0x1f) >> 5) << 1) << 4
+        } else {
+            (t128.wrapping_add(0xf) >> 4) << 4
+        };
+        c.bus
+            .write32(aux, if seed / 32 % 2 == 0 { s7 } else { s7 ^ 0x10 });
+        c.bus.write32(aux + 4, s6 ^ (0x10 * (seed / 64 % 2)));
+        // Work-area header words the full layout path bumps.
+        c.bus.write32(table + 0x0, 0x100);
+        c.bus.write32(table + 0x4, 0x0100_0000 | (seed & 0xff));
+        c.bus.write32(table + 0x8, 0x0200_0000 | (seed & 0xffff));
+        c.bus.write32(table + 0xc, 0x0f0f_0f0f);
+        c.g[A0][0] = state as u64;
+        c.pc = 0x0040_3620;
+    }
+
+    #[test]
+    fn libmpeg_sequence_header_matches() {
+        check_lohi(
+            ee::s15::f_00403620__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_sequence_header,
+            128,
+            &libmpeg_seq_header_setup,
+        );
+        require_paths(
+            ee::s15::f_00403620__generated,
+            128,
+            &[
+                147, 149, 155, 198, 200, 201, 202, 203, 206, 208, 209, 251, 252, 253, 254, 256,
+                259, 260, 262, 305, 307, 313, 440, 442, 443, 445, 448, 451, 491, 493, 494, 495,
+                496, 497, 498, 499, 501, 502, 504, 505, 544, 545, 546, 547, 548, 549, 550, 552,
+                553, 555, 556, 558, 598, 600, 601, 603, 606, 609,
+            ],
+            &libmpeg_seq_header_setup,
+        );
+    }
+
+    /// Gate of this module's callee fakes.
+    pub(crate) const FAKE_CTRL_4: u32 = DATA + 0xd000;
+
+    pub(crate) const FAKE_MAGIC_4: u32 = 0xFA9E_0004;
+
+    /// Scripted GetBits list (32 entries) + cursor.
+    pub(crate) const FAKE_CODES_4: u32 = DATA + 0xd040;
+
+    pub(crate) const FAKE_CURSOR_4: u32 = DATA + 0xd0c0;
+
+    /// Scripted ShowBits list (8 entries) + cursor.
+    pub(crate) const FAKE_SHOWCODES_2: u32 = DATA + 0xd100;
+
+    pub(crate) const FAKE_SHOWCURSOR_2: u32 = DATA + 0xd140;
+
+    /// Scripted GetHeader list (8 entries) + cursor.
+    pub(crate) const FAKE_GHCODES: u32 = DATA + 0xd180;
+
+    pub(crate) const FAKE_GHCURSOR: u32 = DATA + 0xd1c0;
+
+    /// Scripted SetupRefFrames answer word.
+    pub(crate) const FAKE_SRFV: u32 = DATA + 0xd1d0;
+
+    /// Separate gate for the ExtensionAndUserData fake: the dispatcher is
+    /// also ported here, and its own test must run it for real.
+    pub(crate) const FAKE_EXT_ON: u32 = DATA + 0xd1e0;
+
+    pub(crate) static PREV_GETBITS_D: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_getbits_3(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_4) != FAKE_MAGIC_4 {
+            return fakes::fall_back(c, &PREV_GETBITS_D, ee::s15::f_004072e8__generated);
+        }
+        let n = c.bus.read32(FAKE_CURSOR_4);
+        c.bus.write32(FAKE_CURSOR_4, n + 1);
+        c.g[V0][0] = c.bus.read32(FAKE_CODES_4 + 4 * (n & 31)) as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) static PREV_SHOWBITS_D: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_showbits_2(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_4) != FAKE_MAGIC_4 {
+            return fakes::fall_back(c, &PREV_SHOWBITS_D, ee::s15::f_004070f0__generated);
+        }
+        let n = c.bus.read32(FAKE_SHOWCURSOR_2);
+        c.bus.write32(FAKE_SHOWCURSOR_2, n + 1);
+        c.g[V0][0] = c.bus.read32(FAKE_SHOWCODES_2 + 4 * (n & 7)) as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) static PREV_GET_HEADER_D: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_get_header_2(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_4) != FAKE_MAGIC_4 {
+            return fakes::fall_back(c, &PREV_GET_HEADER_D, ee::s15::f_00407520__generated);
+        }
+        let n = c.bus.read32(FAKE_GHCURSOR);
+        c.bus.write32(FAKE_GHCURSOR, n + 1);
+        c.g[V0][0] = c.bus.read32(FAKE_GHCODES + 4 * (n & 7)) as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// SetupRefFrames fake: returns the fixture's answer word.
+    pub(crate) static PREV_SETUPREF: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_setupref(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_4) != FAKE_MAGIC_4 {
+            return fakes::fall_back(c, &PREV_SETUPREF, ee::s15::f_00407f20__generated);
+        }
+        c.g[V0][0] = c.bus.read32(FAKE_SRFV) as u64;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    macro_rules! fixed_fake_4 {
+        ($fake:ident, $prev:ident, $generated:path, $tag:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_4) != FAKE_MAGIC_4 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = $tag;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+
+    fixed_fake_4!(fake_nsc_2, PREV_NSC_2, ee::s15::f_00407438__generated, 1);
+
+    fixed_fake_4!(
+        fake_flush_2,
+        PREV_FLUSH_2,
+        ee::s15::f_004071f8__generated,
+        1
+    );
+
+    fixed_fake_4!(fake_tail, PREV_TAIL, ee::s15::f_004074b8__generated, 1);
+
+    fixed_fake_4!(fake_mai, PREV_MAI, ee::s15::f_00405fb8__generated, 3);
+
+    fixed_fake_4!(
+        fake_extra_2,
+        PREV_EXTRA_2,
+        ee::s15::f_00407a10__generated,
+        1
+    );
+
+    /// ExtensionAndUserData fake (own gate: the dispatcher's own test runs
+    /// it for real).
+    pub(crate) static PREV_EXT_2: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_ext_2(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_4) != FAKE_MAGIC_4 || c.bus.read32(FAKE_EXT_ON) != FAKE_MAGIC_4 {
+            return fakes::fall_back(c, &PREV_EXT_2, ee::s15::f_004076f8__generated);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    fixed_fake_4!(fake_slices, PREV_SLICES, ee::s15::f_00407dc0__generated, 1);
+
+    fixed_fake_4!(
+        fake_callback,
+        PREV_CALLBACK,
+        ee::s15::f_00402c80__generated,
+        1
+    );
+
+    fixed_fake_4!(fake_output, PREV_OUTPUT, ee::s15::f_00407e90__generated, 1);
+
+    fixed_fake_4!(
+        fake_flushpend,
+        PREV_FLUSHPEND,
+        ee::s15::f_00403240__generated,
+        1
+    );
+
+    pub(crate) fn install_fakes_4() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004072E8),
+            fake_getbits_3,
+            &PREV_GETBITS_D,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004070F0),
+            fake_showbits_2,
+            &PREV_SHOWBITS_D,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407520),
+            fake_get_header_2,
+            &PREV_GET_HEADER_D,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407F20),
+            fake_setupref,
+            &PREV_SETUPREF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407438),
+            fake_nsc_2,
+            &PREV_NSC_2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004071F8),
+            fake_flush_2,
+            &PREV_FLUSH_2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004074B8),
+            fake_tail,
+            &PREV_TAIL,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00405FB8),
+            fake_mai,
+            &PREV_MAI,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407A10),
+            fake_extra_2,
+            &PREV_EXTRA_2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004076F8),
+            fake_ext_2,
+            &PREV_EXT_2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407DC0),
+            fake_slices,
+            &PREV_SLICES,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402C80),
+            fake_callback,
+            &PREV_CALLBACK,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00407E90),
+            fake_output,
+            &PREV_OUTPUT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00403240),
+            fake_flushpend,
+            &PREV_FLUSHPEND,
+        );
+    }
+
+    /// Shared picture-state setup: state at `DATA + 0x4000` prefilled
+    /// non-zero, callback promise zeroed.
+    pub(crate) fn libmpeg_pic_setup(c: &mut Cpu, seed: u32, salt: u64) {
+        let mut r = machine(c, seed, salt, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x240);
+        c.bus.write32(state + 0x858, 0);
+        c.bus.write32(state + 0x150, 0x00c0_ffee);
+        c.bus.write32(state + 0x84c, 0x0101_0101 ^ seed);
+        c.bus.write32(state + 0x850, 0x0202_0202 ^ seed);
+        c.bus.write32(state + 0x854, 0x0303_0303 ^ (seed & 0xffff));
+        c.bus.write32(state + 0x1ac, 0x0404_0404 ^ seed);
+        c.g[A0][0] = state as u64;
+    }
+
+    /// PictureHeader fixture: scripted `GetBits` (`[temporal, type, ...]`),
+    /// faked `ExtraBit`/`ExtensionAndUserData`, real `UpdateTemporalRef`.
+    /// Types 1/2/3 steer the field arms.
+    #[test]
+    fn libmpeg_picture_header_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7630);
+            fake_on_4(c);
+            c.bus.write32(FAKE_EXT_ON, FAKE_MAGIC_4);
+            let ty = [1, 2, 3][(seed % 3) as usize];
+            let vals = [0x100u32, ty, 0x5a5a, 0x11, 0x22, 0x33, 0x44, 0x55];
+            for (i, w) in vals.iter().enumerate() {
+                c.bus.write32(FAKE_CODES_4 + 4 * i as u32, *w);
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.g[A1][0] = (seed & 0xff) as u64;
+            c.pc = 0x0040_7630;
+        };
+        check(
+            ee::s15::f_00407630__generated,
+            crate::game::seg::seg_2fe810::libmpeg_picture_header,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00407630__generated, 48, &[90, 112, 128], setup);
+    }
+
+    /// PictureCodingExtension fixture: scripted `GetBits` (23 entries),
+    /// `+ 0xd4` steers the field/store arm, the final bit the long tail.
+    #[test]
+    fn libmpeg_picture_coding_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7820);
+            fake_on_4(c);
+            let d4nz = seed / 2 % 2 == 0;
+            c.bus
+                .write32(DATA + 0x4000 + 0xd4, if d4nz { 0x0707 } else { 0 });
+            let mut vals = [0x1111_1111u32; 23];
+            vals[16] = (seed / 4 % 2) as u32;
+            for (i, w) in vals.iter().enumerate() {
+                c.bus.write32(FAKE_CODES_4 + 4 * i as u32, *w);
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_7820;
+        };
+        check(
+            ee::s15::f_00407820__generated,
+            crate::game::seg::seg_2fe810::libmpeg_picture_coding_extension,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00407820__generated, 48, &[267, 268], setup);
+    }
+
+    /// GroupOfPicturesHeader fixture: scripted `GetBits`, faked tail
+    /// dispatcher.
+    #[test]
+    fn libmpeg_group_of_pictures_header_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7ad0);
+            fake_on_4(c);
+            c.bus.write32(FAKE_EXT_ON, FAKE_MAGIC_4);
+            for i in 0..8u32 {
+                c.bus.write32(
+                    FAKE_CODES_4 + 4 * i,
+                    0x0101_0101u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_7ad0;
+        };
+        check(
+            ee::s15::f_00407ad0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_group_of_pictures_header,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00407ad0__generated, 32, &[103], setup);
+    }
+
+    /// CopyrightExtension fixture: scripted `GetBits` (10 entries; the last
+    /// feeds the tail `GetBits(0x16)`).
+    #[test]
+    fn libmpeg_copyright_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7d30);
+            fake_on_4(c);
+            for i in 0..10u32 {
+                c.bus.write32(
+                    FAKE_CODES_4 + 4 * i,
+                    0x0202_0202u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_7d30;
+        };
+        check(
+            ee::s15::f_00407d30__generated,
+            crate::game::seg::seg_2fe810::libmpeg_copyright_extension,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00407d30__generated, 32, &[106], setup);
+    }
+
+    /// DisplayExtension fixture: `+ 0x13c`/`+ 0x174`/`+ 0x184`/`+ 0x178`
+    /// steer S3 (the frame-centre count, 0..3); scripted `GetBits` feed the
+    /// per-frame loop.
+    #[test]
+    fn libmpeg_picture_display_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7c38);
+            fake_on_4(c);
+            let state = DATA + 0x4000;
+            match seed % 4 {
+                0 => {
+                    c.bus.write32(state + 0x13c, 0);
+                    c.bus.write32(state + 0x174, 0);
+                    c.bus.write32(state + 0x184, 0x0909);
+                }
+                1 => {
+                    c.bus.write32(state + 0x13c, 0);
+                    c.bus.write32(state + 0x174, 5);
+                    c.bus.write32(state + 0x184, 0x0909);
+                }
+                2 => {
+                    c.bus.write32(state + 0x13c, 0);
+                    c.bus.write32(state + 0x174, 3);
+                    c.bus.write32(state + 0x184, 0);
+                }
+                _ => {
+                    c.bus.write32(state + 0x13c, 0x0808);
+                    c.bus.write32(state + 0x184, 0x0909);
+                    c.bus.write32(state + 0x178, 0x0a0a);
+                }
+            }
+            for i in 0..16u32 {
+                c.bus.write32(
+                    FAKE_CODES_4 + 4 * i,
+                    0x0303_0303u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_7c38;
+        };
+        check(
+            ee::s15::f_00407c38__generated,
+            crate::game::seg::seg_2fe810::libmpeg_picture_display_extension,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00407c38__generated, 48, &[80, 128, 178], setup);
+    }
+
+    driven!(gen_display, ee::s15::f_00407c38__generated);
+
+    driven!(
+        hand_display,
+        crate::game::seg::seg_2fe810::libmpeg_picture_display_extension
+    );
+
+    /// Events on the display loop (`0x00407cb8`): S3 = 3 runs three
+    /// iterations, so the natural schedule always meets the head.
+    #[test]
+    fn libmpeg_picture_display_extension_events() {
+        check_events(gen_display, hand_display, 60, &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7c38);
+            fake_on_4(c);
+            let state = DATA + 0x4000;
+            c.bus.write32(state + 0x13c, 0x0808);
+            c.bus.write32(state + 0x184, 0x0909);
+            c.bus.write32(state + 0x178, 0x0a0a);
+            for i in 0..16u32 {
+                c.bus.write32(
+                    FAKE_CODES_4 + 4 * i,
+                    0x0303_0303u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_7c38;
+            let mut r = Rng(seed as u64 ^ 0x0040_7c38);
+            schedule(c, &mut r, seed, 0x0040_7c38)
+        });
+    }
+
+    /// QuantMatrixExtension fixture: scripted `GetBits` (4 flags) steer the
+    /// four load arms; real `IpuCommand`/`WaitBusy` off the feed, real
+    /// `Error` on the bad-flag arms.
+    #[test]
+    fn libmpeg_quant_matrix_extension_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_7b70);
+            fake_on_4(c);
+            ipu_feed_bs(c, 1);
+            for i in 0..4u32 {
+                c.bus.write32(FAKE_CODES_4 + 4 * i, (seed >> i) & 1);
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_7b70;
+        };
+        check(
+            ee::s15::f_00407b70__generated,
+            crate::game::seg::seg_2fe810::libmpeg_quant_matrix_extension,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00407b70__generated,
+            64,
+            &[54, 118, 130, 182, 194, 206, 258, 270, 334],
+            setup,
+        );
+    }
+
+    /// SliceHeader fixture: scripted `ShowBits` (slice code valid/invalid),
+    /// scripted `GetBits` for the real tail (`[quant, branch, ...]`), faked
+    /// `NextStartCode`/`FlushBits`/`MacroblockAddressIncrement`, real
+    /// `Errorf`/`Error`. `+ 0x11c` is always 0 (stored at entry), so the
+    /// Error arm is dead (noted, not pinned).
+    #[test]
+    fn libmpeg_slice_header_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_pic_setup(c, seed, 0x0040_61e8);
+            fake_on_4(c);
+            // Third class is the slice-boundary start code `0x1b0`
+            // (`code - 0x101 == 0xaf`), steering the error arm under `<`
+            // and the slice arm under `<=`.
+            c.bus
+                .write32(FAKE_SHOWCODES_2, [0x150, 0x500, 0x1b0][(seed % 3) as usize]);
+            for i in 1..8u32 {
+                c.bus.write32(FAKE_SHOWCODES_2 + 4 * i, 0);
+            }
+            c.bus.write32(FAKE_SHOWCURSOR_2, 0);
+            let branch = (seed / 2 % 2) as u32;
+            c.bus.write32(FAKE_CODES_4, 0x15);
+            c.bus.write32(FAKE_CODES_4 + 4, branch);
+            c.bus.write32(FAKE_CODES_4 + 8, 0x1);
+            c.bus.write32(FAKE_CODES_4 + 12, 0x1);
+            c.bus.write32(FAKE_CODES_4 + 16, 0x1);
+            c.bus.write32(FAKE_CODES_4 + 20, 0x0);
+            for i in 6..32u32 {
+                c.bus.write32(FAKE_CODES_4 + 4 * i, 0);
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            let dst = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_61e8), dst, 0x40);
+            c.g[A2][0] = (dst + 0x000) as u64;
+            c.g[A3][0] = (dst + 0x100) as u64;
+            c.g[T0][0] = (dst + 0x200) as u64;
+            c.pc = 0x0040_61e8;
+        };
+        check_lohi(
+            ee::s15::f_004061e8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_slice_header,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004061e8__generated, 48, &[99, 260], setup);
+    }
+
+    /// ExtensionAndUserData fixture: the game image provides the real
+    /// handler table, so dispatch runs the real handlers (all scripted /
+    /// faked at their own slots); `ShowBits` steers dispatch / skip / exit.
+    /// Handler index classes: 0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11(clamped),
+    /// then skip, then exit.
+    #[test]
+    fn libmpeg_extension_and_user_data_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_76f8, 0);
+            fake_on_4(c);
+            elf_image(c);
+            ipu_feed_bs(c, 1);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus.write32(state + 0x13c, 0);
+            c.bus.write32(state + 0x174, 0);
+            c.bus.write32(state + 0x184, 0x0909);
+            c.bus.write32(state + 0xd4, 0x0707);
+            c.g[A0][0] = state as u64;
+            let class = seed % 13;
+            let (show, idx) = match class {
+                0..=10 => (
+                    0x1b5,
+                    [0u32, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11][class as usize],
+                ),
+                11 => (0x1b2, 0),
+                _ => (0x100, 0),
+            };
+            c.bus.write32(FAKE_SHOWCODES_2, show);
+            c.bus.write32(FAKE_SHOWCODES_2 + 4, 0x100);
+            for i in 2..8u32 {
+                c.bus.write32(FAKE_SHOWCODES_2 + 4 * i, 0);
+            }
+            c.bus.write32(FAKE_SHOWCURSOR_2, 0);
+            c.bus.write32(FAKE_CODES_4, idx);
+            // Handler bit values (positions shift per handler, but nothing
+            // after the handler consumes GetBits, so one shared tail works):
+            // SeqExt S2 (profile 1, level 0x48), quant flags, PCE tail bit.
+            c.bus.write32(FAKE_CODES_4 + 4, 0x482_0000);
+            c.bus.write32(FAKE_CODES_4 + 8, 0x5a5a_5a5a);
+            c.bus.write32(FAKE_CODES_4 + 12, 0);
+            c.bus.write32(FAKE_CODES_4 + 16, 1);
+            c.bus.write32(FAKE_CODES_4 + 20, 0);
+            c.bus.write32(FAKE_CODES_4 + 24, 1);
+            c.bus.write32(FAKE_CODES_4 + 28, 0);
+            for i in 8..32u32 {
+                c.bus.write32(
+                    FAKE_CODES_4 + 4 * i,
+                    0x0404_0404u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_76f8;
+        };
+        check(
+            ee::s15::f_004076f8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_extension_and_user_data,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_004076f8__generated, 64, &[64, 144, 326], setup);
+    }
+
+    thread_local! {
+        static EXT_RESUMES: std::cell::RefCell<[std::collections::BTreeMap<u32, u32>; 2]> =
+            const { std::cell::RefCell::new([std::collections::BTreeMap::new(), std::collections::BTreeMap::new()]) };
+    }
+
+    pub(crate) fn ext_count_resume(c: &Cpu, side: usize) {
+        if c.pc != 0x004076f8 {
+            EXT_RESUMES.with(|r| *r.borrow_mut()[side].entry(c.pc).or_default() += 1);
+        }
+    }
+
+    pub(crate) fn gen_ext_counted(c: &mut Cpu) {
+        ext_count_resume(c, 0);
+        ee::s15::f_004076f8__generated(c);
+    }
+
+    pub(crate) fn hand_ext_counted(c: &mut Cpu) {
+        ext_count_resume(c, 1);
+        crate::game::seg::seg_2fe810::libmpeg_extension_and_user_data(c);
+    }
+
+    driven!(gen_ext_driven, gen_ext_counted);
+
+    driven!(hand_ext_driven, hand_ext_counted);
+
+    /// Events on the extension loop: the first `ShowBits` steers which head
+    /// the first unwind lands on. `0x1b5` (even seeds) runs the two
+    /// QuantMatrix dispatches, unwinding first at the loop head
+    /// `0x00407798`; `0x1b2` (odd seeds) skips to the exit check, unwinding
+    /// first at `0x00407790`. The short deadline fires at that first poll.
+    /// Per-side per-head counts prove both heads unwind on both sides.
+    #[test]
+    fn libmpeg_extension_and_user_data_events() {
+        check_events(gen_ext_driven, hand_ext_driven, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_76f8, 0);
+            fake_on_4(c);
+            elf_image(c);
+            ipu_feed_bs(c, 1);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.g[A0][0] = state as u64;
+            // First-unwind steering: loop path vs exit-check path.
+            let show = if seed % 2 == 0 { 0x1b5 } else { 0x1b2 };
+            c.bus.write32(FAKE_SHOWCODES_2, show);
+            c.bus.write32(FAKE_SHOWCODES_2 + 4, show);
+            c.bus.write32(FAKE_SHOWCODES_2 + 8, 0x100);
+            for i in 3..8u32 {
+                c.bus.write32(FAKE_SHOWCODES_2 + 4 * i, 0);
+            }
+            c.bus.write32(FAKE_SHOWCURSOR_2, 0);
+            c.bus.write32(FAKE_CODES_4, 3);
+            c.bus.write32(FAKE_CODES_4 + 4, 0);
+            c.bus.write32(FAKE_CODES_4 + 8, 0);
+            c.bus.write32(FAKE_CODES_4 + 12, 0);
+            c.bus.write32(FAKE_CODES_4 + 16, 0);
+            for i in 5..32u32 {
+                c.bus.write32(FAKE_CODES_4 + 4 * i, 0);
+            }
+            c.bus.write32(FAKE_CURSOR_4, 0);
+            c.pc = 0x0040_76f8;
+            let mode = schedule(c, &mut r, seed, 0x0040_76f8);
+            if mode == Events::Unwind {
+                c.next_event = c.cycles + 10;
+            }
+            mode
+        });
+        let [generated, hand] = EXT_RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
+        for (side, counts) in [(0, generated), (1, hand)] {
+            let loop_head = counts.get(&0x0040_7798).copied().unwrap_or(0);
+            let exit_head = counts.get(&0x0040_7790).copied().unwrap_or(0);
+            assert!(
+                loop_head > 0 && exit_head > 0,
+                "side {side}: resumes loop {loop_head}, exit {exit_head}; want both heads"
+            );
+        }
+    }
+
+    /// Field/frame picture fixture: state + table, `A1`/`A2` steering, the
+    /// scripted `GetHeader` list, the `SetupRefFrames` answer word, and
+    /// planted type/flag words. Every deep callee is faked.
+    pub(crate) fn libmpeg_picdec_setup(c: &mut Cpu, seed: u32, addr: u32) {
+        libmpeg_pic_setup(c, seed, addr as u64);
+        fake_on_4(c);
+        let state = DATA + 0x4000;
+        let table = DATA + 0x5000;
+        fill(c, &mut Rng(seed as u64 ^ (addr as u64)), table, 0x100);
+        c.bus.write32(state + 0x40, table);
+        c.bus.write32(table + 0x8, (seed & 1) as u32);
+        c.bus.write32(table + 0x118, 0x0020_0000 | (seed & 0xffff));
+        c.bus.write32(table + 0x120, (seed / 64 % 2) as u32);
+        c.bus.write32(table + 0xac, 0x0030_0000 | (seed & 0xffff));
+        c.bus.write32(table + 0x4, 0x0040_0000 | (seed & 0xffff));
+        c.bus
+            .write32(table + 0x174, if seed / 128 % 2 == 0 { 3 } else { 7 });
+        c.bus.write32(table + 0xd4, 7);
+        c.bus.write32(table + 0x848, 0);
+        c.bus.write32(FAKE_SRFV, (seed / 2 % 2) as u32);
+        let gh1 = [0u32, 3, 3, 5][(seed / 4 % 4) as usize];
+        c.bus.write32(FAKE_GHCODES, gh1);
+        c.bus.write32(FAKE_GHCODES + 4, 0);
+        for i in 2..8u32 {
+            c.bus.write32(FAKE_GHCODES + 4 * i, 0);
+        }
+        c.bus.write32(FAKE_GHCURSOR, 0);
+        c.g[A1][0] = [3u64, 9, 3][(seed / 16 % 3) as usize];
+        c.g[A2][0] = [0xffff_ffffu64, 5, 5][(seed / 32 % 3) as usize];
+        c.pc = addr;
+    }
+
+    #[test]
+    fn libmpeg_decode_field_pic_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_picdec_setup(c, seed, 0x0040_30e0);
+        };
+        check(
+            ee::s15::f_004030e0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_field_pic,
+            128,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_004030e0__generated,
+            128,
+            &[
+                55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 69, 72, 75, 78,
+            ],
+            setup,
+        );
+    }
+
+    #[test]
+    fn libmpeg_decode_frame_pic_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_picdec_setup(c, seed, 0x0040_2f80);
+        };
+        check(
+            ee::s15::f_00402f80__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_frame_pic,
+            128,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00402f80__generated,
+            128,
+            &[58, 61, 62, 65, 68, 71, 75, 78],
+            setup,
+        );
+    }
+
+    /// Gate of this module's callee fakes.
+    pub(crate) const FAKE_CTRL_5: u32 = DATA + 0xe000;
+
+    pub(crate) const FAKE_MAGIC_5: u32 = 0xFA9E_0005;
+
+    /// Scripted-value fake: returns the next word of the fixture's list.
+    macro_rules! scripted_fake {
+        ($fake:ident, $prev:ident, $generated:path, $codes:expr, $cursor:expr, $mask:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_5) != FAKE_MAGIC_5 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                let n = c.bus.read32($cursor);
+                c.bus.write32($cursor, n + 1);
+                c.g[V0][0] = c.bus.read32($codes + 4 * (n & $mask)) as u64;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+
+    pub(crate) const FAKE_GBCODES: u32 = DATA + 0xe040;
+
+    pub(crate) const FAKE_GBCURSOR: u32 = DATA + 0xe0c0;
+
+    pub(crate) const FAKE_SBCODES: u32 = DATA + 0xe100;
+
+    pub(crate) const FAKE_SBCURSOR: u32 = DATA + 0xe140;
+
+    pub(crate) const FAKE_MAICODES: u32 = DATA + 0xe180;
+
+    pub(crate) const FAKE_MAICURSOR: u32 = DATA + 0xe1c0;
+
+    pub(crate) const FAKE_SLICECODES: u32 = DATA + 0xe200;
+
+    pub(crate) const FAKE_SLICECURSOR: u32 = DATA + 0xe240;
+
+    pub(crate) const FAKE_SKIPCODES: u32 = DATA + 0xe280;
+
+    pub(crate) const FAKE_SKIPTURSOR: u32 = DATA + 0xe2c0;
+
+    pub(crate) const FAKE_SETUPCODES: u32 = DATA + 0xe300;
+
+    pub(crate) const FAKE_SETUPCURSOR: u32 = DATA + 0xe340;
+
+    pub(crate) const FAKE_MACROCODES: u32 = DATA + 0xe380;
+
+    pub(crate) const FAKE_MACROCURSOR: u32 = DATA + 0xe3c0;
+
+    pub(crate) const FAKE_SHDRCODES: u32 = DATA + 0xe400;
+
+    pub(crate) const FAKE_SHDRCURSOR: u32 = DATA + 0xe440;
+
+    pub(crate) const FAKE_WBCODES: u32 = DATA + 0xe480;
+
+    pub(crate) const FAKE_WBCURSOR: u32 = DATA + 0xe4c0;
+
+    pub(crate) const FAKE_DSETCODES: u32 = DATA + 0xe500;
+
+    pub(crate) const FAKE_DSETCURSOR: u32 = DATA + 0xe540;
+
+    pub(crate) const FAKE_MVCODES: u32 = DATA + 0xe580;
+
+    pub(crate) const FAKE_MVCURSOR: u32 = DATA + 0xe5c0;
+
+    pub(crate) const FAKE_VDECCODES: u32 = DATA + 0xe600;
+
+    pub(crate) const FAKE_VDECCURSOR: u32 = DATA + 0xe640;
+
+    scripted_fake!(
+        fake_getbits_4,
+        PREV_GETBITS_4,
+        ee::s15::f_004072e8__generated,
+        FAKE_GBCODES,
+        FAKE_GBCURSOR,
+        31
+    );
+
+    scripted_fake!(
+        fake_showbits_3,
+        PREV_SHOWBITS_3,
+        ee::s15::f_004070f0__generated,
+        FAKE_SBCODES,
+        FAKE_SBCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_mai_2,
+        PREV_MAI_2,
+        ee::s15::f_00405fb8__generated,
+        FAKE_MAICODES,
+        FAKE_MAICURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_slice,
+        PREV_SLICE,
+        ee::s15::f_00406318__generated,
+        FAKE_SLICECODES,
+        FAKE_SLICECURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_skip,
+        PREV_SKIP,
+        ee::s15::f_00406510__generated,
+        FAKE_SKIPCODES,
+        FAKE_SKIPTURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_setup,
+        PREV_SETUP,
+        ee::s15::f_00403e00__generated,
+        FAKE_SETUPCODES,
+        FAKE_SETUPCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_macro,
+        PREV_MACRO,
+        ee::s15::f_004065d0__generated,
+        FAKE_MACROCODES,
+        FAKE_MACROCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_shdr,
+        PREV_SHDR,
+        ee::s15::f_004061e8__generated,
+        FAKE_SHDRCODES,
+        FAKE_SHDRCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_wb,
+        PREV_WB,
+        ee::s15::f_00405b70__generated,
+        FAKE_WBCODES,
+        FAKE_WBCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_dset,
+        PREV_DSET,
+        ee::s15::f_004060c8__generated,
+        FAKE_DSETCODES,
+        FAKE_DSETCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_mv,
+        PREV_MV,
+        ee::s15::f_00406ca0__generated,
+        FAKE_MVCODES,
+        FAKE_MVCURSOR,
+        7
+    );
+
+    scripted_fake!(
+        fake_vdec_2,
+        PREV_VDEC_2,
+        ee::s15::f_00406f78__generated,
+        FAKE_VDECCODES,
+        FAKE_VDECCURSOR,
+        7
+    );
+
+    macro_rules! fixed_fake_5 {
+        ($fake:ident, $prev:ident, $generated:path, $tag:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_5) != FAKE_MAGIC_5 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = $tag;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+
+    fixed_fake_5!(
+        fake_waitbusy,
+        PREV_WAITBUSY,
+        ee::s15::f_00406e20__generated,
+        1
+    );
+
+    fixed_fake_5!(
+        fake_addpred,
+        PREV_ADDPRED,
+        ee::s15::f_00404b78__generated,
+        1
+    );
+
+    fixed_fake_5!(
+        fake_formpred,
+        PREV_FORMPRED,
+        ee::s15::f_00404050__generated,
+        1
+    );
+
+    fixed_fake_5!(
+        fake_fetchref,
+        PREV_FETCHREF,
+        ee::s15::f_00408988__generated,
+        1
+    );
+
+    pub(crate) fn install_fakes_5() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004072E8),
+            fake_getbits_4,
+            &PREV_GETBITS_4,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004070F0),
+            fake_showbits_3,
+            &PREV_SHOWBITS_3,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00405FB8),
+            fake_mai_2,
+            &PREV_MAI_2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00406318),
+            fake_slice,
+            &PREV_SLICE,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00406510),
+            fake_skip,
+            &PREV_SKIP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00403E00),
+            fake_setup,
+            &PREV_SETUP,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004065D0),
+            fake_macro,
+            &PREV_MACRO,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004061E8),
+            fake_shdr,
+            &PREV_SHDR,
+        );
+        fakes::hook(addr_of_mut!(ee::s15::OVERRIDE_00405B70), fake_wb, &PREV_WB);
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004060C8),
+            fake_dset,
+            &PREV_DSET,
+        );
+        fakes::hook(addr_of_mut!(ee::s15::OVERRIDE_00406CA0), fake_mv, &PREV_MV);
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00406F78),
+            fake_vdec_2,
+            &PREV_VDEC_2,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00406E20),
+            fake_waitbusy,
+            &PREV_WAITBUSY,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00404B78),
+            fake_addpred,
+            &PREV_ADDPRED,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00404050),
+            fake_formpred,
+            &PREV_FORMPRED,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00408988),
+            fake_fetchref,
+            &PREV_FETCHREF,
+        );
+    }
+
+    /// Plant one word of a scripted list.
+    pub(crate) fn plant(c: &mut Cpu, codes: u32, i: u32, v: u32) {
+        c.bus.write32(codes + 4 * i, v);
+    }
+
+    /// Zero a scripted cursor.
+    pub(crate) fn zero_cursor(c: &mut Cpu, cursor: u32) {
+        c.bus.write32(cursor, 0);
+    }
+
+    /// DecodeSlice fixture: state + scripted bitstream fakes. `A1` (slice
+    /// bound) 3 or 5 by seed; `SliceHeader` 0/1 steers the entry exit;
+    /// `ShowBits` nonzero keeps the first macroblock going; `WaitBdec`
+    /// 1/0 steers continue vs the `+0x10a0` exit; `MAI` 1/2 steers
+    /// decode vs skipped; `DecodeMacroblock` 1/0 steers continue vs
+    /// exit; `Skipped`/`Setup` 0/1 steer the `0x6414` head vs direct.
+    pub(crate) fn libmpeg_decode_slice_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_6318, 0);
+        fake_on_5(c);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x240);
+        c.bus.write32(state + 0x810, 0x00d0_0000 | (seed & 0xffff));
+        c.bus.write32(state + 0x11c, 0x11);
+        c.bus.write32(state + 0x10a0, seed & 1);
+        c.bus.write32(state + 0x150, 0x00c0_ffee);
+        c.bus.write32(state + 0x174, 0x00aa_0000 | (seed & 0xffff));
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = (3 + (seed % 2) * 2) as u64;
+        plant(c, FAKE_SHDRCODES, 0, (seed / 2 % 2) as u32);
+        for i in 1..8u32 {
+            plant(c, FAKE_SHDRCODES, i, 0);
+        }
+        zero_cursor(c, FAKE_SHDRCURSOR);
+        for i in 0..8u32 {
+            plant(c, FAKE_SBCODES, i, if seed / 4 % 2 == 0 { 0x5a } else { 0 });
+        }
+        zero_cursor(c, FAKE_SBCURSOR);
+        let wb1 = seed % 2 == 0;
+        for i in 0..8u32 {
+            plant(c, FAKE_WBCODES, i, if wb1 || i < 2 { 1 } else { 0 });
+        }
+        zero_cursor(c, FAKE_WBCURSOR);
+        let mai2 = seed % 3 == 0;
+        for i in 0..8u32 {
+            plant(c, FAKE_MAICODES, i, if mai2 { 2 } else { 1 });
+        }
+        zero_cursor(c, FAKE_MAICURSOR);
+        for i in 0..8u32 {
+            plant(
+                c,
+                FAKE_MACROCODES,
+                i,
+                if (seed / 8 + i as u32) % 2 == 0 { 1 } else { 0 },
+            );
+        }
+        zero_cursor(c, FAKE_MACROCURSOR);
+        for i in 0..8u32 {
+            plant(c, FAKE_SKIPCODES, i, (seed / 16 + i as u32) % 2);
+        }
+        zero_cursor(c, FAKE_SKIPTURSOR);
+        for i in 0..8u32 {
+            plant(c, FAKE_SETUPCODES, i, (seed / 32 + i as u32) % 2);
+        }
+        zero_cursor(c, FAKE_SETUPCURSOR);
+        c.pc = 0x0040_6318;
+    }
+
+    #[test]
+    fn libmpeg_decode_slice_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &libmpeg_decode_slice_setup;
+        check(
+            ee::s15::f_00406318__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_slice,
+            96,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00406318__generated,
+            96,
+            &[29, 67, 106, 108, 124, 126, 178, 196, 208],
+            setup,
+        );
+    }
+
+    driven!(gen_slice, ee::s15::f_00406318__generated);
+
+    driven!(
+        hand_slice,
+        crate::game::seg::seg_2fe810::libmpeg_decode_slice
+    );
+
+    /// Events on the slice loop (heads `0x00406414` and `0x00406360`):
+    /// five indices, alternating setup answers hit both heads, so the
+    /// natural schedule always meets a head. Mid-level callees are all
+    /// fixed/scripted fakes with no polls.
+    #[test]
+    fn libmpeg_decode_slice_events() {
+        check_events(gen_slice, hand_slice, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_6318, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus.write32(state + 0x810, 0x00d0_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0x11c, 0x11);
+            c.bus.write32(state + 0x10a0, 1);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = 5;
+            plant(c, FAKE_SHDRCODES, 0, 0);
+            for i in 1..8u32 {
+                plant(c, FAKE_SHDRCODES, i, 0);
+            }
+            zero_cursor(c, FAKE_SHDRCURSOR);
+            for i in 0..8u32 {
+                plant(c, FAKE_SBCODES, i, 0x5a);
+            }
+            zero_cursor(c, FAKE_SBCURSOR);
+            for i in 0..8u32 {
+                plant(c, FAKE_WBCODES, i, 1);
+                plant(c, FAKE_MAICODES, i, 1);
+                plant(c, FAKE_MACROCODES, i, 1);
+                plant(c, FAKE_SETUPCODES, i, (i % 2) as u32);
+            }
+            zero_cursor(c, FAKE_WBCURSOR);
+            zero_cursor(c, FAKE_MAICURSOR);
+            zero_cursor(c, FAKE_MACROCURSOR);
+            zero_cursor(c, FAKE_SETUPCURSOR);
+            c.pc = 0x0040_6318;
+            schedule(c, &mut r, seed, 0x0040_6318)
+        });
+    }
+
+    /// DecodeSlices fixture: state + scripted `DecodeSlice` answers.
+    /// Classes steer inner-loop, outer-loop, and the three exit shapes
+    /// (`S0` 4 via zero `+0x10a0`, `S0` kept via nonzero, and the
+    /// `WaitBdec` early break); one class reaches the `Error` arm.
+    pub(crate) fn libmpeg_decode_slices_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_60c8, 0);
+        fake_on_5(c);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x240);
+        c.bus.write32(state + 0x130, 0x0010_0010 ^ seed);
+        c.bus.write32(state + 0x12c, 0x0020_0020 ^ seed);
+        c.bus
+            .write32(state + 0x174, if seed % 2 == 0 { 3 } else { 5 });
+        c.bus.write32(state + 0x810, 0x0030_3030 ^ seed);
+        c.bus.write32(state + 0x814, 0x0040_4040 ^ seed);
+        c.bus.write32(state + 0x10a0, (seed / 2 % 2) as u32);
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = seed as u64;
+        let seq: &[u32] = match seed % 4 {
+            0 => &[1, 1, 3, 1, 0],
+            1 => &[1, 0],
+            2 => &[2],
+            _ => &[1, 1, 1, 3, 1, 1, 0],
+        };
+        for (i, w) in seq.iter().enumerate() {
+            plant(c, FAKE_SLICECODES, i as u32, *w);
+        }
+        for i in seq.len() as u32..8 {
+            plant(c, FAKE_SLICECODES, i, 0);
+        }
+        zero_cursor(c, FAKE_SLICECURSOR);
+        plant(c, FAKE_WBCODES, 0, (seed / 8 % 2) as u32);
+        for i in 1..8u32 {
+            plant(c, FAKE_WBCODES, i, 0);
+        }
+        zero_cursor(c, FAKE_WBCURSOR);
+        c.pc = 0x0040_60c8;
+    }
+
+    #[test]
+    fn libmpeg_decode_slices_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &libmpeg_decode_slices_setup;
+        check_lohi(
+            ee::s15::f_004060c8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_slices,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_004060c8__generated,
+            64,
+            &[83, 102, 109, 126, 141, 158, 165],
+            setup,
+        );
+    }
+
+    driven!(gen_slices, ee::s15::f_004060c8__generated);
+
+    driven!(
+        hand_slices,
+        crate::game::seg::seg_2fe810::libmpeg_decode_slices
+    );
+
+    /// Events on the slice loop (head `0x0040611c`): seven inner
+    /// iterations then an outer turn, so the natural schedule always
+    /// meets the head. All nested callees are fixed/scripted fakes.
+    #[test]
+    fn libmpeg_decode_slices_events() {
+        check_events(gen_slices, hand_slices, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_60c8, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus.write32(state + 0x130, 0x0010_0010 ^ seed);
+            c.bus.write32(state + 0x12c, 0x0020_0020 ^ seed);
+            c.bus.write32(state + 0x174, 3);
+            c.bus.write32(state + 0x810, 0x0030_3030 ^ seed);
+            c.bus.write32(state + 0x814, 0x0040_4040 ^ seed);
+            c.bus.write32(state + 0x10a0, 0);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = seed as u64;
+            let seq: &[u32] = &[1, 1, 1, 1, 1, 1, 3, 0];
+            for (i, w) in seq.iter().enumerate() {
+                plant(c, FAKE_SLICECODES, i as u32, *w);
+            }
+            zero_cursor(c, FAKE_SLICECURSOR);
+            plant(c, FAKE_WBCODES, 0, 0);
+            for i in 1..8u32 {
+                plant(c, FAKE_WBCODES, i, 0);
+            }
+            zero_cursor(c, FAKE_WBCURSOR);
+            c.pc = 0x0040_60c8;
+            schedule(c, &mut r, seed, 0x0040_60c8)
+        });
+    }
+
+    /// DecodePictureSlices fixture: `+0x174` (picture structure 1/2/3
+    /// or other) and `+0x120` steer the dispatch maze; the three
+    /// candidate pointers are distinct scratch words; the faked
+    /// `DecodeSlices` answer steers done vs stored.
+    #[test]
+    fn libmpeg_decode_picture_slices_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_7dc0, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus
+                .write32(state + 0x174, [1u32, 2, 3, 7][(seed % 4) as usize]);
+            c.bus.write32(state + 0x120, (seed / 4 % 2) as u32);
+            c.bus.write32(state + 0x1c0, DATA + 0x6000);
+            c.bus.write32(state + 0x1d0, DATA + 0x6100);
+            c.bus.write32(state + 0x1e0, DATA + 0x6200);
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_7dc0), DATA + 0x6000, 0x30);
+            c.g[A0][0] = state as u64;
+            plant(c, FAKE_DSETCODES, 0, (seed / 8 % 2) as u32);
+            for i in 1..8u32 {
+                plant(c, FAKE_DSETCODES, i, 0);
+            }
+            zero_cursor(c, FAKE_DSETCURSOR);
+            c.pc = 0x0040_7dc0;
+        };
+        check(
+            ee::s15::f_00407dc0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_picture_slices,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00407dc0__generated, 48, &[31, 36, 66, 74], setup);
+    }
+
+    /// SetupMacroblock fixture: `+0x12c` (divisor zero or not), `T0`
+    /// 0..5 (the `Errorf` arm), `FP` 0/1 and `S5` bits steer the store
+    /// arms, `+0x174` 3-or-not steers the tail. The two inline IPU-busy
+    /// polls exit at once on a fresh machine (bit clear).
+    #[test]
+    fn libmpeg_setup_macroblock_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_3e00, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus
+                .write32(state + 0x12c, if seed % 2 == 0 { 0x40 } else { 0 });
+            c.bus.write32(state + 0x810, 0x00d0_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0x11c, 0);
+            c.bus
+                .write32(state + 0x174, if seed / 2 % 2 == 0 { 3 } else { 7 });
+            c.bus.write32(state + 0x1c0, DATA + 0x6000);
+            c.bus.write32(state + 0x1d0, DATA + 0x6100);
+            c.bus.write32(state + 0x1e0, DATA + 0x6200);
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_3e00), DATA + 0x6000, 0x30);
+            c.g[A0][0] = state as u64;
+            c.g[A2][0] = (seed / 4 % 2) as u64;
+            c.g[A3][0] = (seed / 8 % 4) as u64;
+            c.g[T0][0] = (seed / 32 % 6) as u64;
+            c.pc = 0x0040_3e00;
+        };
+        check_lohi(
+            ee::s15::f_00403e00__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_setup_macroblock,
+            96,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00403e00__generated,
+            96,
+            &[87, 91, 112, 117, 216],
+            setup,
+        );
+    }
+
+    /// MotionVectors fixture: `T1` 1-or-not steers the main path vs the
+    /// direct tail; `T2`/`S3` steer the shift vs `GetBits` arm; the
+    /// stack words at `SP + 0xb0/0xb8/0xc0` supply `S6`/`S3`/`FP`.
+    /// `MotionVector` is faked (its own test runs it for real).
+    #[test]
+    fn libmpeg_motion_vectors_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_6b00, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x100);
+            let scratch = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_6b00), scratch, 0x100);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = seed as u64;
+            c.g[T3][0] = (seed >> 1) as u64;
+            c.g[T0][0] = scratch as u64;
+            c.g[T1][0] = if seed % 2 == 0 { 1 } else { 2 };
+            c.g[T2][0] = (seed / 2 % 2) as u64;
+            c.bus.write32((DATA + 0x7000) + 0xb0, 0x1111_1111);
+            c.bus.write32((DATA + 0x7000) + 0xb8, (seed / 4 % 2) as u32);
+            c.bus.write32((DATA + 0x7000) + 0xc0, (seed / 8 % 2) as u32);
+            for i in 0..8u32 {
+                plant(
+                    c,
+                    FAKE_GBCODES,
+                    i,
+                    0x0707_0707u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            zero_cursor(c, FAKE_GBCURSOR);
+            for i in 0..8u32 {
+                plant(c, FAKE_MVCODES, i, 1);
+            }
+            zero_cursor(c, FAKE_MVCURSOR);
+            c.pc = 0x0040_6b00;
+        };
+        check(
+            ee::s15::f_00406b00__generated,
+            crate::game::seg::seg_2fe810::libmpeg_motion_vectors,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_00406b00__generated, 64, &[57, 75, 92], setup);
+    }
+
+    /// MotionVector fixture: `A3`/`T0`/`T1`/`T2` zero-or-not steer the
+    /// head, `Vdec`, `GetBits` and DM arms; scripted `GetBits` and
+    /// `Vdec`; the real `DecodeMotionVector`/`DecodeDmVector` leaves run.
+    #[test]
+    fn libmpeg_motion_vector_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_6ca0, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x100);
+            let fp = DATA + 0x5000;
+            let s2 = DATA + 0x5100;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_6ca0), fp, 0x40);
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_6ca1), s2, 0x40);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = s2 as u64;
+            c.g[A2][0] = fp as u64;
+            c.g[A3][0] = (seed % 2) as u64;
+            c.g[T0][0] = (seed / 2 % 2) as u64;
+            c.g[T1][0] = (seed / 4 % 2) as u64;
+            c.g[T2][0] = (seed / 8 % 2) as u64;
+            c.g[T3][0] = seed as u64;
+            for i in 0..8u32 {
+                plant(
+                    c,
+                    FAKE_GBCODES,
+                    i,
+                    0x0303_0303u32.wrapping_mul(i + 1) ^ seed,
+                );
+                plant(c, FAKE_VDECCODES, i, (seed >> (i % 4) & 1) as u32);
+            }
+            zero_cursor(c, FAKE_GBCURSOR);
+            zero_cursor(c, FAKE_VDECCURSOR);
+            c.pc = 0x0040_6ca0;
+        };
+        check(
+            ee::s15::f_00406ca0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_motion_vector,
+            96,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00406ca0__generated,
+            96,
+            &[95, 123, 143, 165, 181],
+            setup,
+        );
+    }
+
+    /// DecodeMotionVector fixture: `T2` (destination), `A0` (value),
+    /// `A1` (shift), `A2` (bound sign), `A3` (addend) and `T0`/`T1`
+    /// steer the clamp arms. Pure arithmetic, no calls.
+    #[test]
+    fn libmpeg_decode_motion_vector_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_6a78, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            let dst = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_6a78), dst, 0x20);
+            c.g[T2][0] = dst as u64;
+            c.g[A0][0] = (0x0060_6060 ^ seed) as u64;
+            c.g[A1][0] = (seed % 5) as u64;
+            c.g[A2][0] = [-1i64 as u64, 0, 1, 5][(seed / 5 % 4) as usize];
+            c.g[A3][0] = (seed / 20 % 7) as u64;
+            c.g[T0][0] = (seed / 140 % 2) as u64;
+            c.g[T1][0] = (seed / 280 % 32) as u64;
+            c.pc = 0x0040_6a78;
+        };
+        check(
+            ee::s15::f_00406a78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_motion_vector,
+            96,
+            setup,
+        );
+        require_paths(ee::s15::f_00406a78__generated, 96, &[12, 18, 22], setup);
+    }
+
+    /// DecodeDmVector fixture: the faked `IpuVdec` answer passes through.
+    #[test]
+    fn libmpeg_decode_dm_vector_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_5e10, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x40);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = (seed & 0xff) as u64;
+            plant(c, FAKE_VDECCODES, 0, 0x00c0_ffee ^ (seed & 0xffff));
+            for i in 1..8u32 {
+                plant(c, FAKE_VDECCODES, i, 0);
+            }
+            zero_cursor(c, FAKE_VDECCURSOR);
+            c.pc = 0x0040_5e10;
+        };
+        check(
+            ee::s15::f_00405e10__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_decode_dm_vector,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00405e10__generated, 32, &[14], setup);
+    }
+
+    /// DualPrimeArithmetic fixture: `+0x174` 3-or-not steers the long
+    /// vs short form; `+0x178` zero-or-not steers the head; `A3`/`T0`
+    /// signs (-1/0/1/5) steer every clamp arm. Pure arithmetic.
+    #[test]
+    fn libmpeg_dual_prime_arithmetic_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_5e30, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus
+                .write32(state + 0x174, if seed % 2 == 0 { 3 } else { 7 });
+            c.bus.write32(state + 0x178, (seed / 2 % 2) as u32);
+            let dst = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_5e30), dst, 0x20);
+            let src = DATA + 0x5200;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_5e31), src, 0x20);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = dst as u64;
+            c.g[A2][0] = src as u64;
+            c.g[A3][0] = [-1i64 as u64, 0, 1, 5][(seed / 4 % 4) as usize];
+            c.g[T0][0] = [-1i64 as u64, 0, 1, 5][(seed / 16 % 4) as usize];
+            c.pc = 0x0040_5e30;
+        };
+        check(
+            ee::s15::f_00405e30__generated,
+            crate::game::seg::seg_2fe810::lib_mpeg_dual_prime_arithmetic,
+            128,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00405e30__generated,
+            128,
+            &[20, 24, 34, 40],
+            setup,
+        );
+    }
+
+    /// SkippedMacroblock fixture: `+0x150` 2-or-not steers the zero
+    /// block; `+0x174` 3-or-not steers the flag store; `T0` supplies
+    /// the source pointer whose word is OR-accumulated.
+    #[test]
+    fn libmpeg_skipped_macroblock_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_6510, 0);
+            fake_on_5(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus.write32(state + 0x810, 0x00d0_0000 | (seed & 0xffff));
+            c.bus
+                .write32(state + 0x150, if seed % 2 == 0 { 2 } else { 5 });
+            c.bus
+                .write32(state + 0x174, if seed / 2 % 2 == 0 { 3 } else { 5 });
+            let src = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_6510), src, 0x20);
+            c.g[A0][0] = state as u64;
+            c.g[T0][0] = src as u64;
+            c.g[A1][0] = (DATA + 0x5100) as u64;
+            c.g[A2][0] = (DATA + 0x5200) as u64;
+            c.g[A3][0] = (DATA + 0x5300) as u64;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_6511), DATA + 0x5100, 0x40);
+            c.pc = 0x0040_6510;
+        };
+        check_lohi(
+            ee::s15::f_00406510__generated,
+            crate::game::seg::seg_2fe810::libmpeg_skipped_macroblock,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00406510__generated, 48, &[32, 35, 37, 40], setup);
+    }
+
+    /// Gate of this module's callee fakes.
+    pub(crate) const FAKE_CTRL_6: u32 = DATA + 0xf000;
+
+    pub(crate) const FAKE_MAGIC_6: u32 = 0xFA9E_0006;
+
+    macro_rules! fixed_fake_6 {
+        ($fake:ident, $prev:ident, $generated:path, $tag:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_6) != FAKE_MAGIC_6 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = $tag;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+
+    /// Fixed-cost nodata callback (`V0 = 1`, 7 cycles, return). When the
+    /// VDEC busy-wait fixture arms its gate, it also counts the timeout
+    /// and resets the IPU, clearing the wedged busy bit so the wait loop
+    /// terminates.
+    pub(crate) static PREV_NODATA: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_nodata(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_6) != FAKE_MAGIC_6 {
+            return fakes::fall_back(c, &PREV_NODATA, ee::s15::f_00402c80__generated);
+        }
+        if c.bus.read32(FAKE_BUSY_ON) == FAKE_BUSY_MAGIC {
+            BUSY_FIRES.with(|f| f.set(f.get() + 1));
+            c.bus.write32(0x1000_2010, 1 << 30);
+            ipu_feed_bs(c, 1);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 7;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    fixed_fake_6!(fake_csc, PREV_CSC, ee::s15::f_00408b80__generated, 1);
+
+    fixed_fake_6!(fake_cscdma, PREV_CSCDMA, ee::s15::f_00408df0__generated, 1);
+
+    fixed_fake_6!(fake_adddma, PREV_ADDDMA, ee::s15::f_00423ac0__generated, 1);
+
+    fixed_fake_6!(
+        fake_enabledma,
+        PREV_ENABLEDMA,
+        ee::s15::f_004249b8__generated,
+        1
+    );
+
+    fixed_fake_6!(
+        fake_disabledma,
+        PREV_DISABLEDMA,
+        ee::s15::f_00424950__generated,
+        1
+    );
+
+    fixed_fake_6!(
+        fake_removedma,
+        PREV_REMOVEDMA,
+        ee::s15::f_00423ad0__generated,
+        1
+    );
+
+    fixed_fake_6!(
+        fake_dispatch,
+        PREV_DISPATCH,
+        ee::s15::f_00402c30__generated,
+        1
+    );
+
+    pub(crate) fn install_fakes_6() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402C80),
+            fake_nodata,
+            &PREV_NODATA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00408B80),
+            fake_csc,
+            &PREV_CSC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00408DF0),
+            fake_cscdma,
+            &PREV_CSCDMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423AC0),
+            fake_adddma,
+            &PREV_ADDDMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004249B8),
+            fake_enabledma,
+            &PREV_ENABLEDMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00424950),
+            fake_disabledma,
+            &PREV_DISABLEDMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00423AD0),
+            fake_removedma,
+            &PREV_REMOVEDMA,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402C30),
+            fake_dispatch,
+            &PREV_DISPATCH,
+        );
+    }
+
+    /// Feed the IPU input FIFO.
+    pub(crate) fn ipu_feed_2(c: &mut Cpu, first: u32) {
+        ipu_feed_n(c, first, 8);
+    }
+
+    /// Feed the IPU input FIFO with `n` quadwords.
+    pub(crate) fn ipu_feed_n(c: &mut Cpu, first: u32, n: usize) {
+        let m = ssx3_ps2::platform::machine_of(&mut c.bus.plat);
+        let mut words = vec![0xffff_ffffu32; n * 4];
+        words[0] = first;
+        let mut qs = Vec::with_capacity(n);
+        for chunk in words.chunks_exact(4) {
+            qs.push(
+                chunk[0] as u128
+                    | ((chunk[1] as u128) << 32)
+                    | ((chunk[2] as u128) << 64)
+                    | ((chunk[3] as u128) << 96),
+            );
+        }
+        m.hw.ipu.write_fifo(&qs, &mut ssx3_ps2::ipu::NoDma);
+    }
+
+    /// Shared IPU-state setup: state at `DATA + 0x4000`, callback promise
+    /// zeroed.
+    pub(crate) fn libmpeg_ipu_setup(c: &mut Cpu, seed: u32, addr: u32) {
+        let mut r = machine(c, seed, addr as u64, 0);
+        fake_on_6(c);
+        elf_image(c);
+        ipu_feed_2(c, 1);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x200);
+        c.bus.write32(state + 0x858, 0);
+        c.g[A0][0] = state as u64;
+        c.pc = addr;
+    }
+
+    /// IpuVdec fixture: `A1` (command class) 0..3; the fed FIFO + idle IPU
+    /// skip the first poll; the result register steers the second.
+    #[test]
+    fn libmpeg_ipu_vdec_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_ipu_setup(c, seed, 0x0040_6f78);
+            c.g[A1][0] = (seed % 4) as u64;
+        };
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00406f78__generated, 32, &[57], setup);
+    }
+
+    /// Busy-wait gate: armed only by the busy-spin fixtures below, so the
+    /// shared nodata slot keeps its fixed-cost fake everywhere else.
+    pub(crate) const FAKE_BUSY_ON: u32 = DATA + 0x7f80;
+
+    pub(crate) const FAKE_BUSY_MAGIC: u32 = 0xFA9E_0009;
+
+    thread_local! {
+        pub(crate) static BUSY_FIRES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Wedge `IPU_CTRL` busy: clear the input FIFO, then issue an FDEC over
+    /// the empty FIFO, which starves with the busy bit set. Reads never
+    /// advance the synchronous IPU model, so the poll loop spins until the
+    /// nodata timeout fires the clearing fake.
+    pub(crate) fn wedge_ipu_busy(c: &mut Cpu) {
+        c.bus.write32(0x1000_2000, 0x0000_0000);
+        c.bus.write32(0x1000_2000, 0x4000_0000);
+    }
+
+    /// Bitstream busy-spin fixture: the trio setup with the feed cleared
+    /// and an FDEC wedged, so `IPU_CTRL` stays busy into the entry poll
+    /// loop (the `+0x818`/`+0x838`/`+0x83c` steering is kept for the
+    /// post-loop path, which the clearing fake re-feeds).
+    pub(crate) fn libmpeg_trio_busy_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        libmpeg_trio_setup(c, seed);
+        fake_on_6(c);
+        c.bus.write32(FAKE_BUSY_ON, FAKE_BUSY_MAGIC);
+        wedge_ipu_busy(c);
+        c.pc = entry;
+    }
+
+    /// IPU busy-spin fixture: the IPU setup with the feed cleared and an
+    /// FDEC wedged, so the entry poll loop spins.
+    pub(crate) fn libmpeg_ipu_wait_busy_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_ipu_setup(c, seed, 0x0040_6e20);
+        fake_on_6(c);
+        c.bus.write32(FAKE_BUSY_ON, FAKE_BUSY_MAGIC);
+        wedge_ipu_busy(c);
+        c.pc = 0x0040_6e20;
+    }
+
+    /// IpuVdec busy fixture: like `libmpeg_ipu_setup` but with an empty
+    /// input FIFO, so the VDEC the body issues finds no input and starves
+    /// with `IPU_CTRL` busy set, spinning the `0x00407058` wait loop. The
+    /// nodata timeout (5001 polls) fires the clearing fake, which resets
+    /// the IPU and re-feeds: the loop runs a bounded ~5001 polls, then
+    /// exits. `A1` avoids table 1, which errors via ECD instead of
+    /// starving, so every seed spins.
+    pub(crate) fn libmpeg_ipu_vdec_busy_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_6f78, 0);
+        fake_on_6(c);
+        c.bus.write32(FAKE_BUSY_ON, FAKE_BUSY_MAGIC);
+        elf_image(c);
+        // No feed: the body's VDEC starves on the empty FIFO.
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x200);
+        c.bus.write32(state + 0x858, 0);
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = [0u64, 2, 3, 0][(seed % 4) as usize];
+        c.pc = 0x0040_6f78;
+    }
+
+    driven!(gen_ipu_vdec_busy, ee::s15::f_00406f78__generated);
+
+    driven!(
+        hand_ipu_vdec_busy,
+        crate::game::seg::seg_2fe810::libmpeg_ipu_vdec
+    );
+
+    /// Events on the VDEC busy-wait loop (`0x00407058`): the starved VDEC
+    /// keeps `IPU_CTRL` busy, so every seed spins ~5001 polls to the nodata
+    /// timeout, which fires the clearing fake and exits the loop. The fired
+    /// count proves the bound on both sides (gen, hand and verification
+    /// runs each spin the loop once); `check_events` proves delivery and
+    /// equality. The loop is structured (`deliver_event_here` ignores
+    /// unwind requests like its generated twin), so no resumes occur.
+    #[test]
+    fn libmpeg_ipu_vdec_busy_events() {
+        BUSY_FIRES.with(|f| f.set(0));
+        check_events(gen_ipu_vdec_busy, hand_ipu_vdec_busy, 32, &|c, seed| {
+            libmpeg_ipu_vdec_busy_setup(c, seed);
+            let mut r = Rng(seed as u64 ^ 0x0040_6f78);
+            schedule(c, &mut r, seed, 0x0040_6f78)
+        });
+        let fires = BUSY_FIRES.with(|f| f.get());
+        assert_eq!(
+            fires, 96,
+            "clearing fake fired {fires} times, want one per run (gen, hand, verification) per seed"
+        );
+    }
+
+    /// IpuVdec busy-spin `check`: the starved VDEC keeps `IPU_CTRL` busy, so
+    /// both sides spin the second wait loop ~5001 times to the nodata
+    /// timeout (the clearing fake fires once per side). Full-state equality
+    /// on the starvation path.
+    #[test]
+    fn libmpeg_ipu_vdec_busy_matches() {
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            &libmpeg_ipu_vdec_busy_setup,
+        );
+    }
+
+    /// IpuVdec first-loop fixture: fed FIFO with a wedged FDEC, so the entry
+    /// poll loop spins ~5001 times to the nodata timeout (the clearing fake
+    /// fires once), then the VDEC runs to completion off the re-fed FIFO.
+    pub(crate) fn libmpeg_ipu_vdec_wait_setup(c: &mut Cpu, seed: u32) {
+        libmpeg_ipu_setup(c, seed, 0x0040_6f78);
+        c.bus.write32(FAKE_BUSY_ON, FAKE_BUSY_MAGIC);
+        wedge_ipu_busy(c);
+        c.g[A1][0] = [0u64, 2, 3, 0][(seed % 4) as usize];
+        c.pc = 0x0040_6f78;
+    }
+
+    /// IpuVdec first-loop `check`: full-state equality, cycles included,
+    /// catches first-loop mutants the fire-count test cannot tell apart
+    /// (skipping the first spin still fires exactly once, via the second
+    /// loop, but with a different cycle total).
+    #[test]
+    fn libmpeg_ipu_vdec_wait_matches() {
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            &libmpeg_ipu_vdec_wait_setup,
+        );
+    }
+
+    /// IpuVdec tail fixture: a single fed quadword, so the VDEC's result
+    /// word varies with the command class. The class spans the full low
+    /// nibble, so `|`/`^` on the command word differ.
+    pub(crate) fn libmpeg_ipu_vdec_tail_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_6f78, 0);
+        fake_on_6(c);
+        elf_image(c);
+        ipu_feed_n(c, 1, 1);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x200);
+        c.bus.write32(state + 0x858, 0);
+        c.g[A0][0] = state as u64;
+        c.g[A1][0] = (seed % 16) as u64;
+        c.pc = 0x0040_6f78;
+    }
+
+    #[test]
+    fn libmpeg_ipu_vdec_tail_matches() {
+        check(
+            ee::s15::f_00406f78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_vdec,
+            32,
+            &libmpeg_ipu_vdec_tail_setup,
+        );
+        require_paths(
+            ee::s15::f_00406f78__generated,
+            32,
+            &[57],
+            &libmpeg_ipu_vdec_tail_setup,
+        );
+    }
+
+    /// IpuCommand fixture: `A1` (command word, top nibble steers the
+    /// rodata table slot); the table comes from the game image.
+    #[test]
+    fn libmpeg_ipu_command_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_ipu_setup(c, seed, 0x0040_6df0);
+            c.g[A1][0] = (((seed % 16) << 28) | 0x1000) as u64;
+        };
+        check(
+            ee::s15::f_00406df0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_command,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00406df0__generated, 32, &[11], setup);
+    }
+
+    /// IpuWaitCmd fixture: fresh idle IPU exits at once (the fed FIFO
+    /// peeks non-negative with a clear busy half).
+    #[test]
+    fn libmpeg_ipu_wait_cmd_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_ipu_setup(c, seed, 0x0040_6ec8);
+        };
+        check(
+            ee::s15::f_00406ec8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_wait_cmd,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00406ec8__generated, 32, &[18], setup);
+    }
+
+    /// IpuWaitBusy fixture: fresh idle IPU exits at once (masked control
+    /// word reads clear).
+    #[test]
+    fn libmpeg_ipu_wait_busy_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_ipu_setup(c, seed, 0x0040_6e20);
+        };
+        check(
+            ee::s15::f_00406e20__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_wait_busy,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00406e20__generated, 32, &[23], setup);
+    }
+
+    driven!(gen_ipu_wait_busy_loop, ee::s15::f_00406e20__generated);
+
+    driven!(
+        hand_ipu_wait_busy_loop,
+        crate::game::seg::seg_2fe810::libmpeg_ipu_wait_busy
+    );
+
+    /// Events on the IpuWaitBusy loop (`0x00406e80`): the wedged FDEC keeps
+    /// `IPU_CTRL` busy, so every seed spins ~5001 polls to the nodata
+    /// timeout, which fires the clearing fake and exits the loop. Structured
+    /// loop: no resumes; the fired count proves the bound on both sides.
+    #[test]
+    fn libmpeg_ipu_wait_busy_loop_events() {
+        BUSY_FIRES.with(|f| f.set(0));
+        check_events(
+            gen_ipu_wait_busy_loop,
+            hand_ipu_wait_busy_loop,
+            32,
+            &|c, seed| {
+                libmpeg_ipu_wait_busy_setup(c, seed);
+                let mut r = Rng(seed as u64 ^ 0x0040_6e20);
+                schedule(c, &mut r, seed, 0x0040_6e20)
+            },
+        );
+        let fires = BUSY_FIRES.with(|f| f.get());
+        assert_eq!(
+            fires, 96,
+            "clearing fake fired {fires} times, want one per run (gen, hand, verification) per seed"
+        );
+    }
+
+    /// ResetIpu fixture: state words `+0x818`/`+0x1b0` rewritten; real
+    /// `DIntr`/`EIntr`, real `sceIpuSync` tail (pure on `A0 = 0`).
+    #[test]
+    fn libmpeg_reset_ipu_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_ipu_setup(c, seed, 0x0040_3398);
+        };
+        check(
+            ee::s15::f_00403398__generated,
+            crate::game::seg::seg_2fe810::libmpeg_reset_ipu,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403398__generated, 32, &[72], setup);
+    }
+
+    /// SetIpuMpeg1Bit fixture: `A0` is the bit (0/1) folded into IPU
+    /// control bit 23.
+    #[test]
+    fn libmpeg_set_ipu_mpeg1_bit_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_ipu_setup(c, seed, 0x0040_5b48);
+            c.g[A0][0] = (seed & 1) as u64;
+        };
+        check(
+            ee::s15::f_00405b48__generated,
+            crate::game::seg::seg_2fe810::libmpeg_set_ipu_mpeg1_bit,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00405b48__generated, 32, &[10], setup);
+    }
+
+    /// IpuCsc fixture: `A2` (count 1/2) steers the length math; `A1`
+    /// (scratch) is the DMA destination base. The fed FIFO (enough for
+    /// the whole CSC) + idle IPU skip the entry poll; the CSC command
+    /// runs for real (table from the game image); the completion polls
+    /// exit as the model idles and the DMA drains.
+    #[test]
+    fn libmpeg_ipu_csc_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8b80, 0);
+            fake_on_6(c);
+            elf_image(c);
+            // One CSC macroblock eats 384 input bytes (24 qwords).
+            ipu_feed_n(c, 1, 64);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus.write32(state + 0x858, 0);
+            let scratch = DATA + 0x6000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_8b80), scratch, 0x1000);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = scratch as u64;
+            c.g[A2][0] = (1 + seed % 2) as u64;
+            c.pc = 0x0040_8b80;
+        };
+        check(
+            ee::s15::f_00408b80__generated,
+            crate::game::seg::seg_2fe810::oc1123_ipu_csc,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00408b80__generated, 32, &[97], setup);
+    }
+
+    driven!(gen_csc, ee::s15::f_00408b80__generated);
+
+    driven!(hand_csc, crate::game::seg::seg_2fe810::oc1123_ipu_csc);
+
+    /// Events on the CSC polls: the command runs for real with a full
+    /// feed, so the completion polls (`0x00408c48`, `0x00408c70`)
+    /// iterate while the model finishes; the natural schedule meets a
+    /// head.
+    #[test]
+    fn libmpeg_ipu_csc_events() {
+        check_events(gen_csc, hand_csc, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8b80, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_n(c, 1, 64);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus.write32(state + 0x858, 0);
+            let scratch = DATA + 0x6000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_8b80), scratch, 0x1000);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = scratch as u64;
+            c.g[A2][0] = (1 + seed % 2) as u64;
+            c.pc = 0x0040_8b80;
+            schedule(c, &mut r, seed, 0x0040_8b80)
+        });
+    }
+
+    /// IpuCscDma fixture: `A2` is chosen so the divider yields `LO = -1`
+    /// (`T0 = 0`), skipping the DMA-completion wait (no interrupt pump in
+    /// tests, so that arm is unreached — noted); DMA externals faked,
+    /// interrupts real, `Error` arm dead (`+0x24` is always 0). The body
+    /// issues a 1023-macroblock CSC itself, so the FIFO is fed for the
+    /// whole command (24,552 qwords) and the DMA drains to low RAM.
+    #[test]
+    fn libmpeg_ipu_csc_dma_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8df0, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_n(c, 1, 24552);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus.write32(state + 0x858, 0);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = seed as u64;
+            c.g[A2][0] = 0xffff_fc01;
+            c.pc = 0x0040_8df0;
+        };
+        check_lohi(
+            ee::s15::f_00408df0__generated,
+            crate::game::seg::seg_2fe810::oc1123_ipu_csc_dma,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00408df0__generated, 32, &[149], setup);
+    }
+
+    driven!(gen_cscdma, ee::s15::f_00408df0__generated);
+
+    driven!(
+        hand_cscdma,
+        crate::game::seg::seg_2fe810::oc1123_ipu_csc_dma
+    );
+
+    /// Events on the CSC-DMA completion poll (`0x00408f68`): the full
+    /// feed lets the command + DMA finish, so the head iterates while
+    /// the model drains; the natural schedule meets it.
+    #[test]
+    fn libmpeg_ipu_csc_dma_events() {
+        check_events(gen_cscdma, hand_cscdma, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8df0, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_n(c, 1, 24552);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus.write32(state + 0x858, 0);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = seed as u64;
+            c.g[A2][0] = 0xffff_fc01;
+            c.pc = 0x0040_8df0;
+            schedule(c, &mut r, seed, 0x0040_8df0)
+        });
+    }
+
+    /// ConvertPictureCsc fixture: `S3` 1-or-`0x1000` steers the
+    /// DMA-vs-direct arms and `S5`; CSC/CSC-DMA/DMA-externals faked,
+    /// `IpuCommand` real (table from the game image); the dispatch
+    /// promise faked.
+    #[test]
+    fn libmpeg_convert_picture_csc_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_9088, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_2(c, 1);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus.write32(state + 0x858, 0);
+            c.bus.write32(state + 0xd8, 0x00d8_0000 | (seed & 0xffff));
+            let s2 = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_9088), s2, 0x40);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = s2 as u64;
+            c.g[A2][0] = 2;
+            c.g[S3][0] = if seed % 2 == 0 { 1 } else { 0x1000 };
+            c.pc = 0x0040_9088;
+        };
+        check_lohi(
+            ee::s15::f_00409088__generated,
+            crate::game::seg::seg_2fe810::libmpeg_convert_picture_csc,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00409088__generated, 48, &[188, 190], setup);
+    }
+
+    driven!(gen_convert, ee::s15::f_00409088__generated);
+
+    driven!(
+        hand_convert,
+        crate::game::seg::seg_2fe810::libmpeg_convert_picture_csc
+    );
+
+    /// Events on the Convert IPU polls (`0x00409100`, `0x00409138`):
+    /// the idle IPU exits at once, but the checks still execute, so the
+    /// natural schedule delivers there. CSC/DMA run faked.
+    #[test]
+    fn libmpeg_convert_picture_csc_events() {
+        check_events(gen_convert, hand_convert, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_9088, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_2(c, 1);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x200);
+            c.bus.write32(state + 0x858, 0);
+            c.bus.write32(state + 0xd8, 0x00d8_0000 | (seed & 0xffff));
+            let s2 = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_9088), s2, 0x40);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = s2 as u64;
+            c.g[A2][0] = 2;
+            c.g[S3][0] = if seed % 2 == 0 { 1 } else { 0x1000 };
+            c.pc = 0x0040_9088;
+            schedule(c, &mut r, seed, 0x0040_9088)
+        });
+    }
+
+    /// FetchRefBlocks fixture: the `+0x6bc` word at the computed table
+    /// address steers skip (0) vs the `T4`-iteration row loop; `DINTR`
+    /// real, `EIntr` tail real.
+    #[test]
+    fn libmpeg_fetch_ref_blocks_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8988, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_2(c, 1);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x700);
+            // `T4` lives at `(T8 * 0x140 + state) + 0x6bc` (32-bit wrap):
+            // these `+0x810` values land it on four scratch words, whose
+            // planted values (0..3) steer skip vs 1..3 row iterations.
+            let t8 = [0xcc_ccee, 0x199_99bb, 0x266_6688, 0x333_3355][(seed % 4) as usize];
+            c.bus.write32(state + 0x810, t8);
+            let t4addr = [0x0080_703c, 0x0080_707c, 0x0080_70bc, 0x0080_70fc][(seed % 4) as usize];
+            c.bus.write32(t4addr, (seed % 4) as u32);
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_8988;
+        };
+        check_lohi(
+            ee::s15::f_00408988__generated,
+            crate::game::seg::seg_2fe810::libmpeg_fetch_ref_blocks,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_00408988__generated, 64, &[58], setup);
+    }
+
+    driven!(gen_fetch, ee::s15::f_00408988__generated);
+
+    driven!(
+        hand_fetch,
+        crate::game::seg::seg_2fe810::libmpeg_fetch_ref_blocks
+    );
+
+    /// Events on the row loop (`0x004089e8`): `T4 = 3` runs three
+    /// iterations, so the natural schedule always meets the head; the
+    /// nested `DIntr` has no poll.
+    #[test]
+    fn libmpeg_fetch_ref_blocks_events() {
+        check_events(gen_fetch, hand_fetch, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8988, 0);
+            fake_on_6(c);
+            elf_image(c);
+            ipu_feed_2(c, 1);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x700);
+            let t8 = 0x266_6688;
+            c.bus.write32(state + 0x810, t8);
+            c.bus.write32(0x0080_70bc, 3);
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_8988;
+            schedule(c, &mut r, seed, 0x0040_8988)
+        });
+    }
+
+    /// Gate of this module's callee fakes: a magic word in the machine's
+    /// RAM turns a fake on (both sides of a diff get their own machine).
+    pub(crate) const FAKE_CTRL_7: u32 = DATA + 0x8000;
+
+    pub(crate) const FAKE_MAGIC_7: u32 = 0xFA9E_0007;
+
+    /// Fixed-cost fake body: `V0` = tag, `cycles` charged, return. Distinct
+    /// costs per fake keep the dispatch arms' path totals distinct, so a
+    /// test that takes the wrong arm fails on cycles; `matches` proves the
+    /// call happened (a skipped call differs in cycles).
+    pub(crate) fn fixed_fake_body(c: &mut Cpu, tag: u64, cycles: u64) {
+        c.g[V0][0] = tag;
+        c.cycles += cycles;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    macro_rules! fixed_fake_7 {
+        ($fake:ident, $prev:ident, $generated:path, $tag:expr, $cycles:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_7) != FAKE_MAGIC_7 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                fixed_fake_body(c, $tag, $cycles);
+            }
+        };
+    }
+    fixed_fake_7!(
+        fake_field_pic,
+        PREV_FIELD_PIC,
+        ee::s15::f_004030e0__generated,
+        1,
+        7
+    );
+
+    fixed_fake_7!(
+        fake_frame_pic,
+        PREV_FRAME_PIC,
+        ee::s15::f_00402f80__generated,
+        2,
+        11
+    );
+
+    fixed_fake_7!(
+        fake_last_pic,
+        PREV_LAST_PIC,
+        ee::s15::f_004032b8__generated,
+        3,
+        7
+    );
+
+    fixed_fake_7!(
+        fake_frame_out,
+        PREV_FRAME_OUT,
+        ee::s15::f_004086c0__generated,
+        4,
+        7
+    );
+
+    fixed_fake_7!(
+        fake_pair_out,
+        PREV_PAIR_OUT,
+        ee::s15::f_004087d0__generated,
+        5,
+        11
+    );
+
+    pub(crate) fn install_fakes_7() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004030E0),
+            fake_field_pic,
+            &PREV_FIELD_PIC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00402F80),
+            fake_frame_pic,
+            &PREV_FRAME_PIC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004032B8),
+            fake_last_pic,
+            &PREV_LAST_PIC,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004086C0),
+            fake_frame_out,
+            &PREV_FRAME_OUT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004087D0),
+            fake_pair_out,
+            &PREV_PAIR_OUT,
+        );
+    }
+
+    /// DMA-descriptor fixture: descriptor at `DATA + 0x4000` (`+ 0x0`
+    /// count, `+ 0x4` prefilled non-zero status, `+ 0x8`/`+ 0xc` address
+    /// words, `+ 0x10` remaining). IPU status words read zero, so the busy
+    /// exits never run headless. Steers count vs remaining: `(0, 0)` takes
+    /// the skip arm, `(3, 9)` the setup arm, `(2, 4)` the skip arm into the
+    /// transfer-programming block (`count + 1 == remaining - 1`, with a
+    /// non-zero programmed count). RAM word 0 is a non-zero sentinel so a
+    /// redirected MMIO access (`&` mutants) shows in the RAM comparison;
+    /// the class-2 address word carries high bits for the `^` mutant.
+    pub(crate) fn libmpeg_dma_desc_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_8ca8, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        c.bus.write32(0, 0x100);
+        let desc = DATA + 0x4000;
+        let (count, remaining) = [(0, 0), (3, 9), (2, 4)][(seed % 3) as usize];
+        c.bus.write32(desc + 0x0, count);
+        c.bus.write32(desc + 0x4, 0x0a0a_0a0a ^ seed);
+        let a8 = if seed % 3 == 2 {
+            0x7020_0000 | (seed & 0xffff)
+        } else {
+            0x0020_0000 | (seed & 0xffff)
+        };
+        c.bus.write32(desc + 0x8, a8);
+        c.bus.write32(desc + 0xc, 0x0030_0000 | (seed & 0xffff));
+        c.bus.write32(desc + 0x10, remaining);
+        c.g[A0][0] = (seed as u64) ^ 0x1234_5678;
+        c.g[A1][0] = desc as u64;
+        c.g[A2][0] = (seed as u64) ^ 0x8765_4321;
+        c.pc = 0x0040_8ca8;
+    }
+
+    /// IPU command-class counts after a run: observes the handler's MMIO
+    /// command words, which the RAM/register comparison cannot see.
+    pub(crate) fn ipu_commands_of(c: &Cpu) -> [u64; 16] {
+        let any: &dyn std::any::Any = &*c.bus.plat;
+        any.downcast_ref::<ssx3_ps2::platform::Machine>()
+            .expect("test machine")
+            .hw
+            .ipu
+            .stats
+            .commands
+    }
+
+    /// Full IPU stats after a run: command classes plus stalls and error
+    /// flags, which distinguish a starved command from a completed one.
+    pub(crate) fn ipu_stats_of(c: &Cpu) -> (Vec<u64>, u64, u64, u64) {
+        let any: &dyn std::any::Any = &*c.bus.plat;
+        let st = &any
+            .downcast_ref::<ssx3_ps2::platform::Machine>()
+            .expect("test machine")
+            .hw
+            .ipu
+            .stats;
+        (st.commands.to_vec(), st.stalls, st.out_qwords, st.bad_codes)
+    }
+
+    /// FROM-IPU DMA channel registers after a run: observes the programmed
+    /// transfer (MADR/QWC/CHCR), which the RAM/register comparison cannot
+    /// see (the channel only moves data when the IPU has output pending).
+    pub(crate) fn from_ipu_channel_of(c: &Cpu) -> (u32, u32, u32, u32, u32) {
+        let any: &dyn std::any::Any = &*c.bus.plat;
+        let ch = &any
+            .downcast_ref::<ssx3_ps2::platform::Machine>()
+            .expect("test machine")
+            .hw
+            .ch[3];
+        (ch.chcr, ch.madr, ch.qwc, ch.tadr, ch.sadr)
+    }
+
+    #[test]
+    fn libmpeg_ipu_from_dma_handler_matches() {
+        use crate::difftest::compare_with;
+        use crate::difftest::seed_count;
+        use crate::difftest::strict_ok;
+        for seed in 0..seed_count(32) {
+            let r = compare_with(
+                ee::s15::f_00408ca8__generated,
+                crate::game::seg::seg_2fe810::libmpeg_ipu_from_dma_handler,
+                &|c| libmpeg_dma_desc_setup(c, seed),
+                |a, b, hard| {
+                    let (ca, cb) = (ipu_commands_of(a), ipu_commands_of(b));
+                    if ca != cb {
+                        hard.push(format!("ipu commands: {ca:x?} vs {cb:x?}"));
+                    }
+                    let (sa, sb) = (ipu_stats_of(a), ipu_stats_of(b));
+                    if sa != sb {
+                        hard.push(format!("ipu stats: {sa:x?} vs {sb:x?}"));
+                    }
+                    let (cha, chb) = (from_ipu_channel_of(a), from_ipu_channel_of(b));
+                    if cha != chb {
+                        hard.push(format!("from-ipu ch: {cha:x?} vs {chb:x?}"));
+                    }
+                },
+            );
+            assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+            assert!(strict_ok(&r.soft), "seed {seed} (scratch): {:#?}", r.soft);
+        }
+        // Skip vs setup arms (the HW-busy exits read zero headless).
+        require_paths(
+            ee::s15::f_00408ca8__generated,
+            32,
+            &[32, 52],
+            &libmpeg_dma_desc_setup,
+        );
+    }
+
+    /// TO-DMA count fixture: `+ 0x0` is 0 (early exit), 5 (setup arm),
+    /// 70000 (skip arm, past the 0xffff cut) or 0xffff (boundary: `<` skips
+    /// like 0, `<=` programs).
+    pub(crate) fn libmpeg_to_dma_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_8fb0, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let desc = DATA + 0x4000;
+        let count = [0, 5, 70000, 0xffff][(seed % 4) as usize];
+        c.bus.write32(desc + 0x0, count);
+        c.bus.write32(desc + 0x4, 0x0b0b_0b0b ^ seed);
+        c.bus.write32(desc + 0x8, 0x0020_0000 | (seed & 0xffff));
+        c.bus.write32(desc + 0xc, 0x0030_0000 | (seed & 0xffff));
+        c.bus.write32(desc + 0x10, 0x0040_0000 | (seed & 0xffff));
+        c.g[A0][0] = (seed as u64) ^ 0x1234_5678;
+        c.g[A1][0] = desc as u64;
+        c.pc = 0x0040_8fb0;
+    }
+
+    #[test]
+    fn libmpeg_ipu_to_dma_handler_matches() {
+        check(
+            ee::s15::f_00408fb0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_ipu_to_dma_handler,
+            48,
+            &libmpeg_to_dma_setup,
+        );
+        require_paths(
+            ee::s15::f_00408fb0__generated,
+            48,
+            &[12, 27, 37],
+            &libmpeg_to_dma_setup,
+        );
+    }
+
+    /// FROM-DMA start fixture: address and count seed-steered; `DINTR`
+    /// answers from the real interrupt state (same both sides).
+    #[test]
+    fn libmpeg_ipu_from_dma_start_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8af8, 0);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            c.g[A0][0] = (0x0020_0000 | (seed & 0xffff)) as u64;
+            c.g[A1][0] = (0x100 | (seed & 0xff)) as u64;
+            c.pc = 0x0040_8af8;
+        };
+        check(
+            ee::s15::f_00408af8__generated,
+            crate::game::seg::seg_2fe810::oc1123_ipu_from_dma_start,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00408af8__generated, 32, &[37], setup);
+    }
+
+    /// Bitstream-DMA fixture: tag area at `DATA + 0x5000` (the `A0`-derived
+    /// tag base lands at `DATA + 0x5880`, 16-aligned), source word `A1`
+    /// seed-mixed, byte count `A2` of 0 (exit), 1 or 40 (loop).
+    pub(crate) fn libmpeg_bs_dma_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_3500, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        fill(c, &mut r, DATA + 0x5000, 0x400);
+        c.g[A0][0] = (DATA + 0x5000) as u64;
+        c.g[A1][0] = 0x0010_0000;
+        c.g[A2][0] = [0, 1, 3000000][(seed % 3) as usize] as u64;
+        c.pc = 0x0040_3500;
+    }
+
+    #[test]
+    fn libmpeg_add_bs_dma_chain_matches_alt() {
+        check(
+            ee::s15::f_00403500__generated,
+            crate::game::seg::seg_2fe810::libmpeg_add_bs_dma_chain,
+            48,
+            &libmpeg_bs_dma_setup,
+        );
+        // Exit, one tag, and three tags. The `V0 == 0` tail holds a channel
+        // address, so the close-without-`EIntr` arm never runs.
+        require_paths(
+            ee::s15::f_00403500__generated,
+            48,
+            &[54, 81, 127],
+            &libmpeg_bs_dma_setup,
+        );
+    }
+
+    driven!(gen_bs_driven, ee::s15::f_00403500__generated);
+
+    driven!(
+        hand_bs_driven,
+        crate::game::seg::seg_2fe810::libmpeg_add_bs_dma_chain
+    );
+
+    /// Events on the tag loop's back edge (`0x00403540`): 200 tags keep
+    /// the loop running past the first due check on every evented seed.
+    /// Single poll head: `check_events` proves delivery there (evented
+    /// coverage); per-head sensitivity is by break-and-restore (REPORT).
+    #[test]
+    fn libmpeg_add_bs_dma_chain_events() {
+        check_events(gen_bs_driven, hand_bs_driven, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_3500, 0);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            fill(c, &mut r, DATA + 0x5000, 0x400);
+            c.g[A0][0] = (DATA + 0x5000) as u64;
+            c.g[A1][0] = 0x0010_0000;
+            c.g[A2][0] = 200;
+            schedule(c, &mut r, seed, 0x0040_3500)
+        });
+    }
+
+    /// Picture-dispatch fixture: table at `DATA + 0x5000`, `+ 0x174` of 3
+    /// (frame) on even seeds, 1 (field) on odd seeds. The field/frame
+    /// callees are faked (fixed cost): a real decode needs live IPU/DMA,
+    /// and the dispatch plus both call sites are what this test proves.
+    #[test]
+    fn libmpeg_decode_picture_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_3098, 0);
+            fake_on_7(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            let table = DATA + 0x5000;
+            fill(c, &mut r, state, 0x100);
+            fill(c, &mut r, table, 0x100);
+            c.bus.write32(state + 0x40, table);
+            c.bus
+                .write32(table + 0x174, if seed % 2 == 0 { 3 } else { 1 });
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_3098;
+        };
+        check(
+            ee::s15::f_00403098__generated,
+            crate::game::seg::seg_2fe810::libmpeg_decode_picture,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403098__generated, 32, &[21, 24], setup);
+    }
+
+    /// Pending-picture fixture: slot pointer at `DATA + 0x5000`, present
+    /// word `+ 0x4` null every third seed, ready word `+ 0x8` null every
+    /// other remaining seed, live flush otherwise. The last-picture callee
+    /// is faked (fixed cost): it needs live output state.
+    #[test]
+    fn libmpeg_flush_pending_picture_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_3240, 0);
+            fake_on_7(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            let slot = DATA + 0x5000;
+            fill(c, &mut r, state, 0x100);
+            fill(c, &mut r, slot, 0x100);
+            c.bus.write32(state + 0x40, slot);
+            c.bus.write32(state + 0x8, 0x0707_0707 ^ seed);
+            if seed % 3 != 0 {
+                c.bus.write32(slot + 0x4, 0x0101_0101);
+            } else {
+                c.bus.write32(slot + 0x4, 0);
+            }
+            if seed / 3 % 2 != 0 {
+                c.bus.write32(slot + 0x8, 0x0202_0202);
+            } else {
+                c.bus.write32(slot + 0x8, 0);
+            }
+            c.bus.write32(slot + 0xac, 0x0030_0000 | (seed & 0xffff));
+            c.bus.write32(slot + 0x118, 0x0040_0000 | (seed & 0xffff));
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_3240;
+        };
+        check(
+            ee::s15::f_00403240__generated,
+            crate::game::seg::seg_2fe810::libmpeg_flush_pending_picture,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00403240__generated, 48, &[15, 17, 33], setup);
+    }
+
+    /// Last-picture fixture: `+ 0x120` present on most seeds (null every
+    /// fifth: the `Error` arm, real and shallow), `+ 0x174` of 3 (frame)
+    /// or 1 (field pair). The frame/pair callees are faked (fixed cost):
+    /// real output needs live CSC state.
+    #[test]
+    fn libmpeg_output_last_picture_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_32b8, 0);
+            fake_on_7(c);
+            scramble(c, &mut r);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x100);
+            if seed % 5 == 0 {
+                c.bus.write32(state + 0x120, 0);
+            } else {
+                c.bus.write32(state + 0x120, 0x0505_0505);
+            }
+            c.bus.write32(state + 0x118, 2 + (seed % 3));
+            c.bus
+                .write32(state + 0x174, if seed / 5 % 2 == 0 { 3 } else { 1 });
+            c.bus.write32(state + 0x1bc, 0x0020_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0x1cc, 0x0030_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0x1dc, 0x0040_0000 | (seed & 0xffff));
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_32b8;
+        };
+        check(
+            ee::s15::f_004032b8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_output_last_picture,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_004032b8__generated, 64, &[28, 31, 89], setup);
+    }
+
+    /// Scratchpad-init fixture: state at `DATA + 0x4000` prefilled
+    /// non-zero so the five buffer words prove their stores.
+    #[test]
+    fn libmpeg_init_spr_buffers_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_3338, 0);
+            scramble(c, &mut r);
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.g[SP][0] = (DATA + 0x7000) as u64;
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_3338;
+        };
+        check(
+            ee::s15::f_00403338__generated,
+            crate::game::seg::seg_2fe810::libmpeg_init_spr_buffers,
+            16,
+            setup,
+        );
+        require_paths(ee::s15::f_00403338__generated, 16, &[34], setup);
+    }
+
+    /// Output-done fixture: marker `+ 0x8` is 2 (short return) on even
+    /// seeds, another value (store path) on odd seeds; the pending count
+    /// `+ 0x118` is seed-distinctive.
+    #[test]
+    fn libmpeg_set_output_done_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_8508, 0);
+            scramble(c, &mut r);
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus
+                .write32(state + 0x8, if seed % 2 == 0 { 2 } else { 1 });
+            c.bus.write32(state + 0x118, 0x00c0_0000 | (seed & 0xffff));
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_8508;
+        };
+        check(
+            ee::s15::f_00408508__generated,
+            crate::game::seg::seg_2fe810::libmpeg_set_output_done,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00408508__generated, 32, &[6, 10], setup);
+    }
+
+    /// Gate of this module's callee fakes.
+    pub(crate) const FAKE_CTRL_8: u32 = DATA + 0xf000;
+
+    pub(crate) const FAKE_MAGIC_8: u32 = 0xFA9E_0008;
+
+    pub(crate) const FAKE_CBCODES: u32 = DATA + 0xf040;
+
+    pub(crate) const FAKE_CBCURSOR: u32 = DATA + 0xf0c0;
+
+    macro_rules! scripted_fake_2 {
+        ($fake:ident, $prev:ident, $generated:path, $codes:expr, $cursor:expr, $mask:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_8) != FAKE_MAGIC_8 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                let n = c.bus.read32($cursor);
+                c.bus.write32($cursor, n + 1);
+                c.g[V0][0] = c.bus.read32($codes + 4 * (n & $mask)) as u64;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+
+    scripted_fake_2!(
+        fake_checkbuf,
+        PREV_CHECKBUF,
+        ee::s15::f_004081d8__generated,
+        FAKE_CBCODES,
+        FAKE_CBCURSOR,
+        7
+    );
+
+    macro_rules! fixed_fake_8 {
+        ($fake:ident, $prev:ident, $generated:path, $tag:expr) => {
+            static $prev: AtomicUsize = AtomicUsize::new(0);
+            fn $fake(c: &mut Cpu) {
+                if c.bus.read32(FAKE_CTRL_8) != FAKE_MAGIC_8 {
+                    return fakes::fall_back(c, &$prev, $generated);
+                }
+                c.g[V0][0] = $tag;
+                c.cycles += 7;
+                c.pc = c.g[RA][0] as u32;
+            }
+        };
+    }
+
+    fixed_fake_8!(
+        fake_computepts,
+        PREV_COMPUTEPTS,
+        ee::s15::f_00408530__generated,
+        1
+    );
+
+    fixed_fake_8!(
+        fake_convert,
+        PREV_CONVERT,
+        ee::s15::f_00409088__generated,
+        1
+    );
+
+    fixed_fake_8!(
+        fake_copyraw,
+        PREV_COPYRAW,
+        ee::s15::f_00408278__generated,
+        1
+    );
+
+    /// Marker word distinguishing the frame/pair dispatch fakes: the two
+    /// arms are cycle-identical, so the marker (compared RAM) is what
+    /// observes which callee ran.
+    pub(crate) const OUT_MARK: u32 = DATA + 0xf0c8;
+
+    pub(crate) static PREV_OUTFRAME: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_outframe(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_8) != FAKE_MAGIC_8 {
+            return fakes::fall_back(c, &PREV_OUTFRAME, ee::s15::f_004086c0__generated);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 7;
+        c.bus.write32(OUT_MARK, 0x0F4A11);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) static PREV_OUTPAIR: AtomicUsize = AtomicUsize::new(0);
+
+    pub(crate) fn fake_outpair(c: &mut Cpu) {
+        if c.bus.read32(FAKE_CTRL_8) != FAKE_MAGIC_8 {
+            return fakes::fall_back(c, &PREV_OUTPAIR, ee::s15::f_004087d0__generated);
+        }
+        c.g[V0][0] = 1;
+        c.cycles += 7;
+        c.bus.write32(OUT_MARK, 0x9A12);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    pub(crate) fn install_fakes_8() {
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004081D8),
+            fake_checkbuf,
+            &PREV_CHECKBUF,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00408530),
+            fake_computepts,
+            &PREV_COMPUTEPTS,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00409088),
+            fake_convert,
+            &PREV_CONVERT,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_00408278),
+            fake_copyraw,
+            &PREV_COPYRAW,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004086C0),
+            fake_outframe,
+            &PREV_OUTFRAME,
+        );
+        fakes::hook(
+            addr_of_mut!(ee::s15::OVERRIDE_004087D0),
+            fake_outpair,
+            &PREV_OUTPAIR,
+        );
+    }
+
+    /// Shared output-state setup: state at `DATA + 0x4000`, `A0` set.
+    pub(crate) fn libmpeg_out_setup(c: &mut Cpu, seed: u32, addr: u32) {
+        let mut r = machine(c, seed, addr as u64, 0);
+        fake_on_8(c);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x200);
+        c.g[A0][0] = state as u64;
+        c.pc = addr;
+    }
+
+    /// OutputPicture fixture: `A2` 0/1/2 steers skip vs dispatch;
+    /// `+0x174` 3-or-not and `+0x150` 2-or-not steer the frame/field
+    /// arms; the `+0x1bx` words are candidate pointers; `+0xf8` 1/2/other
+    /// steers the tail. Frame/pair callees faked.
+    #[test]
+    fn libmpeg_output_picture_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_7e90);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            c.bus
+                .write32(state + 0x174, if seed % 2 == 0 { 3 } else { 7 });
+            c.bus
+                .write32(state + 0x150, if seed / 2 % 2 == 0 { 2 } else { 5 });
+            c.bus.write32(state + 0x1b8, DATA + 0x5000);
+            c.bus.write32(state + 0x1c4, DATA + 0x5100);
+            c.bus.write32(state + 0x1c8, DATA + 0x5200);
+            c.bus.write32(state + 0x1d4, DATA + 0x5300);
+            c.bus.write32(state + 0x1d8, DATA + 0x5400);
+            c.bus.write32(state + 0x1e4, DATA + 0x5500);
+            c.bus
+                .write32(state + 0xf8, [1u32, 2, 7][(seed / 4 % 3) as usize]);
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_7e90), DATA + 0x5000, 0x100);
+            c.g[A1][0] = (seed & 3) as u64;
+            c.g[A2][0] = (seed / 16 % 3) as u64;
+        };
+        check(
+            ee::s15::f_00407e90__generated,
+            crate::game::seg::seg_2fe810::libmpeg_output_picture,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_00407e90__generated, 48, &[13, 15, 30, 32], setup);
+    }
+
+    /// OutputFrame fixture: `S0` state (with a `+0x858` promise block),
+    /// `S1` output struct (all words planted); ComputePts/Convert/Copy
+    /// faked, CheckOutputBuffer scripted (0/1 steers done vs compare),
+    /// SetOutputDone real tail.
+    #[test]
+    fn libmpeg_output_frame_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_86c0);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            let prom = DATA + 0x4800;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_86c1), prom, 0x60);
+            // Distinct table words (the pts-derived index reads the table at
+            // 0x004532e8): without the image every entry reads zero and any
+            // index computation is unobservable.
+            for i in 0..16u32 {
+                c.bus.write32(
+                    0x0045_32e8 + 4 * i,
+                    0x1111_1111u32.wrapping_mul(i + 1) ^ seed,
+                );
+            }
+            c.bus.write32(state + 0x858, prom);
+            c.bus.write32(state + 0xb0, (seed & 1) as u32);
+            let out = DATA + 0x5000;
+            for (i, w) in [
+                0x10u32, 0x28, 0x5c, 0x60, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58,
+            ]
+            .iter()
+            .enumerate()
+            {
+                c.bus
+                    .write32(out + *w, 0x00c0_0000 | ((seed >> (i % 4)) & 0xffff));
+            }
+            c.bus.write32(out + 0x28, (seed / 2 % 2) as u32);
+            c.bus.write32(out + 0x10, 0x00d0_0000 | (seed & 0xffff));
+            c.g[A1][0] = out as u64;
+            plant(c, FAKE_CBCODES, 0, (seed / 4 % 2) as u32);
+            for i in 1..8u32 {
+                plant(c, FAKE_CBCODES, i, 0);
+            }
+            zero_cursor(c, FAKE_CBCURSOR);
+        };
+        check(
+            ee::s15::f_004086c0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_output_frame,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004086c0__generated, 48, &[64, 66, 90, 91], setup);
+    }
+
+    /// OutputFieldPair fixture: `+0x174` 2-or-not steers the fast
+    /// assignment; `S2`/`S5` output structs planted; `S6` 0/1 steers the
+    /// merge; `+0xb0` 0/1 steers raw vs CSC; CheckOutputBuffer scripted.
+    #[test]
+    fn libmpeg_output_field_pair_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_87d0);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            c.bus
+                .write32(state + 0x174, if seed % 2 == 0 { 2 } else { 7 });
+            c.bus.write32(state + 0xb0, (seed / 2 % 2) as u32);
+            let prom = DATA + 0x4800;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_87d1), prom, 0x60);
+            c.bus.write32(state + 0x858, prom);
+            let s2 = DATA + 0x5000;
+            let s5 = DATA + 0x5200;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_87d2), s2, 0x80);
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_87d3), s5, 0x80);
+            c.bus.write32(s2 + 0x28, (seed / 4 % 2) as u32);
+            c.bus.write32(s2 + 0x10, 0x00d0_0000 | (seed & 0xffff));
+            // Every third seed steers `s5 + 0x28` onto `s2 + 0x28`, reaching
+            // the CSC-vs-raw dispatch (otherwise the buffer check always
+            // exits early on the mismatch).
+            c.bus.write32(
+                s5 + 0x28,
+                if seed % 3 == 0 {
+                    seed / 4 % 2
+                } else {
+                    0x00e0_0000 | (seed & 0xffff)
+                },
+            );
+            let s3 = DATA + 0x5400;
+            let s4 = DATA + 0x5600;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_87d4), s3, 0x80);
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_87d5), s4, 0x80);
+            // `S3`/`S4` are assigned from `S2`/`S5` on the fast path, so
+            // plant the same shape on all four track structs.
+            for (i, w) in [0x44u32, 0x48, 0x50, 0x54, 0x5c, 0x60].iter().enumerate() {
+                let v = 0x00f0_0000 | ((seed >> (i % 4)) & 0xffff);
+                c.bus.write32(s2 + *w, v);
+                c.bus.write32(s5 + *w, v);
+                c.bus.write32(s3 + *w, v);
+                c.bus.write32(s4 + *w, v);
+            }
+            c.g[A1][0] = s2 as u64;
+            c.g[A2][0] = s5 as u64;
+            c.g[S6][0] = (seed / 8 % 2) as u64;
+            plant(c, FAKE_CBCODES, 0, (seed / 16 % 2) as u32);
+            for i in 1..8u32 {
+                plant(c, FAKE_CBCODES, i, 0);
+            }
+            zero_cursor(c, FAKE_CBCURSOR);
+        };
+        check(
+            ee::s15::f_004087d0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_output_field_pair,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_004087d0__generated,
+            64,
+            &[95, 97, 99, 101],
+            setup,
+        );
+    }
+
+    /// CheckOutputBuffer fixture: `+0xe0` 0-or-not steers the quick
+    /// exit; the two bound compares steer the three totals; the
+    /// `Error` arm runs the real `Error` port (SPRINTF formats to the
+    /// stack; DispatchCallback exits on the null word; DefaultErrorPrint
+    /// via the syscall hook). Mult present.
+    #[test]
+    fn libmpeg_check_output_buffer_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_81d8);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            c.bus
+                .write32(state + 0xe0, if seed % 2 == 0 { 0 } else { 9 });
+            c.bus.write32(state + 0xdc, 0x00dc_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0xe4, 0x00e4_0000 | (seed & 0xffff));
+            let buf = DATA + 0x5000;
+            c.bus.write32(buf + 0x4, 0x00b4_0000 | (seed & 0xffff));
+            c.bus
+                .write32(buf + 0x8, 0x00b8_0000 | ((seed >> 1) & 0xffff));
+            c.bus
+                .write32(buf + 0xc, 0x00bc_0000 | ((seed >> 2) & 0xffff));
+            c.bus
+                .write32(buf + 0x10, 0x00c0_0000 | ((seed >> 3) & 0xffff));
+            c.g[A1][0] = buf as u64;
+            c.g[A2][0] = buf as u64;
+        };
+        check_lohi(
+            ee::s15::f_004081d8__generated,
+            crate::game::seg::seg_2fe810::oc1123_check_output_buffer,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004081d8__generated, 48, &[21, 227, 230], setup);
+    }
+
+    /// ComputePts fixture: `+0x70` 0-or-not steers the copy-through;
+    /// the `ld` sign arms and the `+0xf8` 2-or-not steer the remainder;
+    /// MULDI3 runs for real (pure multiply).
+    /// `S3` state reads `+0x70/0x80/0x88/0x78/0x90/0xf8/0xf0`;
+    /// `S4` struct reads `+0x18/+0x40/+0x3c/+0x34/+0x30/+0x2c/+0x38/+0x20`;
+    /// `S5` is the store word; `FP` (`A3`) the store address.
+    #[test]
+    fn libmpeg_compute_pts_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_8530);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            c.bus
+                .write32(state + 0x70, if seed % 2 == 0 { 0 } else { 1 });
+            c.bus.write32(
+                state + 0x80,
+                if seed / 2 % 2 == 0 { 0x8000_0000 } else { 7 },
+            );
+            c.bus.write32(state + 0x88, 0x0088_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0x78, 0x0078_0000 | (seed & 0xffff));
+            c.bus.write32(state + 0x90, 0x0090_0000 | (seed & 0xffff));
+            c.bus
+                .write32(state + 0xf8, if seed / 4 % 2 == 0 { 2 } else { 9 });
+            c.bus.write32(
+                state + 0xf0,
+                if seed / 8 % 2 == 0 { 0x8000_0000 } else { 3 },
+            );
+            let s4 = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_8530), s4, 0x60);
+            c.bus
+                .write32(s4 + 0x18, if seed / 16 % 2 == 0 { 0x8000_0000 } else { 11 });
+            let dst = DATA + 0x5200;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_8531), dst, 0x10);
+            let fp = DATA + 0x5300;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_8532), fp, 0x10);
+            c.g[A1][0] = s4 as u64;
+            c.g[A2][0] = dst as u64;
+            c.g[A3][0] = fp as u64;
+            c.g[T0][0] = fp as u64;
+            c.pc = 0x0040_8530;
+        };
+        check(
+            ee::s15::f_00408530__generated,
+            crate::game::seg::seg_2fe810::oc1123_compute_pts,
+            64,
+            setup,
+        );
+        require_paths(
+            ee::s15::f_00408530__generated,
+            64,
+            &[55, 63, 188, 193],
+            setup,
+        );
+    }
+
+    /// ClearFrameFlags fixture: each of the six table words 0-or-pointer
+    /// steers its store arm (independent seed bits cover the arms).
+    #[test]
+    fn libmpeg_clear_frame_flags_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_2bb0);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            let table = DATA + 0x5000;
+            fill(c, &mut Rng(seed as u64 ^ 0x0040_2bb0), table, 0x40);
+            c.bus.write32(state + 0x40, table);
+            for (i, off) in [0x1b8u32, 0x1c8, 0x1d8, 0x1bc, 0x1cc, 0x1dc]
+                .iter()
+                .enumerate()
+            {
+                if seed >> i & 1 == 0 {
+                    c.bus.write32(table + *off, 0);
+                } else {
+                    let dst = DATA + 0x6000 + (i as u32) * 0x40;
+                    fill(
+                        c,
+                        &mut Rng(seed as u64 ^ (0x0040_2bb0 + i as u64)),
+                        dst as u32,
+                        0x40,
+                    );
+                    c.bus.write32(table + *off, dst);
+                }
+            }
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_2bb0;
+        };
+        check(
+            ee::s15::f_00402bb0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_clear_frame_flags,
+            64,
+            setup,
+        );
+        require_paths(ee::s15::f_00402bb0__generated, 64, &[21], setup);
+    }
+
+    /// Error fixture: `+0x858` 0-or-not steers the print path; a null
+    /// `A0` steers the early exit; `+0xc` 0-or-not steers callback vs
+    /// print. The callback runs for real (its `+0x40` word is null in
+    /// fresh RAM, so it exits); the print path runs the real
+    /// DefaultErrorPrint (syscall hook).
+    #[test]
+    fn libmpeg_error_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_34a8);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            c.bus
+                .write32(state + 0x858, if seed % 2 == 0 { 0 } else { 0x00c0_ffee });
+            c.bus
+                .write32(state + 0xc, if seed / 2 % 2 == 0 { 0 } else { 0x00cc });
+            if seed / 4 % 2 == 0 {
+                c.g[A0][0] = state as u64;
+            } else {
+                c.g[A0][0] = 0;
+            }
+            c.g[A1][0] = seed as u64;
+            c.pc = 0x0040_34a8;
+        };
+        check(
+            ee::s15::f_004034a8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_error,
+            48,
+            setup,
+        );
+        require_paths(ee::s15::f_004034a8__generated, 48, &[28, 73, 78], setup);
+    }
+
+    /// Errorf fixture: real SPRINTF formats to the stack; real Error
+    /// runs on a null-promise state (print path via the real syscall
+    /// hook); the message word is seed-distinctive.
+    #[test]
+    fn libmpeg_errorf_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_3470);
+            fake_on_8(c);
+            let state = DATA + 0x4000;
+            c.bus.write32(state + 0x858, 0);
+            c.g[A0][0] = state as u64;
+            c.g[A1][0] = (0x00e0_0000 | (seed & 0xffff)) as u64;
+            c.pc = 0x0040_3470;
+        };
+        check(
+            ee::s15::f_00403470__generated,
+            crate::game::seg::seg_2fe810::libmpeg_errorf,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403470__generated, 32, &[209], setup);
+    }
+
+    /// DefaultErrorPrint fixture: tail-calls the real `scePrintf`
+    /// (handled by the syscall hook); the message address is fixed
+    /// rodata, `A1` seed-distinctive.
+    #[test]
+    fn libmpeg_default_error_print_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_out_setup(c, seed, 0x0040_3460);
+            fake_on_8(c);
+            c.g[A0][0] = (DATA + 0x4000) as u64;
+            c.g[A1][0] = (0x00e1_0000 | (seed & 0xffff)) as u64;
+            c.pc = 0x0040_3460;
+        };
+        check(
+            ee::s15::f_00403460__generated,
+            crate::game::seg::seg_2fe810::libmpeg_default_error_print,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403460__generated, 32, &[63], setup);
+    }
+
+    /// Callback-dispatch fixture: state at `DATA + 0x4000`, callback table
+    /// at `DATA + 0x5000`, index word at `A1`. Steers each arm independently:
+    /// null state (`seed % 4 == 0`), null table (`seed / 4 % 3 == 0`), null
+    /// entry (`seed / 12 % 2 == 0`) or a live indirect call into the
+    /// installed mark leaf (a wrong entry offset then takes the miss hook
+    /// instead, which differs in V0, cycles and RAM).
+    pub(crate) fn libmpeg_dispatch_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_2c30, 1);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let table = DATA + 0x5000;
+        fill(c, &mut r, state, 0x100);
+        fill(c, &mut r, table, 0x100);
+        // Entry 0 is live (the installed mark leaf: a wrong entry offset
+        // then calls the miss hook instead, which differs in V0, cycles
+        // and RAM), entry 1 is null.
+        c.bus.write32(table + 0x0 * 8 + 0xc, 0x0040_2d68);
+        c.bus.write32(table + 0x0 * 8 + 0x10, state);
+        c.bus.write32(table + 0x1 * 8 + 0xc, 0);
+        c.bus.write32(table + 0x1 * 8 + 0x10, DATA + 0x6200);
+        c.bus.write32(DATA + 0x6100, 0x1111_1111);
+        c.bus.write32(DATA + 0x6200, 0x2222_2222);
+        let idxp = DATA + 0x6000;
+        c.bus.write32(idxp, (seed / 12 % 2) as u32);
+        c.g[A1][0] = idxp as u64;
+        c.g[A0][0] = if seed % 4 == 0 { 0 } else { state as u64 };
+        if seed / 4 % 3 != 0 {
+            c.bus.write32(state + 0x40, table);
+        } else {
+            c.bus.write32(state + 0x40, 0);
+        }
+        c.pc = 0x0040_2c30;
+    }
+
+    #[test]
+    fn libmpeg_dispatch_callback_matches_alt() {
+        // Real indirect target (the installed mark leaf): `check`, not
+        // `covered` (no miss calls, no unwinds).
+        check(
+            ee::s15::f_00402c30__generated,
+            crate::game::seg::seg_2fe810::libmpeg_dispatch_callback,
+            96,
+            &libmpeg_dispatch_setup,
+        );
+    }
+
+    #[test]
+    fn libmpeg_dispatch_callback_paths() {
+        // Null state, null table, null entry, live indirect call.
+        require_paths(
+            ee::s15::f_00402c30__generated,
+            96,
+            &[8, 10, 16, 23],
+            &libmpeg_dispatch_setup,
+        );
+    }
+
+    /// No-data-slot fixture: like the dispatch fixture but the index comes
+    /// from the stack word the slot reads, so entry 0 goes live on even
+    /// seeds and entry 1 (null) on odd seeds.
+    pub(crate) fn libmpeg_nodata_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_2c80, 1);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        let table = DATA + 0x5000;
+        fill(c, &mut r, state, 0x100);
+        fill(c, &mut r, table, 0x100);
+        // The slot hardcodes index 1 (it overwrites the stack word with 1
+        // before calling), so steer entry 1 per seed: the installed mark
+        // leaf on even seeds, null on odd seeds. Entry 0 stays live but
+        // unreachable.
+        c.bus.write32(table + 0x0 * 8 + 0xc, 0x0040_2d68);
+        c.bus.write32(table + 0x0 * 8 + 0x10, DATA + 0x6100);
+        c.bus.write32(
+            table + 0x1 * 8 + 0xc,
+            if seed % 2 == 0 { 0x0040_2d68 } else { 0 },
+        );
+        c.bus.write32(table + 0x1 * 8 + 0x10, DATA + 0x6200);
+        c.bus.write32(DATA + 0x6100, 0x3333_3333);
+        c.bus.write32(DATA + 0x6200, 0x4444_4444);
+        c.bus.write32(state + 0x40, table);
+        c.g[A0][0] = state as u64;
+        // The slot reads its index from the pre-open SP word.
+        c.bus.write32(DATA + 0x7000, (seed % 2) as u32);
+        c.pc = 0x0040_2c80;
+    }
+
+    #[test]
+    fn libmpeg_callback_nodata_matches_alt() {
+        check(
+            ee::s15::f_00402c80__generated,
+            crate::game::seg::seg_2fe810::libmpeg_callback_nodata,
+            96,
+            &libmpeg_nodata_setup,
+        );
+    }
+
+    /// DMA-callback fixture: work area at `DATA + 0x4000` with a channel
+    /// pointer at `+ 0x40`; the IPU status words read zero so the stop /
+    /// restart loops exit on the first read.
+    pub(crate) fn libmpeg_dma_callback_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_3db0, 0);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let state = DATA + 0x4000;
+        fill(c, &mut r, state, 0x100);
+        let chan = DATA + 0x5000;
+        fill(c, &mut r, chan, 0x40);
+        c.bus.write32(state + 0x40, chan);
+        // Distinctive non-zero channel id word the callbacks derive.
+        c.bus.write32(chan, 0x0100_0000 | (seed & 0xffff));
+        c.g[A0][0] = state as u64;
+        c.pc = 0x0040_3db0;
+    }
+
+    #[test]
+    fn libmpeg_stop_dma_callback_matches() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_dma_callback_setup(c, seed);
+            c.pc = 0x0040_3db0;
+        };
+        check(
+            ee::s15::f_00403db0__generated,
+            crate::game::seg::seg_2fe810::libmpeg_stop_dma_callback,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403db0__generated, 32, &[134], setup);
+    }
+
+    #[test]
+    fn libmpeg_restart_dma_callback_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_dma_callback_setup(c, seed);
+            c.pc = 0x0040_3dd8;
+        };
+        check(
+            ee::s15::f_00403dd8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_restart_dma_callback,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00403dd8__generated, 32, &[155], setup);
+    }
+
+    /// Work-area allocator fixture: header at `DATA + 0x4000` (unit, base,
+    /// cursor words seed-steered), `A3` null on every third seed (early
+    /// exit), the limit word small on half the remaining seeds (Error arm)
+    /// and generous on the others (bump arm).
+    pub(crate) fn libmpeg_work_area_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_2d88, 1);
+        scramble(c, &mut r);
+        c.g[SP][0] = (DATA + 0x7000) as u64;
+        let area = DATA + 0x4000;
+        // Unit, base, cursor: non-zero low bytes, distinct per word.
+        c.bus.write32(area + 0x0, 0x0000_0100 | (seed & 0xff));
+        c.bus.write32(area + 0x4, 0x0010_0000 | (seed & 0xff));
+        let cursor = 0x0020_0000 | (seed & 0xffff);
+        c.bus.write32(area + 0x8, cursor);
+        c.bus.write32(area + 0xc, 0x0f0f_0f0f ^ seed);
+        c.g[A0][0] = (0x40 | (seed & 0x3f)) as u64;
+        c.g[A1][0] = area as u64;
+        c.g[A2][0] = (0x10 | (seed & 0xf)) as u64;
+        c.g[A3][0] = if seed % 3 == 0 {
+            0
+        } else if seed / 3 % 2 == 0 {
+            0x20
+        } else {
+            0x2000_0000
+        };
+        c.pc = 0x0040_2d88;
+    }
+
+    #[test]
+    fn libmpeg_work_area_alloc_matches_alt() {
+        // Real callees only (no fakes): `check`, not `covered`.
+        check(
+            ee::s15::f_00402d88__generated,
+            crate::game::seg::seg_2fe810::libmpeg_work_area_alloc,
+            96,
+            &libmpeg_work_area_setup,
+        );
+    }
+
+    #[test]
+    fn libmpeg_work_area_alloc_paths() {
+        // Early exit (A3 null), bump, and Error arms.
+        require_paths(
+            ee::s15::f_00402d88__generated,
+            96,
+            &[23, 98],
+            &libmpeg_work_area_setup,
+        );
+    }
+
+    /// Trivial work-area header fixture: header at `DATA + 0x4000` prefilled
+    /// with non-zero words so every store changes RAM.
+    pub(crate) fn libmpeg_work_header_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0040_2d50, 0);
+        scramble(c, &mut r);
+        let area = DATA + 0x4000;
+        fill(c, &mut r, area, 0x10);
+        c.g[A0][0] = area as u64;
+        c.g[A1][0] = (0x1111_0000 | (seed & 0xffff)) as u64;
+        c.g[A2][0] = (0x2222_0000 | (seed & 0xffff)) as u64;
+        c.pc = 0x0040_2d50;
+    }
+
+    #[test]
+    fn libmpeg_work_area_init_matches_alt() {
+        check(
+            ee::s15::f_00402d50__generated,
+            crate::game::seg::seg_2fe810::libmpeg_work_area_init,
+            32,
+            &libmpeg_work_header_setup,
+        );
+        require_paths(ee::s15::f_00402d50__generated, 32, &[5], &|c, seed| {
+            libmpeg_work_header_setup(c, seed);
+            c.pc = 0x0040_2d50;
+        });
+    }
+
+    #[test]
+    fn libmpeg_work_area_mark_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_work_header_setup(c, seed);
+            c.pc = 0x0040_2d68;
+        };
+        check(
+            ee::s15::f_00402d68__generated,
+            crate::game::seg::seg_2fe810::libmpeg_work_area_mark,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00402d68__generated, 32, &[3], setup);
+    }
+
+    #[test]
+    fn libmpeg_work_area_restore_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            libmpeg_work_header_setup(c, seed);
+            c.pc = 0x0040_2d78;
+        };
+        check(
+            ee::s15::f_00402d78__generated,
+            crate::game::seg::seg_2fe810::libmpeg_work_area_restore,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_00402d78__generated, 32, &[3], setup);
+    }
+
+    /// MPEG1-flag fixture: decoder state at `DATA + 0x4000` prefilled
+    /// non-zero so clearing `+ 0x848` changes RAM, then the IPU bit call.
+    #[test]
+    fn libmpeg_reset_mpeg1_flag_matches_alt() {
+        let setup: &dyn Fn(&mut Cpu, u32) = &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_32a8, 0);
+            scramble(c, &mut r);
+            let state = DATA + 0x4000;
+            fill(c, &mut r, state, 0x240);
+            c.bus.write32(state + 0x848, 0x0101_0101 | (seed & 0xffff));
+            c.g[A0][0] = state as u64;
+            c.pc = 0x0040_32a8;
+        };
+        check(
+            ee::s15::f_004032a8__generated,
+            crate::game::seg::seg_2fe810::libmpeg_reset_mpeg1_flag,
+            32,
+            setup,
+        );
+        require_paths(ee::s15::f_004032a8__generated, 32, &[13], setup);
     }
 }

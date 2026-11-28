@@ -12229,3 +12229,11 @@
 0x00320038    DLHeap_Malloc_Wrapper
 0x00320b08    PS2ExecMan_v06
 0x00254400    VD_TextureSink_SetFrameRate
+0x00403d70    libmpeg_SequenceScalableExtension
+0x00403d80    libmpeg_UnknownExtension
+0x00403d90    libmpeg_PictureSpatialScalableExtension
+0x00403da0    libmpeg_PictureTemporalScalableExtension
+0x00403db0    libmpeg_StopDmaCallback
+0x00408508    libmpeg_SetOutputDone
+0x00408ca8    libmpeg_IpuFromDmaHandler
+0x00408fb0    libmpeg_IpuToDmaHandler
