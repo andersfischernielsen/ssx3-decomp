@@ -21667,9 +21667,18 @@ pub(crate) mod tests {
         c.bus.write32(SONY_OPEN_DESC, 0x4d4d_0000 + seed);
         c.bus.write32(SONY_OPEN_DESC + 4, 0x5eed_0000 + seed);
         // The video alloc/free hooks (both the fake) and the alloc flags.
+        // Bit 0x400 set on some seeds: the sweep's two `| 0x400` merges
+        // differ from `^` only when the bit is already set.
         c.bus.write32(0x0050_9430, FAKE);
         c.bus.write32(0x0050_9434, FAKE);
-        c.bus.write32(0x0050_9438, 0x0bad_0000 | seed);
+        c.bus.write32(
+            0x0050_9438,
+            if seed % 32 == 17 {
+                0x0bad_0400
+            } else {
+                0x0bad_0000
+            } | seed,
+        );
         for (i, a) in SONY_OPEN_OUT_GLOBALS.into_iter().enumerate() {
             c.bus.write32(a, 0x7a7a_0000 + i as u32);
         }
@@ -21684,6 +21693,16 @@ pub(crate) mod tests {
             )
         } else {
             (0x140 + seed, 0xe0 + seed)
+        };
+        // Gap arms: h/v of -16 (the cols/rows counts go -1 instead of 0)
+        // and v of -32 in interlaced mode (rows go -2 instead of 0).
+        let h = if seed % 24 == 23 { 0xffff_fff0 } else { h };
+        let v = if seed % 32 == 31 && seed % 3 != 2 {
+            0xffff_fff0
+        } else if seed % 32 == 15 && seed % 3 == 2 {
+            0xffff_ffe0
+        } else {
+            v
         };
         c.bus.write32(0x0050_94f4, h);
         c.bus.write32(0x0050_94f8, v);

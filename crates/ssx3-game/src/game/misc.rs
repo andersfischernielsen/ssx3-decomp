@@ -48431,7 +48431,9 @@ pub(crate) mod tests {
     }
 
     /// `Serialize_ReadString`: short strings and boundary lengths land in
-    /// the out area on both sides.
+    /// the out area on both sides. Lengths 1000 and 1001 take the 1000-byte
+    /// cap arm (the sweep's mutants read on past it or skip its forcing
+    /// NUL); the out area moved to make room for them.
     #[test]
     fn serialize_read_string_matches() {
         check(
@@ -48442,17 +48444,22 @@ pub(crate) mod tests {
                 let mut r = machine_rt(c, seed, 0x002d_27b0, 0);
                 const STREAM: u32 = DATA + 0x100;
                 const BUF: u32 = DATA + 0x200;
-                const OUT: u32 = DATA + 0x400;
+                // Room for 1001-byte inputs plus the terminator (BUF would
+                // run into OUT at 0x400); the sweep's cap arms need a
+                // 1000-byte unterminated prefix.
+                const OUT: u32 = DATA + 0x800;
                 c.bus.write32(STREAM, BUF);
-                for i in 0..0x40u32 {
+                for i in 0..0x100u32 {
                     c.bus.write32(BUF + 4 * i, 0x5555_0000 + i);
                 }
-                let len = match seed % 6 {
+                let len = match seed % 8 {
                     0 => 0,
                     1 => 1,
                     2 => 31,
                     3 => 32,
                     4 => 999,
+                    5 => 1000,
+                    6 => 1001,
                     _ => (r.next_u32() % 40) as usize,
                 };
                 for i in 0..len {
@@ -48468,24 +48475,33 @@ pub(crate) mod tests {
             ee::s09::f_002d27b0__generated,
             100,
             &[
-                290, 311, 371, 472, 530, 732, 755, 782, 860, 993, 1023, 1025, 1052, 1086, 1142,
-                1171, 21393,
+                // The seed remap (len key % 6 -> % 8) resampled the random
+                // lengths, so the old random-length pins 371, 472, 530,
+                // 755, 782, 860, 1025, 1142 and 1171 no longer occur; 588,
+                // 702, 834 and 972 are the new samples, and 21399 is the
+                // 1000/1001-byte cap arm.
+                290, 311, 588, 702, 732, 834, 972, 993, 1023, 1052, 1086, 21393, 21399,
             ],
             &|c, seed| {
                 let mut r = machine_rt(c, seed, 0x002d_27b0, 0);
                 const STREAM: u32 = DATA + 0x100;
                 const BUF: u32 = DATA + 0x200;
-                const OUT: u32 = DATA + 0x400;
+                // Room for 1001-byte inputs plus the terminator (BUF would
+                // run into OUT at 0x400); the sweep's cap arms need a
+                // 1000-byte unterminated prefix.
+                const OUT: u32 = DATA + 0x800;
                 c.bus.write32(STREAM, BUF);
-                for i in 0..0x40u32 {
+                for i in 0..0x100u32 {
                     c.bus.write32(BUF + 4 * i, 0x5555_0000 + i);
                 }
-                let len = match seed % 6 {
+                let len = match seed % 8 {
                     0 => 0,
                     1 => 1,
                     2 => 31,
                     3 => 32,
                     4 => 999,
+                    5 => 1000,
+                    6 => 1001,
                     _ => (r.next_u32() % 40) as usize,
                 };
                 for i in 0..len {
@@ -48535,6 +48551,10 @@ pub(crate) mod tests {
             60,
             &|c, seed| {
                 let (stream, out) = read_fixture(c, seed, 0x002d_25a0);
+                // A 4-aligned destination every fourth seed: the `sdl` /
+                // `sdr` pair is redundant on 8-aligned dests, so a mutant
+                // `sdl` address is invisible there.
+                let out = if seed % 4 == 3 { out + 4 } else { out };
                 c.g[A0][0] = stream as u64;
                 c.g[A1][0] = out as u64;
                 c.pc = 0x002d_25a0;
@@ -48542,6 +48562,8 @@ pub(crate) mod tests {
         );
         require_paths(ee::s09::f_002d25a0__generated, 60, &[99], &|c, seed| {
             let (stream, out) = read_fixture(c, seed, 0x002d_25a0);
+            // A 4-aligned destination every fourth seed (see above).
+            let out = if seed % 4 == 3 { out + 4 } else { out };
             c.g[A0][0] = stream as u64;
             c.g[A1][0] = out as u64;
             c.pc = 0x002d_25a0;
