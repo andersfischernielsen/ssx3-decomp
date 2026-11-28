@@ -140,7 +140,7 @@ pub fn libpad_init_rpc(c: &mut Cpu) {
                 }
                 continue 'l_3ff608;
             } else {
-                'b_3ff674: {
+                {
                     c.cycles += 17;
                     c.g[V0][0] = 0x10;
                     c.g[S0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6440));
@@ -160,11 +160,9 @@ pub fn libpad_init_rpc(c: &mut Cpu) {
                     callee::CALL_RPC.call(c, 0x003f_f668)?;
                     if (c.g[V0][0] as i64) >= 0 {
                         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-                        break 'b_3ff674;
                     } else {
                         c.cycles += 1;
                         c.g[V0][0] = 0u64;
-                        break 'b_3ff674;
                     }
                 }
                 c.cycles += 4;

@@ -114,52 +114,42 @@ pub fn libdma_wait_chan_idle(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 11;
         let frame = Frame::open(c, 0x40);
-        'b_3fde88: {
-            c.sd(frame.at(c, 0x10), c.g[S1][0]);
-            c.sd(frame.at(c, 0), c.g[S0][0]);
-            c.g[S1][0] = 0x1000000;
-            c.sd(frame.at(c, 0x30), c.g[RA][0]);
-            c.g[S0][0] = c.g[A0][0];
-            c.sd(frame.at(c, 0x20), c.g[S2][0]);
-            c.g[V0][0] = c.lw(c.g[S0][0] as u32);
-            c.g[V0][0] = c.g[V0][0] & 0x100;
-            let idle = c.g[V0][0] == 0u64;
-            c.g[S2][0] = 0x490000;
-            if idle {
-                break 'b_3fde88;
-            } else {
-                c.cycles += 1;
-                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
-                'l_3fde60: loop {
-                    'b_3fde78: {
-                        c.cycles += 2;
-                        let live = (c.g[S1][0] as i64) >= 0;
-                        if live {
-                            break 'b_3fde78;
-                        } else {
-                            c.cycles += 4;
-                            c.g[RA][0] = sx(0x003f_de70);
-                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x77d8));
-                            callee::PRINTF.call(c, 0x003f_de70)?;
-                            c.g[RA][0] = sx(0x003f_de78);
-                            c.g[A0][0] = c.g[S0][0];
-                            callee::DMA_PAUSE.call(c, 0x003f_de78)?;
-                            break 'b_3fde78;
-                        }
-                    }
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[S1][0] = 0x1000000;
+        c.sd(frame.at(c, 0x30), c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+        c.g[V0][0] = c.g[V0][0] & 0x100;
+        let idle = c.g[V0][0] == 0u64;
+        c.g[S2][0] = 0x490000;
+        if !idle {
+            c.cycles += 1;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+            loop {
+                c.cycles += 2;
+                let live = (c.g[S1][0] as i64) >= 0;
+                if !live {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw(c.g[S0][0] as u32);
-                    c.g[V0][0] = c.g[V0][0] & 0x100;
-                    let busy = c.g[V0][0] != 0u64;
-                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
-                    if busy {
-                        if event_due(c) {
-                            deliver_event_here(c, 0x003f_de60);
-                        }
-                        continue 'l_3fde60;
-                    } else {
-                        break 'b_3fde88;
+                    c.g[RA][0] = sx(0x003f_de70);
+                    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x77d8));
+                    callee::PRINTF.call(c, 0x003f_de70)?;
+                    c.g[RA][0] = sx(0x003f_de78);
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::DMA_PAUSE.call(c, 0x003f_de78)?;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(c.g[S0][0] as u32);
+                c.g[V0][0] = c.g[V0][0] & 0x100;
+                let busy = c.g[V0][0] != 0u64;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(0x1));
+                if busy {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003f_de60);
                     }
+                } else {
+                    break;
                 }
             }
         }
@@ -184,57 +174,47 @@ pub fn libdma_wait_madr(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
         let frame = Frame::open(c, 0x50);
-        'b_3fdf08: {
-            c.sd(frame.at(c, 0x20), c.g[S2][0]);
-            c.sd(frame.at(c, 0x10), c.g[S1][0]);
-            c.g[S2][0] = c.g[A1][0];
-            c.sd(frame.at(c, 0), c.g[S0][0]);
-            c.g[S1][0] = c.g[A0][0];
-            c.sd(frame.at(c, 0x40), c.g[RA][0]);
-            c.g[S0][0] = 0x1000000;
-            c.sd(frame.at(c, 0x30), c.g[S3][0]);
-            if c.g[A2][0] != 0 {
-                c.g[S0][0] = c.g[A2][0];
-            }
-            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
-            c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
-            let done = c.g[V0][0] == 0u64;
-            c.g[S3][0] = 0x490000;
-            if done {
-                break 'b_3fdf08;
-            } else {
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[S2][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[S1][0] = c.g[A0][0];
+        c.sd(frame.at(c, 0x40), c.g[RA][0]);
+        c.g[S0][0] = 0x1000000;
+        c.sd(frame.at(c, 0x30), c.g[S3][0]);
+        if c.g[A2][0] != 0 {
+            c.g[S0][0] = c.g[A2][0];
+        }
+        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
+        let done = c.g[V0][0] == 0u64;
+        c.g[S3][0] = 0x490000;
+        if !done {
+            c.cycles += 2;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+            loop {
                 c.cycles += 2;
-                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
-                'l_3fdee0: loop {
-                    'b_3fdef8: {
-                        c.cycles += 2;
-                        let live = (c.g[S0][0] as i64) >= 0;
-                        if live {
-                            break 'b_3fdef8;
-                        } else {
-                            c.cycles += 4;
-                            c.g[RA][0] = sx(0x003f_def0);
-                            c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x77d8));
-                            callee::PRINTF.call(c, 0x003f_def0)?;
-                            c.g[RA][0] = sx(0x003f_def8);
-                            c.g[A0][0] = c.g[S1][0];
-                            callee::DMA_PAUSE.call(c, 0x003f_def8)?;
-                            break 'b_3fdef8;
-                        }
-                    }
+                let live = (c.g[S0][0] as i64) >= 0;
+                if !live {
                     c.cycles += 4;
-                    c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
-                    c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
-                    let waiting = c.g[V0][0] != 0u64;
-                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
-                    if waiting {
-                        if event_due(c) {
-                            deliver_event_here(c, 0x003f_dee0);
-                        }
-                        continue 'l_3fdee0;
-                    } else {
-                        break 'b_3fdf08;
+                    c.g[RA][0] = sx(0x003f_def0);
+                    c.g[A0][0] = sx((c.g[S3][0] as u32).wrapping_add(0x77d8));
+                    callee::PRINTF.call(c, 0x003f_def0)?;
+                    c.g[RA][0] = sx(0x003f_def8);
+                    c.g[A0][0] = c.g[S1][0];
+                    callee::DMA_PAUSE.call(c, 0x003f_def8)?;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = (c.g[V0][0] < c.g[S2][0]) as u64;
+                let waiting = c.g[V0][0] != 0u64;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                if waiting {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003f_dee0);
                     }
+                } else {
+                    break;
                 }
             }
         }
@@ -400,59 +380,52 @@ pub fn sce_dma_put_env(c: &mut Cpu) {
                 let valid = c.g[V0][0] != 0u64;
                 c.g[V0][0] = 0x490000;
                 if valid {
-                    'b_3fe1cc: {
-                        'b_3fe1c0: {
-                            c.cycles += 30;
-                            c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
-                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7818));
-                            c.g[A0][0] = 0x490000;
-                            c.g[A1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
-                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
-                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7828));
-                            c.g[T0][0] = c.lbu(c.g[V1][0] as u32);
-                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                            c.g[V0][0] = 0xffffffffffff0000;
-                            c.g[V0][0] = c.g[V0][0] | 0xffcf;
-                            c.g[A0][0] = 0x490000;
-                            c.g[A3][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x2));
-                            c.g[V0][0] = c.g[T2][0] & c.g[V0][0];
-                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7838));
-                            c.g[T0][0] = sx((c.g[T0][0] as u32) << 4);
-                            c.g[A2][0] = c.lbu(c.g[A1][0] as u32);
-                            c.g[V1][0] = 0xffffffffffff0000;
-                            c.g[T2][0] = c.g[V0][0] | c.g[T0][0];
-                            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                            c.g[V1][0] = c.g[V1][0] | 0xff3f;
-                            c.g[A2][0] = sx((c.g[A2][0] as u32) << 6);
-                            c.g[V1][0] = c.g[T2][0] & c.g[V1][0];
-                            c.g[A0][0] = c.lbu(c.g[A3][0] as u32);
-                            c.g[V0][0] = 0xffffffffffff0000;
-                            c.g[T2][0] = c.g[V1][0] | c.g[A2][0];
-                            c.g[V0][0] = c.g[V0][0] | 0xfff3;
-                            c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
-                            c.g[V0][0] = c.g[T2][0] & c.g[V0][0];
-                            let plain = c.g[T3][0] == 0u64;
-                            c.g[T2][0] = c.g[V0][0] | c.g[A0][0];
-                            if plain {
-                                break 'b_3fe1c0;
-                            } else {
-                                c.cycles += 9;
-                                c.g[V1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x3));
-                                c.g[V0][0] = 0xffffffffffff0000;
-                                c.g[T2][0] = c.g[T2][0] | 0x2;
-                                c.g[V0][0] = c.g[V0][0] | 0xfcff;
-                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
-                                c.g[V0][0] = c.g[T2][0] & c.g[V0][0];
-                                c.g[V1][0] = sx((c.g[V1][0] as u32) << 8);
-                                c.g[T2][0] = c.g[V0][0] | c.g[V1][0];
-                                break 'b_3fe1cc;
-                            }
-                        }
+                    c.cycles += 30;
+                    c.g[V1][0] = c.lbu(c.g[T1][0] as u32);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x7818));
+                    c.g[A0][0] = 0x490000;
+                    c.g[A1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x1));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7828));
+                    c.g[T0][0] = c.lbu(c.g[V1][0] as u32);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[V0][0] = c.g[V0][0] | 0xffcf;
+                    c.g[A0][0] = 0x490000;
+                    c.g[A3][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x2));
+                    c.g[V0][0] = c.g[T2][0] & c.g[V0][0];
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x7838));
+                    c.g[T0][0] = sx((c.g[T0][0] as u32) << 4);
+                    c.g[A2][0] = c.lbu(c.g[A1][0] as u32);
+                    c.g[V1][0] = 0xffffffffffff0000;
+                    c.g[T2][0] = c.g[V0][0] | c.g[T0][0];
+                    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    c.g[V1][0] = c.g[V1][0] | 0xff3f;
+                    c.g[A2][0] = sx((c.g[A2][0] as u32) << 6);
+                    c.g[V1][0] = c.g[T2][0] & c.g[V1][0];
+                    c.g[A0][0] = c.lbu(c.g[A3][0] as u32);
+                    c.g[V0][0] = 0xffffffffffff0000;
+                    c.g[T2][0] = c.g[V1][0] | c.g[A2][0];
+                    c.g[V0][0] = c.g[V0][0] | 0xfff3;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                    c.g[V0][0] = c.g[T2][0] & c.g[V0][0];
+                    let plain = c.g[T3][0] == 0u64;
+                    c.g[T2][0] = c.g[V0][0] | c.g[A0][0];
+                    if plain {
                         c.cycles += 3;
                         c.g[V0][0] = 0xffffffffffff0000;
                         c.g[V0][0] = c.g[V0][0] | 0xfffd;
                         c.g[T2][0] = c.g[T2][0] & c.g[V0][0];
-                        break 'b_3fe1cc;
+                    } else {
+                        c.cycles += 9;
+                        c.g[V1][0] = c.lbu((c.g[T1][0] as u32).wrapping_add(0x3));
+                        c.g[V0][0] = 0xffffffffffff0000;
+                        c.g[T2][0] = c.g[T2][0] | 0x2;
+                        c.g[V0][0] = c.g[V0][0] | 0xfcff;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x1));
+                        c.g[V0][0] = c.g[T2][0] & c.g[V0][0];
+                        c.g[V1][0] = sx((c.g[V1][0] as u32) << 8);
+                        c.g[T2][0] = c.g[V0][0] | c.g[V1][0];
                     }
                     c.cycles += 39;
                     c.g[V0][0] = c.lhu((c.g[T1][0] as u32).wrapping_add(0x4));
@@ -667,25 +640,21 @@ pub fn sce_dma_reset(c: &mut Cpu) {
         c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x77f0));
         c.g[A0][0] = 0x9;
         c.g[S1][0] = c.g[A1][0] & 0x1;
-        'l_3fdfe8: loop {
-            'b_3fe014: {
-                c.cycles += 3;
-                c.g[V0][0] = c.lw(c.g[A2][0] as u32);
-                if c.g[V0][0] == 0u64 {
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
-                    break 'b_3fe014;
-                } else {
-                    c.cycles += 8;
-                    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
-                    c.sw((c.g[V0][0] as u32).wrapping_add(0x80), 0u64);
-                    c.sw(c.g[V0][0] as u32, 0u64);
-                    c.sw((c.g[V0][0] as u32).wrapping_add(0x30), 0u64);
-                    c.sw((c.g[V0][0] as u32).wrapping_add(0x10), 0u64);
-                    c.sw((c.g[V0][0] as u32).wrapping_add(0x50), 0u64);
-                    c.sw((c.g[V0][0] as u32).wrapping_add(0x40), 0u64);
-                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
-                    break 'b_3fe014;
-                }
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(c.g[A2][0] as u32);
+            if c.g[V0][0] == 0u64 {
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
+            } else {
+                c.cycles += 8;
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x80), 0u64);
+                c.sw(c.g[V0][0] as u32, 0u64);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x30), 0u64);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x10), 0u64);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x50), 0u64);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x40), 0u64);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4));
             }
             c.cycles += 3;
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
@@ -695,40 +664,34 @@ pub fn sce_dma_reset(c: &mut Cpu) {
                 if event_due(c) {
                     deliver_event_here(c, 0x003f_dfe8);
                 }
-                continue 'l_3fdfe8;
             } else {
-                'b_3fe078: {
-                    c.cycles += 16;
+                c.cycles += 16;
+                c.g[V1][0] = 0x10000000;
+                c.g[V0][0] = 0xff1f;
+                c.g[V1][0] = c.g[V1][0] | 0xe010;
+                c.g[A2][0] = 0xffffffffff1f0000;
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = 0x14;
+                c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+                c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+                c.g[RA][0] = sx(0x003f_e04c);
+                c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+                callee::ZERO_BYTES.call(c, 0x003f_e04c)?;
+                c.g[RA][0] = sx(0x003f_e054);
+                c.g[A0][0] = c.g[SP][0];
+                callee::PUT_ENV.call(c, 0x003f_e054)?;
+                c.g[V1][0] = 0x1;
+                let not_enabled = c.g[S0][0] != c.g[V1][0];
+                c.g[V0][0] = c.g[S1][0];
+                if !not_enabled {
+                    c.cycles += 6;
                     c.g[V1][0] = 0x10000000;
-                    c.g[V0][0] = 0xff1f;
-                    c.g[V1][0] = c.g[V1][0] | 0xe010;
-                    c.g[A2][0] = 0xffffffffff1f0000;
-                    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
-                    c.g[A0][0] = c.g[SP][0];
-                    c.g[A1][0] = 0x14;
+                    c.g[V1][0] = c.g[V1][0] | 0xe000;
                     c.g[V0][0] = c.lw(c.g[V1][0] as u32);
-                    c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
-                    c.g[RA][0] = sx(0x003f_e04c);
+                    c.g[V0][0] = c.g[V0][0] | 0x1;
                     c.sw(c.g[V1][0] as u32, c.g[V0][0]);
-                    callee::ZERO_BYTES.call(c, 0x003f_e04c)?;
-                    c.g[RA][0] = sx(0x003f_e054);
-                    c.g[A0][0] = c.g[SP][0];
-                    callee::PUT_ENV.call(c, 0x003f_e054)?;
-                    c.g[V1][0] = 0x1;
-                    let not_enabled = c.g[S0][0] != c.g[V1][0];
                     c.g[V0][0] = c.g[S1][0];
-                    if not_enabled {
-                        break 'b_3fe078;
-                    } else {
-                        c.cycles += 6;
-                        c.g[V1][0] = 0x10000000;
-                        c.g[V1][0] = c.g[V1][0] | 0xe000;
-                        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
-                        c.g[V0][0] = c.g[V0][0] | 0x1;
-                        c.sw(c.g[V1][0] as u32, c.g[V0][0]);
-                        c.g[V0][0] = c.g[S1][0];
-                        break 'b_3fe078;
-                    }
                 }
                 c.cycles += 5;
                 c.g[RA][0] = c.ld(frame.at(c, 0x40));

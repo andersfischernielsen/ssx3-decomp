@@ -193,63 +193,63 @@ pub fn libscf_bin_to_bcd(c: &mut Cpu) {
 pub fn libscf_clock_add_minutes(c: &mut Cpu) {
     guest(c, |c| {
         let frame = Frame::open(c, 0x30);
-        'b_40bfc0: {
-            'b_40bfbc: {
-                {
-                    c.cycles += 11;
-                    c.sd(frame.at(c, 0x10), c.g[S1][0]);
-                    c.sd(frame.at(c, 0), c.g[S0][0]);
-                    c.g[S1][0] = c.g[A0][0];
-                    frame.save_ra(c, 0x20);
-                    c.g[S0][0] = c.g[A1][0];
-                    callee::CLOCK_BCD_TO_BIN.call(c, 0x0040_bf64)?;
-                    c.g[V0][0] = Addr(c.g[S1][0] as u32).off(CLOCK_MIN).lbu(c);
-                    c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
-                    if (c.g[S0][0] as i64) < 0 {
-                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3c));
-                    } else {
-                        c.cycles += 3;
-                        c.g[V0][0] = ((c.g[S0][0] as i64) < 61) as u64;
-                        if c.g[V0][0] != 0 {
-                            Addr(c.g[S1][0] as u32).off(CLOCK_MIN).sb(c, c.g[S0][0]);
-                            break 'b_40bfbc;
-                        }
-                        c.cycles += 2;
-                        c.g[A0][0] = c.g[S1][0];
-                        'l_40bf88: loop {
-                            c.cycles += 5;
-                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x3c));
-                            callee::CLOCK_INC_HOUR.call(c, 0x0040_bf90)?;
-                            c.g[V0][0] = ((c.g[S0][0] as i64) < 61) as u64;
-                            c.g[A0][0] = c.g[S1][0];
-                            if c.g[V0][0] == 0 {
-                                if event_due(c) {
-                                    deliver_event_here(c, 0x0040_bf88);
-                                }
-                                continue 'l_40bf88;
-                            }
-                            c.cycles += 2;
-                            Addr(c.g[S1][0] as u32).off(CLOCK_MIN).sb(c, c.g[S0][0]);
-                            break 'b_40bfc0;
-                        }
+        c.cycles += 11;
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        callee::CLOCK_BCD_TO_BIN.call(c, 0x0040_bf64)?;
+        c.g[V0][0] = Addr(c.g[S1][0] as u32).off(CLOCK_MIN).lbu(c);
+        c.g[S0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        // 0x40bfbc: the negative and early-store paths rejoin for the
+        // shared tail; only the increment-loop exit skips it.
+        let mut tail = true;
+        if (c.g[S0][0] as i64) < 0 {
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3c));
+            loop {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S1][0];
+                callee::CLOCK_DEC_HOUR.call(c, 0x0040_bfb0)?;
+                if (c.g[S0][0] as i64) < 0 {
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3c));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0040_bfa8);
                     }
-                }
-                'l_40bfa8: loop {
-                    c.cycles += 4;
-                    c.g[A0][0] = c.g[S1][0];
-                    callee::CLOCK_DEC_HOUR.call(c, 0x0040_bfb0)?;
-                    if (c.g[S0][0] as i64) < 0 {
-                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x3c));
-                        if event_due(c) {
-                            deliver_event_here(c, 0x0040_bfa8);
-                        }
-                        continue 'l_40bfa8;
-                    }
+                } else {
                     c.cycles += 1;
                     Addr(c.g[S1][0] as u32).off(CLOCK_MIN).sb(c, c.g[S0][0]);
-                    break 'b_40bfbc;
+                    break;
                 }
             }
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S0][0] as i64) < 61) as u64;
+            if c.g[V0][0] != 0 {
+                Addr(c.g[S1][0] as u32).off(CLOCK_MIN).sb(c, c.g[S0][0]);
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S1][0];
+                loop {
+                    c.cycles += 5;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x3c));
+                    callee::CLOCK_INC_HOUR.call(c, 0x0040_bf90)?;
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < 61) as u64;
+                    c.g[A0][0] = c.g[S1][0];
+                    if c.g[V0][0] == 0 {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0040_bf88);
+                        }
+                    } else {
+                        c.cycles += 2;
+                        Addr(c.g[S1][0] as u32).off(CLOCK_MIN).sb(c, c.g[S0][0]);
+                        break;
+                    }
+                }
+                tail = false;
+            }
+        }
+        if tail {
             c.cycles += 1;
             c.g[A0][0] = c.g[S1][0];
         }

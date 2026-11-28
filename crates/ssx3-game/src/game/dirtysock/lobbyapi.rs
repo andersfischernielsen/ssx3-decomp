@@ -4912,7 +4912,7 @@ pub fn lobby_api_cancel_request(c: &mut Cpu) {
     if !empty {
         c.cycles += 2;
         c.g[A3][0] = 0xffff_ffff_ffff_ffff;
-        'l_3e8d88: loop {
+        loop {
             c.cycles += 4;
             c.g[V1][0] = c.lw(c.g[A0][0] as u32);
             c.g[V0][0] = c.lw(c.g[V1][0] as u32);
@@ -4942,7 +4942,7 @@ pub fn lobby_api_cancel_request(c: &mut Cpu) {
             let more = c.g[V1][0] != 0u64;
             c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(LOBBY_REQ_NEXT));
             if !more {
-                break 'l_3e8d88;
+                break;
             }
             if event_due(c) {
                 deliver_event_here(c, 0x003e_8d88);
