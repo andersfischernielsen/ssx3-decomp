@@ -13713,7 +13713,7 @@ pub fn oc680_mid_left_chase_camera_update(c: &mut Cpu) {
 /// generated body (at install: its `__generated` alias).
 pub fn manual_chase_camera_algorithm_reset_for_rider(c: &mut Cpu) {
     if c.pc != 0x001606d8 {
-        return ee::s01::f_001606d8__generated(c);
+        return manual_chase_camera_algorithm_reset_for_rider_resume(c);
     }
     guest(c, |c| {
         'b_160750: {
@@ -13770,14 +13770,100 @@ pub fn manual_chase_camera_algorithm_reset_for_rider(c: &mut Cpu) {
     });
 }
 
+/// Native resume of `manual_chase_camera_algorithm_reset_for_rider` (converted from the `entries` body): any entry
+/// other than 0x001606d8, after an unwound callee or event.
+#[allow(
+    unreachable_code,
+    unused_assignments,
+    unused_labels,
+    unused_mut,
+    unused_variables
+)]
+fn manual_chase_camera_algorithm_reset_for_rider_resume(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc: u32 = c.pc;
+        loop {
+            match pc {
+                0x001606d8 => {
+                    c.cycles += 10;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S0][0] = c.g[A0][0];
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.g[S1][0] = c.g[A1][0];
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x30));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+                    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x6c0));
+                    pc = 0x00160700;
+                    continue;
+                }
+                0x00160700 => {
+                    c.cycles += 6;
+                    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+                    let t = c.g[V0][0] as u32;
+                    c.g[RA][0] = sx(0x00160710);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                    call_ptr(c, t, 0x00160710)?;
+
+                    if c.g[S1][0] != c.g[V0][0] {
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        pc = 0x00160750;
+                        continue;
+                    }
+                    pc = 0x00160718;
+                    continue;
+                }
+                0x00160718 => {
+                    c.cycles += 14;
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x00160724);
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x00166c60, 0x00160724)?;
+                    c.g[AT][0] = 0x42c80000;
+                    c.mtc1(1, 12);
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x00160738);
+                    c.mov_s(13, 12);
+                    call_ptr(c, 0x00166550, 0x00160738)?;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x28));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x2c));
+                    let t = c.g[V1][0] as u32;
+                    c.g[RA][0] = sx(0x0016074c);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    call_ptr(c, t, 0x0016074c)?;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    pc = 0x00160750;
+                    continue;
+                }
+                0x00160750 => {
+                    c.cycles += 4;
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    let t = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.pc = t;
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x001606d8, 0x00160760);
+                    return Ok(());
+                }
+            }
+        }
+    });
+}
+
 /// `ChaseCameraAlgorithm_ApplyAirSwing` (0x00164878): the normal entry, converted from the generated body
 /// (a `match pc` / labelled-block body: every register, cycle and call kept).
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn chase_camera_algorithm_apply_air_swing_2(c: &mut Cpu) {
-    if c.pc != 0x00164878 {
-        return ee::s01::f_00164878__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_16531c: {
             'b_165318: {

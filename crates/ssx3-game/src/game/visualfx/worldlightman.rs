@@ -6364,9 +6364,8 @@ pub fn oc817_attached_emitter_type_data_free_part1(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn visual_effects_man_static_init_destroy(c: &mut Cpu) {
-    if c.pc != 0x002f6b88 {
-        return ee::s09::f_002f6b88__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2f7a20: {
             'b_2f7a1c: {

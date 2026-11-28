@@ -3413,9 +3413,8 @@ pub fn stream_buffer_clear_prebuffer_handle(c: &mut Cpu) {
 /// SND stream. Converted from the generated labelled-block body: every register,
 /// cycle and call kept.
 pub fn stream_buffer_ctor_2(c: &mut Cpu) {
-    if c.pc != 0x002a9c00 {
-        return ee::s08::f_002a9c00__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2a9d8c: {
             c.cycles += 21;

@@ -95,6 +95,19 @@ def prod_end(text):
     return m.start() if m else len(text)
 
 
+def test_ranges(text):
+    """Spans of the `#[cfg(test)]` items (the reorg interleaves them with production code)."""
+    out = []
+    for m in re.finditer(r'^[ \t]*#\[cfg\(test\)\]', text, re.M):
+        j = text.find('{', m.end())
+        k = text.find(';', m.end())
+        if j < 0 or 0 <= k < j:
+            out.append((m.start(), k + 1 if k >= 0 else m.end()))
+        else:
+            out.append((m.start(), match_brace(text, j)))
+    return out
+
+
 def match_brace(text, i):
     """index just past the `}` matching the `{` at text[i]; skips strings/comments/char literals."""
     depth = 0
@@ -205,7 +218,10 @@ def process(path, dry, report):
     unhandled = []
     n_guard = 0
     edits = []  # (start, end, replacement)
-    for g in GUARD.finditer(text, 0, pe):
+    tr = test_ranges(text)
+    for g in GUARD.finditer(text):
+        if any(a <= g.start() < b for a, b in tr):
+            continue
         gend = match_brace(text, g.end() - 1)
         block = text[g.start():gend]
         cm = CALL.search(block)

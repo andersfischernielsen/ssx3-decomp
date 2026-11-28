@@ -2652,9 +2652,8 @@ pub fn ps2_bezier_man_emit_patch_projector_passes(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn ps2_bezier_man_v18(c: &mut Cpu) {
-    if c.pc != 0x0038b370 {
-        return ee::s12::f_0038b370__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_38b40c: {
             c.cycles += 36;

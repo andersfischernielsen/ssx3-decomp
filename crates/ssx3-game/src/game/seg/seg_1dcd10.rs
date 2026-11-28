@@ -598,9 +598,8 @@ pub(crate) mod tests {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn c_ps2_fog_particle_man_draw_particles(c: &mut Cpu) {
-    if c.pc != 0x002dc7b0 {
-        return ee::s09::f_002dc7b0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2dc7f8: {
             c.cycles += 18;

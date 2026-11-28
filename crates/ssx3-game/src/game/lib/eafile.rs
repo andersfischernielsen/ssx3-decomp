@@ -7754,9 +7754,8 @@ pub fn ea_file_cd_read_thread(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn ea_file_cd_init(c: &mut Cpu) {
-    if c.pc != 0x003e4040 {
-        return ee::s14::f_003e4040__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_3e4480: {
             c.cycles += 33;

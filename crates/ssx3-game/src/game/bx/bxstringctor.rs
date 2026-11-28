@@ -3769,9 +3769,8 @@ pub fn path_get_first_event_type1_start(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn path_data_load_file_2(c: &mut Cpu) {
-    if c.pc != 0x0026ada8 {
-        return ee::s07::f_0026ada8__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         c.cycles += 16;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
@@ -3805,9 +3804,8 @@ pub fn path_data_load_file_2(c: &mut Cpu) {
 /// Hand port of the generated body (PathData_ReloadPaths, 0x0026ae70), every register, cycle and
 /// call kept; any other `pc` (a resume after an unwound callee) runs the generated body.
 pub fn path_data_reload_paths_2(c: &mut Cpu) {
-    if c.pc != 0x0026ae70 {
-        return ee::s07::f_0026ae70__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_26aeb0: {
             'b_26aea0: {

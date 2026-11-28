@@ -3595,9 +3595,8 @@ pub fn avalanche_sample_history(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn avalanche_bake_node_history(c: &mut Cpu) {
-    if c.pc != 0x002d66a0 {
-        return ee::s09::f_002d66a0__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_2d7af0: {
             c.cycles += 99;

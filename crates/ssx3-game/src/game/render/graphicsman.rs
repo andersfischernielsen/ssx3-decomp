@@ -10157,9 +10157,8 @@ pub fn ps2gfx_render_bloom(c: &mut Cpu) {
 /// Any other `pc` (a resume after an unwound callee or event) runs the
 /// generated body (at install: its `__generated` alias).
 pub fn ps2_graphics_man_render_depth_fog(c: &mut Cpu) {
-    if c.pc != 0x0036ac00 {
-        return ee::s12::f_0036ac00__generated(c);
-    }
+    // no resume points: the generated body ignores `c.pc` and always starts at the
+    // entry, so every pc runs the body below (the guard is not needed).
     guest(c, |c| {
         'b_36adf4: {
             'b_36adf0: {
