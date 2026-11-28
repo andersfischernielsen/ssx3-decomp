@@ -8846,45 +8846,41 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
             if !t {
                 c.cycles += 2;
                 c.g[S6][0] = 0u64;
-                'l_414d70: loop {
-                    'b_414da0: {
-                        c.cycles += 2;
-                        let t = c.g[FP][0] == 0u64;
-                        c.g[A0][0] = 0x1;
-                        if !t {
-                            c.cycles += 6;
-                            c.g[T2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
-                            c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
-                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
-                            c.g[V0][0] = sx((c.g[V0][0] as u32) >> 30);
-                            let t = c.g[V0][0] != c.g[A0][0];
-                            c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                loop {
+                    c.cycles += 2;
+                    let t = c.g[FP][0] == 0u64;
+                    c.g[A0][0] = 0x1;
+                    if !t {
+                        c.cycles += 6;
+                        c.g[T2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                        c.g[V1][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 30);
+                        let t = c.g[V0][0] != c.g[A0][0];
+                        c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x4));
+                        if t {
+                            c.cycles += 5;
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+                            c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                            c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x8));
                             if t {
-                                c.cycles += 5;
-                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
-                                c.sw((c.g[SP][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-                                c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
-                                let t = c.g[V0][0] != 0u64;
-                                c.g[S6][0] = sx((c.g[S6][0] as u32).wrapping_add(0x8));
-                                if t {
-                                    if event_due(c) {
-                                        deliver_event_here(c, 0x0041_4d70);
-                                    }
-                                    continue 'l_414d70;
-                                } else {
-                                    break 'l_414d70;
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0041_4d70);
                                 }
+                                continue;
                             } else {
-                                c.cycles += 2;
-                                c.g[T2][0] =
-                                    sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
-                                break 'b_414da0;
+                                break;
                             }
+                        } else {
+                            c.cycles += 2;
+                            c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
                         }
+                    } else {
                         c.cycles += 2;
                         c.g[T2][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
                         c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[T2][0] as u32));
-                        break 'b_414da0;
                     }
                     c.cycles += 9;
                     c.g[V0][0] = 0x1fff0000;
@@ -8929,9 +8925,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                             if event_due(c) {
                                 deliver_event_here(c, 0x0041_4d70);
                             }
-                            continue 'l_414d70;
+                            continue;
                         } else {
-                            break 'l_414d70;
+                            break;
                         }
                     } else {
                         c.cycles += 2;
@@ -8953,9 +8949,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                 if event_due(c) {
                                     deliver_event_here(c, 0x0041_4d70);
                                 }
-                                continue 'l_414d70;
+                                continue;
                             } else {
-                                break 'l_414d70;
+                                break;
                             }
                         }
                         c.cycles += 2;
@@ -8973,9 +8969,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                 if event_due(c) {
                                     deliver_event_here(c, 0x0041_4d70);
                                 }
-                                continue 'l_414d70;
+                                continue;
                             } else {
-                                break 'l_414d70;
+                                break;
                             }
                         } else {
                             c.cycles += 2;
@@ -9060,9 +9056,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                             if event_due(c) {
                                                 deliver_event_here(c, 0x0041_4d70);
                                             }
-                                            continue 'l_414d70;
+                                            continue;
                                         } else {
-                                            break 'l_414d70;
+                                            break;
                                         }
                                     } else {
                                         c.cycles += 2;
@@ -9085,9 +9081,9 @@ pub fn class_type_info_dcast(c: &mut Cpu) {
                                                 if event_due(c) {
                                                     deliver_event_here(c, 0x0041_4d70);
                                                 }
-                                                continue 'l_414d70;
+                                                continue;
                                             } else {
-                                                break 'l_414d70;
+                                                break;
                                             }
                                         } else {
                                             c.cycles += 2;
@@ -19047,10 +19043,32 @@ pub(crate) mod tests {
         // deep calls. Both sides run the same walk identically. The S0 == 0
         // next-base arm is not reached: the fakes never return 0 (in the
         // game a null virtual return takes it).
-        check(
+        crate::difftest::check_paths(
             ee::s15::f_00414d08__generated,
             class_type_info_dcast,
             SEEDS_4 + 2,
+            // Steering (count, flags, A2, S5; B-seeds fix count 2 and ride
+            // the LOG_RESULTS lattice): every observed walk cost. The S0 == 0
+            // next-base arm is not hit (the fakes never return 0).
+            &[
+                89,  // dst == src names (seed 61, early exit)
+                91,  // count 0 (all 16)
+                106, // count 1, A2 set, plain flags (seeds 4, 22, 40)
+                119, // count 2, A2 set, plain flags (seeds 5, 23, 41)
+                137, // count 1, A2 clear
+                139, // count 1, mask+next flags, A2 clear (seeds 13, 31)
+                141, // count 1, mask flags, A2 set (seeds 10, 28, 46)
+                146, // count 1, mask+next flags, A2 set (seeds 16, 34)
+                178, // count 2, A2 clear, S5 clear (seeds 2, 8, 26, 32)
+                187, // count 2, A2 set, S5 clear (seeds 11, 29 + B lat 0/1)
+                195, // count 2, mask+next flags, A2 set, S5 clear (seed 35)
+                220, // count 2, A2 clear, S5 set (seeds 14, 20, 38, 44)
+                222, // B, S5 set, lattice 0/1 (seeds 63, 64)
+                228, // count 2, S5 set (seeds 47, 62)
+                231, // B, lattice 2, S5 set (seed 60)
+                239, // count 2, mask+next flags, A2 set, S5 set (seed 17)
+                314, // count 3 (seed 65)
+            ],
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0041_4d08, 0);
                 fill(c, &mut r, DB + 0x400, 32);
