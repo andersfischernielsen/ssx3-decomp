@@ -41,6 +41,7 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0018_6518, c_fe_state_on_activate, "cFEState_OnActivate"),
+    (0x0019_59a8, fe_locale_load_table, "FELocale_LoadTable"),
     (
         0x0019_5948,
         fe_locale_unload_all_tables,
@@ -2455,6 +2456,31 @@ pub(crate) mod tests {
                 let _ = machine(c, seed, 0x1dd718, 0);
                 gate_on(c);
                 c.g[A0][0] = sx(DATA + 0x1000 + 0x40 * (seed % 3));
+            },
+        );
+    }
+
+    /// `FELocale_LoadTable` (0x1959a8): negative language index (early
+    /// return), an existing table entry, and the allocating path.
+    #[test]
+    fn fe_locale_load_table_matches() {
+        check(
+            ee::s02::f_001959a8__generated,
+            fe_locale_load_table,
+            80,
+            &|c, seed| {
+                let _ = machine_rt(c, seed, 0x0019_59a8, 0);
+                let this = DATA + 0x100;
+                let table = DATA + 0x400;
+                // 0x80 is a negative language index (the early return).
+                let lang: u32 = [0u32, 1, 2, 3, 0x80][seed as usize % 5];
+                c.bus.write32(this + 8, table);
+                c.bus.write32(
+                    table + 4 * lang,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x2000 },
+                );
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = lang as u64;
             },
         );
     }

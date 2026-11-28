@@ -49,6 +49,7 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0014_dc80, be_library_get_instance, "cBE_getBE"),
+    (0x0014_c6a0, bolts_load_db, "Bolts_LoadDB"),
     (
         0x0014_a130,
         be_find_rider_by_profile,

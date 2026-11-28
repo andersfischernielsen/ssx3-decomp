@@ -78,6 +78,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         libmpeg_init_spr_buffers,
         "libmpeg_InitSprBuffers",
     ),
+    (
+        0x0040_3240,
+        libmpeg_flush_pending_picture,
+        "libmpeg_FlushPendingPicture",
+    ),
+    (
+        0x0040_8988,
+        libmpeg_fetch_ref_blocks,
+        "libmpeg_FetchRefBlocks",
+    ),
     (0x0040_3398, libmpeg_reset_ipu, "libmpeg_ResetIpu"),
     (
         0x0040_3460,
@@ -7318,7 +7328,6 @@ pub fn libmpeg_decode_field_pic(c: &mut Cpu) {
 /// `d = m->dec` (+0x40) has a picture pending (`d[1]` and `d[2]` set), output it
 /// with `libmpeg_OutputLastPicture`, set `m[2] = d[70] - d[43]` and clear
 /// `d[1]`. Returns 1 when it flushed, else 0.
-#[allow(dead_code)]
 pub fn libmpeg_flush_pending_picture(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
@@ -7342,6 +7351,7 @@ pub fn libmpeg_flush_pending_picture(c: &mut Cpu) {
             fall_through = has_picture;
             if has_picture {
                 c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
                 Callee {
                     addr: 0x0040_32b8,
                     f: ee::s15::f_004032b8,
@@ -7368,6 +7378,133 @@ pub fn libmpeg_flush_pending_picture(c: &mut Cpu) {
         let a = frame.at(c, 0);
         c.g[S0][0] = c.ld(a);
         frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void libmpeg_FetchRefBlocks(Mpeg *m)` (0x00408988): builds the DMA chain
+/// that feeds the reference macroblock rows of slot `m[+0x810]` to the IPU.
+/// Per row `i` of the slot (count at `+0x6bc`, 0x140 bytes per slot) two
+/// 16-byte DMA tags are written at the uncached chain `0x20526fc0` (the first
+/// tag's code is `3` for every row but the last, which uses `0`), then the
+/// first DMA channel is started with interrupts masked (`DIntr`/`EIntr`).
+pub fn libmpeg_fetch_ref_blocks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x40);
+        c.g[A1][0] = 0x140;
+        let a = frame.at(c, 0x20);
+        c.sd(a, c.g[S2][0]);
+        c.g[V0][0] = 0x0fff_0000;
+        let a = frame.at(c, 0);
+        c.sd(a, c.g[S0][0]);
+        c.g[S2][0] = 0x0052_0000;
+        let a = frame.at(c, 0x30);
+        c.sd(a, c.g[RA][0]);
+        c.g[S0][0] = c.g[A0][0];
+        let a = frame.at(c, 0x10);
+        c.sd(a, c.g[S1][0]);
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6fc0));
+        c.g[V0][0] |= 0xffff;
+        c.g[T3][0] = 0;
+        c.g[T8][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x810));
+        c.g[A0][0] &= c.g[V0][0];
+        c.mult(0, V1, T8, A1);
+        c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+        c.g[V1][0] = 0x2000_0000;
+        c.g[T4][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x6bc));
+        let no_rows = (c.g[T4][0] as i64) <= 0;
+        c.g[T2][0] = c.g[A0][0] | c.g[V1][0];
+        if no_rows {
+            c.cycles += 1;
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x590));
+        } else {
+            c.cycles += 4;
+            c.g[T7][0] = sx((c.g[S0][0] as u32).wrapping_add(0x598));
+            c.g[T6][0] = sx((c.g[S0][0] as u32).wrapping_add(0x5a8));
+            c.g[T5][0] = sx((c.g[T4][0] as u32).wrapping_sub(1));
+            c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x590));
+            loop {
+                c.cycles += 30;
+                c.g[V1][0] = 0x140;
+                c.g[V0][0] = c.g[T3][0] ^ c.g[T5][0];
+                c.mult(0, V1, T8, V1);
+                c.g[A0][0] = sx((c.g[T3][0] as u32) << 2);
+                c.g[A1][0] = 3;
+                c.g[A2][0] = 0x0fff_0000;
+                if c.g[V0][0] == 0 {
+                    c.g[A1][0] = 0;
+                }
+                c.g[A2][0] |= 0xffff;
+                c.g[A1][0] <<= 28;
+                c.g[T1][0] = 0x3000_0000;
+                c.g[T1][0] |= 0x30;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.g[T0][0] = 0x30;
+                c.g[V0][0] = sx((c.g[T6][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[T3][0] = sx((c.g[T3][0] as u32).wrapping_add(1));
+                c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+                c.g[A0][0] = sx((c.g[T7][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V0][0] = c.lw(c.g[A0][0] as u32);
+                c.g[A3][0] = ((c.g[T3][0] as i64) < (c.g[T4][0] as i64)) as u64;
+                c.g[V1][0] &= c.g[A2][0];
+                c.g[V0][0] &= c.g[A2][0];
+                c.g[V1][0] <<= 32;
+                c.g[V1][0] |= c.g[A1][0];
+                c.g[V0][0] <<= 32;
+                c.g[V0][0] |= c.g[T1][0];
+                c.g[V1][0] |= c.g[T0][0];
+                c.sd(c.g[T2][0] as u32, c.g[V0][0]);
+                c.sd((c.g[T2][0] as u32).wrapping_add(0x10), c.g[V1][0]);
+                let more = c.g[A3][0] != 0;
+                c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(0x20));
+                if more {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0040_89e8);
+                    }
+                    continue;
+                }
+                c.cycles += 2;
+                break;
+            }
+        }
+        c.cycles += 24;
+        LIBMPEG_CALLEE_DINTR.call(c, 0x0040_8a74)?;
+        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x810));
+        c.g[V1][0] = 0x140;
+        c.g[A3][0] = 0x1000_0000;
+        c.g[T0][0] = 0x1000_0000;
+        c.mult(0, A0, A2, V1);
+        c.g[A3][0] |= 0xd480;
+        c.g[T2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x6fc0));
+        c.g[T0][0] |= 0xd430;
+        c.g[V1][0] = 0x1000_0000;
+        c.g[T1][0] = 0x105;
+        c.g[V1][0] |= 0xd420;
+        c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S1][0] as u32));
+        c.g[A1][0] = c.lw(c.g[A2][0] as u32);
+        c.g[A0][0] = 0x1000_0000;
+        c.g[A0][0] |= 0xd400;
+        c.sw(c.g[A3][0] as u32, c.g[A1][0]);
+        c.sw(c.g[T0][0] as u32, c.g[T2][0]);
+        c.sw(c.g[V1][0] as u32, 0);
+        c.sw(c.g[A0][0] as u32, c.g[T1][0]);
+        let intr_was_off = c.g[V0][0] == 0;
+        frame.restore_ra(c, 0x30);
+        c.cycles += 5;
+        let a = frame.at(c, 0x20);
+        c.g[S2][0] = c.ld(a);
+        let a = frame.at(c, 0x10);
+        c.g[S1][0] = c.ld(a);
+        let a = frame.at(c, 0);
+        c.g[S0][0] = c.ld(a);
+        if intr_was_off {
+            frame.close(c);
+        } else {
+            c.g[SP][0] = sx(sp(c).wrapping_add(frame.size));
+            c.pc = 0x0042_c0c0;
+            ee::s15::EIntr(c);
+        }
         Ok(())
     })
 }
@@ -17319,6 +17456,73 @@ pub(crate) mod tests {
                 c.bus.write32(d + 0x1dc, r.next_u32());
                 c.g[A0][0] = sx(d);
                 c.pc = 0x0040_32b8;
+            },
+        );
+    }
+
+    /// `FlushPendingPicture`: nothing pending, pending without a picture,
+    /// and the flush (real `OutputLastPicture` over leaf fakes).
+    #[test]
+    fn libmpeg_flush_pending_picture_matches() {
+        oc1117_install_fakes();
+        check(
+            ee::s15::f_00403240__generated,
+            libmpeg_flush_pending_picture,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x403240, 0);
+                c.bus.write32(OC1117_CTRL, OC1117_MAGIC);
+                let m = OC1117_MPEG;
+                let d = OC1117_DEC;
+                c.bus.write32(m + 0x40, d);
+                c.bus.write32(m + 8, r.next_u32());
+                c.bus
+                    .write32(d + 4, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+                c.bus.write32(
+                    d + 8,
+                    if seed / 3 % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    },
+                );
+                c.bus
+                    .write32(d + 0x120, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                c.bus.write32(d + 0x118, r.next_u32());
+                c.bus.write32(d + 0xac, r.next_u32());
+                c.bus
+                    .write32(d + 0x174, if seed % 4 < 2 { 3 } else { r.next_u32() % 5 });
+                c.bus.write32(d + 0x1bc, r.next_u32());
+                c.bus.write32(d + 0x1cc, r.next_u32());
+                c.bus.write32(d + 0x1dc, r.next_u32());
+                c.g[A0][0] = sx(m);
+                c.pc = 0x0040_3240;
+            },
+        );
+    }
+
+    /// `FetchRefBlocks`: no rows (count <= 0), one and several rows (the last
+    /// row's tag code differs), interrupts that were on (`EIntr` tail call)
+    /// and off; the DIntr/EIntr fakes unwind at random calls.
+    #[test]
+    fn libmpeg_fetch_ref_blocks_matches() {
+        check_lohi(
+            ee::s15::f_00408988__generated,
+            libmpeg_fetch_ref_blocks,
+            400,
+            &|c, seed| {
+                let mut r = oc1110_machine(c, seed, 0x408988, 2);
+                fill(c, &mut r, OC1110_DEC, 0xb00);
+                let slot = seed % 3;
+                c.bus.write32(OC1110_DEC + 0x810, slot);
+                let rows: u32 = match seed / 3 % 5 {
+                    0 => 0,
+                    1 => 0xffff_fff0,
+                    n => n - 1,
+                };
+                c.bus.write32(OC1110_DEC + 0x6bc + 0x140 * slot, rows);
+                mb_wr(c, MB_DINTR, seed / 15 % 2);
+                c.g[A0][0] = OC1110_DEC as u64;
             },
         );
     }
